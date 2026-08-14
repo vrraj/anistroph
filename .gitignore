@@ -1,0 +1,54 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+.venv/
+venv/
+env/
+ENV/
+build/
+dist/
+*.egg-info/
+.eggs/
+*.egg
+
+# Testing / coverage
+.pytest_cache/
+.coverage
+htmlcov/
+.tox/
+
+# Generated data artifacts
+data/raw/*
+data/processed/*
+data/synthetic/*
+!data/raw/.gitkeep
+!data/processed/.gitkeep
+!data/synthetic/.gitkeep
+
+# Model artifacts
+artifacts/models/*
+!artifacts/models/.gitkeep
+
+# Local registry / runtime state
+*.local.json
+backend/.runtime/
+registry.json
+
+# Caches
+.DuckDB/
+*.duckdb
+*.duckdb.wal
+
+# IDE / editor
+.idea/
+.vscode/
+*.swp
+*.swo
+.DS_Store
+
+# Local env / config
+.env
+.env.local
