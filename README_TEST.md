@@ -8,7 +8,7 @@ API, web UI, and MCP server.
 ## Prerequisites
 
 ```bash
-cd /Users/raj/Documents/Raj/Anistroph
+cd /Users/raj/Documents/Raj/anistroph
 source .venv/bin/activate
 ```
 
@@ -307,7 +307,7 @@ Add this to your Claude Desktop MCP config:
     "anistroph": {
       "command": "python",
       "args": ["-m", "backend.integrations.mcp.server"],
-      "cwd": "/Users/raj/Documents/Raj/Anistroph"
+      "cwd": "/Users/raj/Documents/Raj/anistroph"
     }
   }
 }
@@ -357,9 +357,9 @@ Add the Anistroph MCP server to Claude Desktop's config:
 {
   "mcpServers": {
     "anistroph": {
-      "command": "/Users/raj/Documents/Raj/Anistroph/.venv/bin/python",
+      "command": "/Users/raj/Documents/Raj/anistroph/.venv/bin/python",
       "args": ["-m", "backend.integrations.mcp.server"],
-      "cwd": "/Users/raj/Documents/Raj/Anistroph"
+      "cwd": "/Users/raj/Documents/Raj/anistroph"
     }
   }
 }
@@ -460,7 +460,7 @@ or Python directly.
   other keys (like `preferences`), Claude Desktop may overwrite the file and
   strip `mcpServers` on save. Use the minimal config shown above.
 - Verify the Python path is correct: run
-  `/Users/raj/Documents/Raj/Anistroph/.venv/bin/python -m backend.integrations.mcp.server`
+  `/Users/raj/Documents/Raj/anistroph/.venv/bin/python -m backend.integrations.mcp.server`
   — it should start without errors.
 - Check Claude Desktop logs for connection errors:
   ```bash

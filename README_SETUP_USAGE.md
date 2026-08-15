@@ -11,7 +11,7 @@ through REST, Python, MCP, and the web UI.
 ### Local (native)
 
 ```bash
-cd /Users/raj/Documents/Raj/Anistroph
+cd /Users/raj/Documents/Raj/anistroph
 
 python3 -m venv .venv
 source .venv/bin/activate
@@ -434,9 +434,9 @@ Location: `~/Library/Application Support/Claude/claude_desktop_config.json`
 {
   "mcpServers": {
     "anistroph": {
-      "command": "/Users/raj/Documents/Raj/Anistroph/.venv/bin/python",
+      "command": "/Users/raj/Documents/Raj/anistroph/.venv/bin/python",
       "args": ["-m", "backend.integrations.mcp.server"],
-      "cwd": "/Users/raj/Documents/Raj/Anistroph"
+      "cwd": "/Users/raj/Documents/Raj/anistroph"
     }
   }
 }
@@ -484,7 +484,7 @@ Location: `~/Library/Application Support/Claude/claude_desktop_config.json`
 - Check config JSON is valid: `python3 -c "import json; json.load(open('~/Library/Application Support/Claude/claude_desktop_config.json'))"`
 - Check logs: `tail -100 ~/Library/Logs/Claude/main.log | grep -i "mcp\|anistroph\|error"`
 - Fully quit Claude Desktop (`Cmd+Q`), not just close the window
-- Verify the venv Python path exists: `ls /Users/raj/Documents/Raj/Anistroph/.venv/bin/python`
+- Verify the venv Python path exists: `ls /Users/raj/Documents/Raj/anistroph/.venv/bin/python`
 
 ### Predictions fail with "feature spec not found"
 

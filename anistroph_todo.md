@@ -4,7 +4,7 @@ Living checklist for the Anistroph predictive-analytics platform. Items are mark
 `[x]` when complete. Built from the v0.1 specification and the repository setup
 instructions.
 
-Repository root: `/Users/raj/Documents/Raj/Anistroph`
+Repository root: `/Users/raj/Documents/Raj/anistroph`
 
 ---
 

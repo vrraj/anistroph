@@ -40,8 +40,8 @@
     "created_at": "2026-08-15T01:18:17.827565+00:00",
     "data_start": "2026-06-01 00:00:00",
     "data_end": "2026-06-30 23:50:00",
-    "parquet_path": "/Users/raj/Documents/Raj/Anistroph/data/processed/predictive_maintenance.parquet",
-    "spec_path": "/Users/raj/Documents/Raj/Anistroph/datasets/predictive_maintenance/dataset.yaml"
+    "parquet_path": "/Users/raj/Documents/Raj/anistroph/data/processed/predictive_maintenance.parquet",
+    "spec_path": "/Users/raj/Documents/Raj/anistroph/datasets/predictive_maintenance/dataset.yaml"
   },
   "semiconductor_yield": {
     "dataset_id": "semiconductor_yield",
@@ -115,6 +115,6 @@
     "data_start": "2025-01-01 00:00:00",
     "data_end": "2026-12-31 23:00:00",
     "parquet_path": "data/semiconductor_yield/data.parquet",
-    "spec_path": "/Users/raj/Documents/Raj/Anistroph/datasets/semiconductor_yield/dataset.yaml"
+    "spec_path": "/Users/raj/Documents/Raj/anistroph/datasets/semiconductor_yield/dataset.yaml"
   }
 }
