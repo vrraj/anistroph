@@ -1,24 +1,54 @@
-version: "3.8"
-
 services:
-  anistroph:
+  # Anistroph Web Application + REST API + UI
+  webapp:
     build: .
+    container_name: anistroph-app
+    restart: unless-stopped
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+        compress: "true"
+        tag: "{{.Name}}/{{.ID}}"
     ports:
       - "8000:8000"
+    # Development: use --reload for hot code reload.
+    # Production: use `python -m uvicorn backend.main:app --host 0.0.0.0 --port 8000`
+    command: python -m uvicorn backend.main:app --host 0.0.0.0 --port 8000 --reload
     volumes:
+      # Bind mount — map host project root to the working directory in the container
+      - .:/app
+      # Persistent storage for generated data (CSV, Parquet)
       - ./data:/app/data
+      # Persistent storage for model artifacts and registries
       - ./artifacts:/app/artifacts
+      # Dataset configs (reference + examples)
       - ./datasets:/app/datasets
-    environment:
-      - ANISTROPH_HOST=0.0.0.0
-      - ANISTROPH_PORT=8000
-    command: uvicorn backend.main:app --host 0.0.0.0 --port 8000
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health')\" || exit 1"]
+      start_period: 15s
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    ulimits:
+      nofile:
+        soft: 65535
+        hard: 65535
 
+  # Anistroph MCP Server (stdio transport)
   mcp:
     build: .
+    container_name: anistroph-mcp
+    restart: unless-stopped
+    command: python -m backend.integrations.mcp.server
+    stdin_open: true
     volumes:
+      # Bind mount — same as webapp
+      - .:/app
       - ./data:/app/data
       - ./artifacts:/app/artifacts
       - ./datasets:/app/datasets
-    command: python -m backend.integrations.mcp.server
-    stdin_open: true
+    depends_on:
+      webapp:
+        condition: service_healthy
