@@ -8,7 +8,7 @@ API, web UI, and MCP server.
 ## Prerequisites
 
 ```bash
-cd /Users/raj/Documents/Raj/Ainstroph
+cd /Users/raj/Documents/Raj/Anistroph
 source .venv/bin/activate
 ```
 
@@ -263,7 +263,7 @@ Add this to your Claude Desktop MCP config:
     "anistroph": {
       "command": "python",
       "args": ["-m", "backend.integrations.mcp.server"],
-      "cwd": "/Users/raj/Documents/Raj/Ainstroph"
+      "cwd": "/Users/raj/Documents/Raj/Anistroph"
     }
   }
 }
