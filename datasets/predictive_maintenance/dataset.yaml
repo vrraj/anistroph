@@ -1,0 +1,139 @@
+# Anistroph — Predictive Maintenance reference dataset configuration.
+#
+# This is a *reference configuration*, not an architectural dependency.
+# The generic ML pipeline reads these specs; it never hard-codes
+# machine_id, temperature, failure, etc.
+
+dataset:
+  dataset_id: predictive_maintenance
+  name: Predictive Maintenance Demo
+  entity_key: machine_id
+  time_key: timestamp
+
+  columns:
+    timestamp:
+      type: timestamp
+      role: identifier
+    machine_id:
+      type: categorical
+      role: identifier
+    machine_type:
+      type: categorical
+      role: feature
+    temperature:
+      type: numeric
+      role: feature
+    vibration:
+      type: numeric
+      role: feature
+    pressure:
+      type: numeric
+      role: feature
+    current:
+      type: numeric
+      role: feature
+    voltage:
+      type: numeric
+      role: feature
+    rpm:
+      type: numeric
+      role: feature
+    flow_rate:
+      type: numeric
+      role: feature
+    maintenance_age_hours:
+      type: numeric
+      role: feature
+    operating_hours:
+      type: numeric
+      role: feature
+    failure:
+      type: boolean
+      role: event
+    failure_type:
+      type: categorical
+      role: metadata
+
+  split:
+    strategy: chronological
+    train: 0.70
+    validation: 0.15
+    test: 0.15
+
+features:
+  temperature:
+    column: temperature
+    transforms:
+      - current
+      - mean:
+          windows: [1h, 6h]
+      - std:
+          windows: [1h, 6h]
+      - slope:
+          windows: [6h]
+
+  vibration:
+    column: vibration
+    transforms:
+      - current
+      - mean:
+          windows: [1h, 6h]
+      - max:
+          windows: [6h]
+      - std:
+          windows: [1h, 6h]
+      - slope:
+          windows: [6h]
+
+  pressure:
+    column: pressure
+    transforms:
+      - current
+      - mean:
+          windows: [1h]
+      - std:
+          windows: [6h]
+
+  current:
+    column: current
+    transforms:
+      - current
+
+  voltage:
+    column: voltage
+    transforms:
+      - current
+
+  rpm:
+    column: rpm
+    transforms:
+      - current
+      - mean:
+          windows: [1h]
+
+  flow_rate:
+    column: flow_rate
+    transforms:
+      - current
+
+  maintenance_age_hours:
+    column: maintenance_age_hours
+    transforms:
+      - current
+
+  operating_hours:
+    column: operating_hours
+    transforms:
+      - current
+
+  machine_type:
+    column: machine_type
+    transforms:
+      - categorical
+
+target:
+  name: failure_within_horizon
+  type: future_event
+  source_column: failure
+  horizon: 24h
+  positive_class: 1
