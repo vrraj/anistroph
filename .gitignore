@@ -24,6 +24,7 @@ htmlcov/
 data/raw/*
 data/processed/*
 data/synthetic/*
+data/*/data.parquet
 !data/raw/.gitkeep
 !data/processed/.gitkeep
 !data/synthetic/.gitkeep
@@ -52,3 +53,6 @@ registry.json
 # Local env / config
 .env
 .env.local
+
+# Claude Desktop config (local user preferences, not project config)
+claude_desktop_config.json
