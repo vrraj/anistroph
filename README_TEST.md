@@ -275,6 +275,157 @@ Then ask Claude things like:
 - "What models are available in Anistroph?"
 - "Predict failure probability for TOOL_000 at 2026-07-15T12:00:00 using model \<id\>"
 
+### Test MCP with Claude Desktop (step-by-step)
+
+This is a manual acceptance test to verify the MCP server works end-to-end
+with a real AI client.
+
+#### Prerequisites
+
+1. Anistroph is set up and a dataset + model exist:
+```bash
+# Generate data and train a model first
+source .venv/bin/activate
+python scripts/generate_sensor_data.py
+python -c "
+from backend.services import get_services
+svc = get_services()
+svc.register_dataset_from_config(
+    'datasets/predictive_maintenance/dataset.yaml',
+    'data/synthetic/predictive_maintenance.csv',
+)
+result = svc.train('predictive_maintenance', 'failure_within_horizon', 'xgboost')
+print('Model ID:', result['model_id'])
+"
+```
+
+2. Claude Desktop is installed (download from https://claude.ai/download).
+
+3. The MCP config file exists at:
+   - **macOS:** `~/Library/Application Support/Claude/claude_desktop_config.json`
+   - **Windows:** `%APPDATA%\Claude\claude_desktop_config.json`
+
+#### Setup
+
+Add the Anistroph MCP server to Claude Desktop's config:
+
+```json
+{
+  "mcpServers": {
+    "anistroph": {
+      "command": "/Users/raj/Documents/Raj/Anistroph/.venv/bin/python",
+      "args": ["-m", "backend.integrations.mcp.server"],
+      "cwd": "/Users/raj/Documents/Raj/Anistroph"
+    }
+  }
+}
+```
+
+> **Important:** Use the absolute path to the venv's Python so Claude
+> Desktop picks up all installed dependencies. Using bare `python` may
+> resolve to a system Python that doesn't have Anistroph installed.
+
+Restart Claude Desktop after saving the config.
+
+#### Verify the connection
+
+1. Open Claude Desktop.
+2. Start a new conversation.
+3. You should see an **Anistroph** tool icon (hammer/tools menu) indicating
+   the MCP server is connected.
+4. If you don't see it, check Claude Desktop logs:
+   ```bash
+   # macOS
+   tail -f ~/Library/Logs/Claude/mcp*.log
+   ```
+
+#### Test prompts (run in order)
+
+**Test 1 — List datasets:**
+> Prompt: "List all Anistroph datasets and show their row counts."
+
+Expected: Claude calls `anistroph_list_datasets` and reports the
+`predictive_maintenance` dataset with its row count and entity count.
+
+**Test 2 — Profile a dataset:**
+> Prompt: "Profile the predictive_maintenance dataset. What's the failure
+> rate?"
+
+Expected: Claude calls `anistroph_profile_dataset` and reports row count,
+entity count, time range, and the failure event distribution.
+
+**Test 3 — Slice data:**
+> Prompt: "Slice the predictive_maintenance dataset by machine_type and show
+> the mean failure rate for each type."
+
+Expected: Claude calls `anistroph_slice_data` with dimensions
+`["machine_type"]`, metric `failure`, aggregation `mean`, and returns a
+table of machine types with their failure rates.
+
+**Test 4 — List models:**
+> Prompt: "What models are available in Anistroph?"
+
+Expected: Claude calls `anistroph_list_models` and lists all trained models
+with their IDs, types, and dataset IDs.
+
+**Test 5 — Get model metrics:**
+> Prompt: "Show me the metrics for model \<MODEL_ID\>."
+
+Expected: Claude calls `anistroph_get_model_metrics` and reports ROC-AUC,
+PR-AUC, precision, recall, F1, and the confusion matrix.
+
+**Test 6 — Predict:**
+> Prompt: "Predict the failure probability for TOOL_000 at
+> 2026-07-15T12:00:00 using model \<MODEL_ID\>."
+
+Expected: Claude calls `anistroph_predict` with the entity_id and timestamp,
+and reports the probability and binary prediction.
+
+**Test 7 — Explain prediction:**
+> Prompt: "Explain why that prediction came out that way. What are the top
+> drivers?"
+
+Expected: Claude calls `anistroph_explain_prediction` and reports the top
+feature drivers (e.g., `vibration_mean_6h`, `temperature_slope_6h`) with
+their impact values. The explanation comes from model feature importance,
+not LLM fabrication.
+
+**Test 8 — Training is blocked (negative test):**
+> Prompt: "Train a new XGBoost model on predictive_maintenance."
+
+Expected: Claude cannot do this. Training is not exposed through MCP by
+design. Claude should explain that training must be done via the REST API
+or Python directly.
+
+#### What to verify
+
+| Check | Expected |
+|-------|----------|
+| MCP server connects | Anistroph tools appear in Claude Desktop |
+| Tool calls succeed | Claude returns real data, not hallucinated |
+| Predictions match REST | Same model + entity + timestamp = same probability |
+| Explanations are deterministic | Top drivers come from model, not LLM |
+| Training is blocked | No `anistroph_train` tool exists |
+| Same services as REST | MCP and REST produce identical results |
+
+#### Troubleshooting
+
+**Claude Desktop doesn't show Anistroph tools:**
+- Check that the config JSON is valid (no trailing commas, proper braces).
+- Verify the Python path is correct: run
+  `/Users/raj/Documents/Raj/Anistroph/.venv/bin/python -m backend.integrations.mcp.server`
+  — it should start without errors.
+- Check Claude Desktop MCP logs for connection errors.
+- Restart Claude Desktop completely (quit, not just close window).
+
+**Tool calls return errors:**
+- Ensure a dataset is registered and a model is trained before calling
+  prediction tools.
+- Verify `data/` and `artifacts/` directories have content from the
+  prerequisite setup step.
+- Run `pytest tests/integration/test_mcp.py -v` to verify the MCP tools
+  work programmatically.
+
 ---
 
 ## 7. Generate the Full-Size Dataset
