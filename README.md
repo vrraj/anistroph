@@ -139,7 +139,7 @@ meta = svc.register_dataset_from_config(
 
 Or via REST:
 ```bash
-curl -X POST http://localhost:8000/datasets \
+curl -X POST http://localhost:9500/datasets \
   -H "Content-Type: application/json" \
   -d '{"config_path": "datasets/predictive_maintenance/dataset.yaml", "source_path": "data/synthetic/predictive_maintenance.csv"}'
 ```

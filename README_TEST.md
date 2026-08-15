@@ -77,11 +77,11 @@ pytest -x --tb=long
 uvicorn backend.main:app --reload
 ```
 
-Then open **http://127.0.0.1:8000** in your browser.
+Then open **http://127.0.0.1:9500** in your browser.
 
 Verify health:
 ```bash
-curl http://127.0.0.1:8000/health
+curl http://127.0.0.1:9500/health
 # {"status":"ok","version":"0.1.0"}
 ```
 
@@ -138,63 +138,63 @@ print('Failure rate by machine type:', sl)
 
 ## 4. Test via REST API (curl)
 
-With uvicorn running on http://127.0.0.1:8000:
+With uvicorn running on http://127.0.0.1:9500:
 
 ```bash
 # Health check
-curl http://127.0.0.1:8000/health
+curl http://127.0.0.1:9500/health
 
 # Register dataset
-curl -X POST http://127.0.0.1:8000/datasets \
+curl -X POST http://127.0.0.1:9500/datasets \
   -H "Content-Type: application/json" \
   -d '{"config_path": "datasets/predictive_maintenance/dataset.yaml", "source_path": "data/synthetic/predictive_maintenance.csv"}'
 
 # List datasets
-curl http://127.0.0.1:8000/datasets
+curl http://127.0.0.1:9500/datasets
 
 # Profile dataset
-curl http://127.0.0.1:8000/datasets/predictive_maintenance/profile
+curl http://127.0.0.1:9500/datasets/predictive_maintenance/profile
 
 # List available model types
-curl http://127.0.0.1:8000/models/types
+curl http://127.0.0.1:9500/models/types
 
 # Train XGBoost
-curl -X POST http://127.0.0.1:8000/models/train \
+curl -X POST http://127.0.0.1:9500/models/train \
   -H "Content-Type: application/json" \
   -d '{"dataset_id": "predictive_maintenance", "target_name": "failure_within_horizon", "model_type": "xgboost"}'
 
 # List models (copy a model_id from the output)
-curl http://127.0.0.1:8000/models
+curl http://127.0.0.1:9500/models
 
 # Get model metadata
-curl http://127.0.0.1:8000/models/<MODEL_ID>
+curl http://127.0.0.1:9500/models/<MODEL_ID>
 
 # Get model metrics
-curl http://127.0.0.1:8000/models/<MODEL_ID>/metrics
+curl http://127.0.0.1:9500/models/<MODEL_ID>/metrics
 
 # Slice data
-curl -X POST http://127.0.0.1:8000/analysis/slice \
+curl -X POST http://127.0.0.1:9500/analysis/slice \
   -H "Content-Type: application/json" \
   -d '{"dataset_id": "predictive_maintenance", "dimensions": ["machine_type"], "metric": "failure", "aggregation": "mean"}'
 
 # Compare data
-curl -X POST http://127.0.0.1:8000/analysis/compare \
+curl -X POST http://127.0.0.1:9500/analysis/compare \
   -H "Content-Type: application/json" \
   -d '{"dataset_id": "predictive_maintenance", "dimension": "machine_type", "metric": "failure", "aggregation": "mean"}'
 
 # Predict
-curl -X POST http://127.0.0.1:8000/predictions \
+curl -X POST http://127.0.0.1:9500/predictions \
   -H "Content-Type: application/json" \
   -d '{"model_id": "<MODEL_ID>", "entity_id": "TOOL_000", "timestamp": "2026-07-15T12:00:00"}'
 
 # Batch predict
-curl -X POST http://127.0.0.1:8000/predictions/batch \
+curl -X POST http://127.0.0.1:9500/predictions/batch \
   -H "Content-Type: application/json" \
   -d '[{"model_id": "<MODEL_ID>", "entity_id": "TOOL_000", "timestamp": "2026-07-15T12:00:00"},
        {"model_id": "<MODEL_ID>", "entity_id": "TOOL_001", "timestamp": "2026-07-15T12:00:00"}]'
 
 # Explain prediction
-curl -X POST http://127.0.0.1:8000/predictions/explain \
+curl -X POST http://127.0.0.1:9500/predictions/explain \
   -H "Content-Type: application/json" \
   -d '{"model_id": "<MODEL_ID>", "entity_id": "TOOL_000", "timestamp": "2026-07-15T12:00:00", "top_k": 5}'
 ```
@@ -205,7 +205,7 @@ curl -X POST http://127.0.0.1:8000/predictions/explain \
 
 ## 5. Test via the Browser UI
 
-With uvicorn running, open **http://127.0.0.1:8000**:
+With uvicorn running, open **http://127.0.0.1:9500**:
 
 ### Datasets tab
 1. Click **Register** (fields are pre-filled with the predictive-maintenance config)
@@ -410,6 +410,6 @@ os.unlink(path)
 | Start API + UI | `uvicorn backend.main:app --reload` |
 | Generate data | `python scripts/generate_sensor_data.py` |
 | MCP server | `python -m backend.integrations.mcp.server` |
-| API docs (Swagger) | http://127.0.0.1:8000/docs |
-| API docs (ReDoc) | http://127.0.0.1:8000/redoc |
-| Web UI | http://127.0.0.1:8000 |
+| API docs (Swagger) | http://127.0.0.1:9500/docs |
+| API docs (ReDoc) | http://127.0.0.1:9500/redoc |
+| Web UI | http://127.0.0.1:9500 |

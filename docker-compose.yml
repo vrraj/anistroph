@@ -12,10 +12,10 @@ services:
         compress: "true"
         tag: "{{.Name}}/{{.ID}}"
     ports:
-      - "8000:8000"
+      - "9500:9500"
     # Development: use --reload for hot code reload.
-    # Production: use `python -m uvicorn backend.main:app --host 0.0.0.0 --port 8000`
-    command: python -m uvicorn backend.main:app --host 0.0.0.0 --port 8000 --reload
+    # Production: use `python -m uvicorn backend.main:app --host 0.0.0.0 --port 9500`
+    command: python -m uvicorn backend.main:app --host 0.0.0.0 --port 9500 --reload
     volumes:
       # Bind mount — map host project root to the working directory in the container
       - .:/app
@@ -26,7 +26,7 @@ services:
       # Dataset configs (reference + examples)
       - ./datasets:/app/datasets
     healthcheck:
-      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health')\" || exit 1"]
+      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://127.0.0.1:9500/health')\" || exit 1"]
       start_period: 15s
       interval: 10s
       timeout: 5s

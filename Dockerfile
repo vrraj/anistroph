@@ -23,4 +23,4 @@ RUN pip install --no-cache-dir --upgrade pip && \
 COPY . /app
 
 # Expose the port used by Uvicorn
-EXPOSE 8000
+EXPOSE 9500

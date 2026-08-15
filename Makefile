@@ -45,9 +45,9 @@ start:
 
 	@echo ""
 	@echo "Anistroph application started successfully."
-	@echo "  Web UI:     http://localhost:8000"
-	@echo "  API docs:   http://localhost:8000/docs"
-	@echo "  Health:     http://localhost:8000/health"
+	@echo "  Web UI:     http://localhost:9500"
+	@echo "  API docs:   http://localhost:9500/docs"
+	@echo "  Health:     http://localhost:9500/health"
 
 # Stop all Docker containers
 stop:
@@ -59,7 +59,7 @@ stop:
 rebuild:
 	@echo "Rebuilding and starting Anistroph..."
 	docker compose up -d --build
-	@echo "Anistroph rebuilt and started. Access at http://localhost:8000"
+	@echo "Anistroph rebuilt and started. Access at http://localhost:9500"
 
 # =============================================================================
 # Native (non-Docker) commands — uses local .venv
@@ -68,18 +68,18 @@ rebuild:
 # Run FastAPI server in foreground with live reload (local .venv)
 start-native:
 	@echo "Starting Anistroph in native mode (local .venv)..."
-	@. .venv/bin/activate && uvicorn backend.main:app --reload --host 0.0.0.0 --port 8000
+	@. .venv/bin/activate && uvicorn backend.main:app --reload --host 0.0.0.0 --port 9500
 
-# Stop native uvicorn (finds and kills the process on port 8000)
+# Stop native uvicorn (finds and kills the process on port 9500)
 stop-native:
 	@echo "Stopping native Anistroph..."
-	@lsof -ti:8000 | xargs kill -9 2>/dev/null || echo "No process on port 8000"
+	@lsof -ti:9500 | xargs kill -9 2>/dev/null || echo "No process on port 9500"
 	@echo "Stopped."
 
 # Run in debug mode with verbose logging
 start-debug:
 	@echo "Starting Anistroph in debug mode..."
-	@. .venv/bin/activate && uvicorn backend.main:app --reload --host 0.0.0.0 --port 8000 --log-level debug
+	@. .venv/bin/activate && uvicorn backend.main:app --reload --host 0.0.0.0 --port 9500 --log-level debug
 
 # =============================================================================
 # Data generation
