@@ -11,6 +11,7 @@ from typing import Any, Optional
 import polars as pl
 
 from backend.analysis.slice import compare_data, slice_data
+from backend.analysis.interesting import find_interesting_slices
 from backend.datasets.config import DatasetConfig, load_dataset_config
 from backend.datasets.loader import ingest
 from backend.datasets.profiling import profile_dataset
@@ -121,6 +122,18 @@ class AnistrophServices:
     def compare(self, dataset_id: str, dimension: str, metric: str,
                 aggregation: str = "mean", filters: Optional[dict[str, Any]] = None) -> list[dict[str, Any]]:
         return compare_data(dataset_id, self.dataset_registry, dimension, metric, aggregation, filters)
+
+    def find_interesting_slices(self, dataset_id: str, metric: str,
+                                dimensions: Optional[list[str]] = None,
+                                min_sample_size: int = 100,
+                                max_dimensions: int = 3,
+                                aggregation: str = "mean",
+                                filters: Optional[dict[str, Any]] = None,
+                                top_k: int = 20) -> list[dict[str, Any]]:
+        return find_interesting_slices(
+            dataset_id, self.dataset_registry, metric, dimensions,
+            min_sample_size, max_dimensions, aggregation, filters, top_k,
+        )
 
     # --- Model operations ---
 

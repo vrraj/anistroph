@@ -26,6 +26,9 @@ from backend.ml.base import Predictor
 from backend.ml.registry import ModelRegistry
 from backend.models.logistic import LogisticRegressionPredictor
 from backend.models.xgboost import XGBoostPredictor
+from backend.models.xgboost_regressor import XGBoostRegressorPredictor
+from backend.models.linear_regression import LinearRegressionPredictor
+from backend.targets.spec import TargetType
 
 
 def _load_predictor(model_type: str, artifact_path: str) -> Predictor:
@@ -33,6 +36,10 @@ def _load_predictor(model_type: str, artifact_path: str) -> Predictor:
         return LogisticRegressionPredictor.load(f"{artifact_path}/model.joblib")
     elif model_type == "xgboost":
         return XGBoostPredictor.load(f"{artifact_path}/model.joblib")
+    elif model_type == "xgboost_regressor":
+        return XGBoostRegressorPredictor.load(f"{artifact_path}/model.joblib")
+    elif model_type == "linear_regression":
+        return LinearRegressionPredictor.load(f"{artifact_path}/model.joblib")
     raise ValueError(f"unknown model type: {model_type!r}")
 
 
@@ -73,12 +80,13 @@ def predict(
     if Path(imputer_path).exists():
         imputer = joblib.load(imputer_path)
 
-    if spec.is_temporal():
-        if entity_id is None or timestamp is None:
-            raise ValueError(
-                f"temporal dataset {spec.dataset_id!r} requires entity_id and timestamp"
-            )
-        # Load the full dataset and filter to this entity up to the timestamp.
+    is_regression = target_spec.type in (TargetType.REGRESSION,)
+
+    # Determine if this is a temporal lookup (entity has multiple rows over time)
+    # or a single-row entity lookup (e.g. wafer-level data with a timestamp
+    # used only for chronological splitting).
+    if spec.is_temporal() and entity_id is not None and timestamp is not None:
+        # Temporal lookup: load history up to timestamp.
         df = pl.read_parquet(meta.parquet_path)
         ts_parsed = _parse_timestamp(timestamp)
         entity_df = df.filter(
@@ -105,36 +113,94 @@ def predict(
         X = row.select(feature_cols).to_numpy()
         if imputer is not None:
             X = imputer.transform(X)
-        proba = predictor.predict_proba(X)[0, 1]
-        pred_label = int(proba >= meta.decision_threshold)
 
-        return {
-            "model_id": model_id,
-            "entity_id": entity_id,
-            "timestamp": str(row[spec.time_key][0]),
-            "prediction": pred_label,
-            "probability": float(proba),
-            "decision_threshold": meta.decision_threshold,
-            "target_name": target_spec.name,
-        }
+        if is_regression:
+            pred_value = float(predictor.predict(X)[0])
+            return {
+                "model_id": model_id,
+                "entity_id": entity_id,
+                "timestamp": str(row[spec.time_key][0]),
+                "predicted_yield": pred_value,
+                "target_name": target_spec.name,
+            }
+        else:
+            proba = predictor.predict_proba(X)[0, 1]
+            pred_label = int(proba >= meta.decision_threshold)
+            return {
+                "model_id": model_id,
+                "entity_id": entity_id,
+                "timestamp": str(row[spec.time_key][0]),
+                "prediction": pred_label,
+                "probability": float(proba),
+                "decision_threshold": meta.decision_threshold,
+                "target_name": target_spec.name,
+            }
     else:
-        if records is None:
-            raise ValueError("non-temporal dataset requires records")
-        df = pl.DataFrame(records)
-        engine = FeatureEngine()
-        feat_df, _ = engine.build_features(df, spec, feature_spec, metadata=feature_metadata, fit=False)
-        X = feat_df.select(feature_cols).to_numpy()
-        if imputer is not None:
-            X = imputer.transform(X)
-        probas = predictor.predict_proba(X)[:, 1]
-        preds = (probas >= meta.decision_threshold).astype(int)
-        return {
-            "model_id": model_id,
-            "predictions": preds.tolist(),
-            "probabilities": probas.tolist(),
-            "decision_threshold": meta.decision_threshold,
-            "target_name": target_spec.name,
-        }
+        # Non-temporal: either entity_id lookup or records provided.
+        if entity_id is not None:
+            df = pl.read_parquet(meta.parquet_path)
+            entity_df = df.filter(pl.col(spec.entity_key) == entity_id)
+            if entity_df.height == 0:
+                raise ValueError(f"no rows found for entity {entity_id!r}")
+            engine = FeatureEngine()
+            feat_df, _ = engine.build_features(entity_df, spec, feature_spec, metadata=feature_metadata, fit=False)
+            X = feat_df.select(feature_cols).to_numpy()
+            if imputer is not None:
+                X = imputer.transform(X)
+
+            if is_regression:
+                pred_value = float(predictor.predict(X)[0])
+                # Include actual yield if available.
+                actual = None
+                if target_spec.source_column in entity_df.columns:
+                    actual = float(entity_df[target_spec.source_column][0])
+                result = {
+                    "model_id": model_id,
+                    "entity_id": entity_id,
+                    "predicted_yield": pred_value,
+                    "target_name": target_spec.name,
+                }
+                if actual is not None:
+                    result["actual_yield"] = actual
+                return result
+            else:
+                proba = predictor.predict_proba(X)[0, 1]
+                pred_label = int(proba >= meta.decision_threshold)
+                return {
+                    "model_id": model_id,
+                    "entity_id": entity_id,
+                    "prediction": pred_label,
+                    "probability": float(proba),
+                    "decision_threshold": meta.decision_threshold,
+                    "target_name": target_spec.name,
+                }
+        elif records is not None:
+            df = pl.DataFrame(records)
+            engine = FeatureEngine()
+            feat_df, _ = engine.build_features(df, spec, feature_spec, metadata=feature_metadata, fit=False)
+            X = feat_df.select(feature_cols).to_numpy()
+            if imputer is not None:
+                X = imputer.transform(X)
+
+            if is_regression:
+                preds = predictor.predict(X)
+                return {
+                    "model_id": model_id,
+                    "predictions": preds.tolist(),
+                    "target_name": target_spec.name,
+                }
+            else:
+                probas = predictor.predict_proba(X)[:, 1]
+                preds = (probas >= meta.decision_threshold).astype(int)
+                return {
+                    "model_id": model_id,
+                    "predictions": preds.tolist(),
+                    "probabilities": probas.tolist(),
+                    "decision_threshold": meta.decision_threshold,
+                    "target_name": target_spec.name,
+                }
+        else:
+            raise ValueError("non-temporal dataset requires entity_id or records")
 
 
 def _parse_timestamp(ts: str) -> datetime:

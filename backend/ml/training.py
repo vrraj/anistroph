@@ -23,10 +23,12 @@ from backend.datasets.spec import DatasetSpec, SplitSpec
 from backend.features.engine import FeatureEngine, FeatureMetadata
 from backend.features.spec import FeatureSpec
 from backend.ml.base import Predictor
-from backend.ml.evaluation import best_threshold_by_f1, evaluate_binary
+from backend.ml.evaluation import best_threshold_by_f1, evaluate_binary, evaluate_regression
 from backend.ml.registry import ModelRegistry
 from backend.models.logistic import LogisticRegressionPredictor
 from backend.models.xgboost import XGBoostPredictor
+from backend.models.xgboost_regressor import XGBoostRegressorPredictor
+from backend.models.linear_regression import LinearRegressionPredictor
 from backend.targets.engine import TargetEngine
 from backend.targets.spec import TargetSpec, TargetType
 
@@ -34,6 +36,8 @@ from backend.targets.spec import TargetSpec, TargetType
 MODEL_FACTORIES: dict[str, type[Predictor]] = {
     "logistic_regression": LogisticRegressionPredictor,
     "xgboost": XGBoostPredictor,
+    "xgboost_regressor": XGBoostRegressorPredictor,
+    "linear_regression": LinearRegressionPredictor,
 }
 
 
@@ -163,10 +167,18 @@ def train_model(
     predictor._feature_names = feature_cols
     predictor.fit(X_train, y_train, X_val, y_val)
 
-    # --- Evaluate ---
-    y_test_proba = predictor.predict_proba(X_test)[:, 1]
-    threshold = best_threshold_by_f1(y_val, predictor.predict_proba(X_val)[:, 1])
-    metrics = evaluate_binary(y_test, y_test_proba, threshold=threshold)
+    # --- Evaluate (branch on target type) ---
+    is_regression = ts.type in (TargetType.REGRESSION,)
+
+    if is_regression:
+        y_test_pred = predictor.predict(X_test)
+        baseline_pred = float(np.mean(y_train))
+        metrics = evaluate_regression(y_test, y_test_pred, baseline_pred=baseline_pred)
+        threshold = 0.0  # not used for regression
+    else:
+        y_test_proba = predictor.predict_proba(X_test)[:, 1]
+        threshold = best_threshold_by_f1(y_val, predictor.predict_proba(X_val)[:, 1])
+        metrics = evaluate_binary(y_test, y_test_proba, threshold=threshold)
 
     # --- Persist model ---
     if model_id is None:

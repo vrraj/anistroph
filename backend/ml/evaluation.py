@@ -1,7 +1,7 @@
-"""Model evaluation — model-independent metrics for binary classification.
+"""Model evaluation — model-independent metrics for classification and regression.
 
-Emphasizes PR-AUC, recall, and precision for imbalanced/rare-event problems.
-Supports configurable decision thresholds.
+Classification: ROC-AUC, PR-AUC, precision, recall, F1, confusion matrix.
+Regression: MAE, RMSE, R², median absolute error, 95th percentile absolute error.
 """
 
 from __future__ import annotations
@@ -13,8 +13,11 @@ from sklearn.metrics import (
     average_precision_score,
     confusion_matrix,
     f1_score,
+    mean_absolute_error,
+    mean_squared_error,
     precision_recall_curve,
     precision_score,
+    r2_score,
     recall_score,
     roc_auc_score,
 )
@@ -78,3 +81,43 @@ def best_threshold_by_f1(y_true: np.ndarray, y_proba: np.ndarray) -> float:
     f1s = 2 * p * r / (p + r + 1e-12)
     idx = int(np.nanargmax(f1s[:-1]))
     return float(t[idx]) if idx < len(t) else 0.5
+
+
+def evaluate_regression(
+    y_true: np.ndarray,
+    y_pred: np.ndarray,
+    baseline_pred: float | None = None,
+) -> dict[str, Any]:
+    """Evaluate regression predictions.
+
+    Args:
+        y_true: ground-truth values.
+        y_pred: predicted values.
+        baseline_pred: if provided, compute baseline metrics using a
+            constant predictor that always returns this value (e.g. the
+            mean training yield).
+
+    Returns a metrics dict with MAE, RMSE, R², median absolute error,
+    95th percentile absolute error, and baseline comparison.
+    """
+    abs_errors = np.abs(y_true - y_pred)
+
+    metrics: dict[str, Any] = {
+        "mae": float(mean_absolute_error(y_true, y_pred)),
+        "rmse": float(np.sqrt(mean_squared_error(y_true, y_pred))),
+        "r2": float(r2_score(y_true, y_pred)),
+        "median_abs_error": float(np.median(abs_errors)),
+        "p95_abs_error": float(np.percentile(abs_errors, 95)),
+        "mean_prediction_error": float(np.mean(y_pred - y_true)),
+    }
+
+    if baseline_pred is not None:
+        baseline_abs_errors = np.abs(y_true - baseline_pred)
+        metrics["baseline"] = {
+            "constant_value": float(baseline_pred),
+            "mae": float(mean_absolute_error(y_true, np.full_like(y_true, baseline_pred))),
+            "rmse": float(np.sqrt(mean_squared_error(y_true, np.full_like(y_true, baseline_pred)))),
+            "r2": float(r2_score(y_true, np.full_like(y_true, baseline_pred))),
+        }
+
+    return metrics

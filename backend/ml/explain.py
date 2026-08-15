@@ -17,6 +17,7 @@ from backend.features.engine import FeatureEngine
 from backend.ml.base import Predictor
 from backend.ml.inference import _load_predictor, _parse_timestamp
 from backend.ml.registry import ModelRegistry
+from backend.targets.spec import TargetType
 import polars as pl
 
 
@@ -52,9 +53,10 @@ def explain_prediction(
     imputer = joblib.load(imputer_path) if Path(imputer_path).exists() else None
 
     # Get the prediction + feature vector.
-    if spec.is_temporal():
-        if entity_id is None or timestamp is None:
-            raise ValueError("temporal dataset requires entity_id and timestamp")
+    is_regression = target_spec.type in (TargetType.REGRESSION,)
+
+    # Temporal lookup with history (entity_id + timestamp both provided).
+    if spec.is_temporal() and entity_id is not None and timestamp is not None:
         df = pl.read_parquet(meta.parquet_path)
         ts_parsed = _parse_timestamp(timestamp)
         entity_df = df.filter(
@@ -72,19 +74,44 @@ def explain_prediction(
         X = row.select(feature_cols).to_numpy()
         if imputer is not None:
             X = imputer.transform(X)
-        proba = float(predictor.predict_proba(X)[0, 1])
+        if is_regression:
+            pred_value = float(predictor.predict(X)[0])
+        else:
+            pred_value = float(predictor.predict_proba(X)[0, 1])
         feature_values = {c: float(row[c][0]) for c in feature_cols if row[c][0] is not None}
-    else:
-        if records is None:
-            raise ValueError("non-temporal dataset requires records")
+        ts_str = str(row[spec.time_key][0])
+    elif entity_id is not None:
+        # Single-row entity lookup (no timestamp or non-temporal).
+        df = pl.read_parquet(meta.parquet_path)
+        entity_df = df.filter(pl.col(spec.entity_key) == entity_id)
+        if entity_df.height == 0:
+            raise ValueError(f"no rows found for entity {entity_id!r}")
+        engine = FeatureEngine()
+        feat_df, _ = engine.build_features(entity_df, spec, feature_spec, metadata=feature_metadata, fit=False)
+        X = feat_df.select(feature_cols).to_numpy()
+        if imputer is not None:
+            X = imputer.transform(X)
+        if is_regression:
+            pred_value = float(predictor.predict(X)[0])
+        else:
+            pred_value = float(predictor.predict_proba(X)[0, 1])
+        feature_values = {c: float(feat_df[c][0]) for c in feature_cols}
+        ts_str = str(entity_df[spec.time_key][0]) if spec.time_key and spec.time_key in entity_df.columns else None
+    elif records is not None:
         df = pl.DataFrame(records)
         engine = FeatureEngine()
         feat_df, _ = engine.build_features(df, spec, feature_spec, metadata=feature_metadata, fit=False)
         X = feat_df.select(feature_cols).to_numpy()
         if imputer is not None:
             X = imputer.transform(X)
-        proba = float(predictor.predict_proba(X)[0, 1])
+        if is_regression:
+            pred_value = float(predictor.predict(X)[0])
+        else:
+            pred_value = float(predictor.predict_proba(X)[0, 1])
         feature_values = {c: float(feat_df[c][0]) for c in feature_cols}
+        ts_str = None
+    else:
+        raise ValueError("provide entity_id (optionally with timestamp) or records")
 
     # Global feature importance from the model.
     importance = predictor.feature_importance() or {}
@@ -104,13 +131,23 @@ def explain_prediction(
     for c in top_drivers:
         c["impact"] = c["impact"] / total
 
-    return {
-        "model_id": model_id,
-        "entity_id": entity_id,
-        "timestamp": str(row[spec.time_key][0]) if spec.is_temporal() else None,
-        "prediction": int(proba >= meta.decision_threshold),
-        "probability": proba,
-        "decision_threshold": meta.decision_threshold,
-        "target_name": target_spec.name,
-        "top_drivers": top_drivers,
-    }
+    if is_regression:
+        return {
+            "model_id": model_id,
+            "entity_id": entity_id,
+            "timestamp": ts_str,
+            "predicted_yield": pred_value,
+            "target_name": target_spec.name,
+            "top_drivers": top_drivers,
+        }
+    else:
+        return {
+            "model_id": model_id,
+            "entity_id": entity_id,
+            "timestamp": ts_str,
+            "prediction": int(pred_value >= meta.decision_threshold),
+            "probability": pred_value,
+            "decision_threshold": meta.decision_threshold,
+            "target_name": target_spec.name,
+            "top_drivers": top_drivers,
+        }

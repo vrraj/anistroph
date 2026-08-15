@@ -794,4 +794,247 @@ for d in expl["top_drivers"]:
 | Register a dataset | REST, Python, Web UI | MCP (by design — registration is an admin operation) |
 | Delete a dataset | REST, Python | MCP |
 | Delete a model | REST, Python | MCP |
-| Arbitrary Python execution | *(nowhere)* | MCP (by design — only the 8 defined tools) |
+| Arbitrary Python execution | *(nowhere)* | MCP (by design — only the 9 defined tools) |
+
+---
+
+## 16. Semiconductor Yield Dataset & Models
+
+The second reference dataset in Anistroph — a wafer-level yield regression
+problem from synthetic semiconductor manufacturing data.
+
+### Overview
+
+| Property | Value |
+|----------|-------|
+| Dataset ID | `semiconductor_yield` |
+| Dataset name | Semiconductor Wafer Yield |
+| Entity key | `wafer_id` |
+| Time key | `timestamp` (used for chronological splitting) |
+| Row count | 30,000 wafers |
+| Columns | 29 |
+| Target | `wafer_yield` (regression, 0.0-1.0) |
+| Split | Chronological - 70% train / 15% validation / 15% test |
+
+### Data generation
+
+```bash
+python scripts/generate_semiconductor_yield_data.py --wafers 30000
+```
+
+Output: `data/semiconductor_yield/data.parquet`
+
+Each row represents one completed wafer with:
+- **Hierarchy:** lot_id -> wafer_id
+- **Categorical context:** product_id, fab_id, process_route
+- **Etch process:** etch_tool, etch_chamber, etch_recipe + 7 numeric measurements
+- **Deposition process:** deposition_tool, deposition_chamber, deposition_recipe + 5 numeric measurements
+- **Lithography:** exposure_dose, focus_offset
+- **Maintenance:** maintenance_age_etch, maintenance_age_deposition
+- **Target:** wafer_yield (good_dies / tested_dies)
+
+### Injected yield relationships
+
+The synthetic generator injects learnable but imperfect relationships:
+
+| Condition | Yield Effect |
+|-----------|-------------|
+| Baseline | ~96-98% |
+| ETCH_02 | Small reduction (~1%) |
+| CH_B | Small reduction (~0.6%) |
+| High etch_temperature_std (>2.5) | Small reduction (~0.5%) |
+| ETCH_02 + CH_B | Larger reduction (~3.5%) |
+| ETCH_02 + CH_B + high temp_std | Large reduction (~7-9%) |
+| PROD_A + RECIPE_B | Small reduction |
+| DEP_03 + high pressure_std | Small reduction |
+| ETCH_02 + old maintenance (>350h) | Small reduction |
+| ROUTE_3 + high temp_std | Small reduction |
+
+No single feature perfectly determines yield - the model must learn
+combinations and interactions.
+
+### Trained models
+
+Two regression models are trained on this dataset:
+
+#### wafer-yield-xgb-v001 (primary)
+
+| Property | Value |
+|----------|-------|
+| Model ID | `wafer-yield-xgb-v001` |
+| Model type | XGBoost Regressor |
+| Features | 39 (23 one-hot categorical + 16 numeric) |
+
+**Evaluation metrics (test set):**
+
+| Metric | Value | Interpretation |
+|--------|-------|----------------|
+| MAE | 0.0065 | Average error ~0.65 percentage points |
+| RMSE | 0.0082 | Root mean square error ~0.82 pp |
+| R2 | 0.816 | Explains ~82% of yield variance |
+| Median abs error | 0.0054 | Half of predictions are within 0.54 pp |
+| 95th pct abs error | 0.016 | 95% of predictions within 1.6 pp |
+| Baseline MAE | 0.0139 | Mean-predictor MAE (model beats this 2x) |
+| Baseline R2 | ~0.0 | Mean predictor explains nothing |
+
+#### wafer-yield-linear-v001 (baseline)
+
+| Property | Value |
+|----------|-------|
+| Model ID | `wafer-yield-linear-v001` |
+| Model type | Linear Regression (Ridge) |
+
+**Evaluation metrics (test set):**
+
+| Metric | Value | Interpretation |
+|--------|-------|----------------|
+| MAE | 0.0090 | Average error ~0.90 pp |
+| RMSE | 0.0119 | Root mean square error ~1.19 pp |
+| R2 | 0.610 | Explains ~61% of yield variance |
+
+XGBoost significantly outperforms the linear baseline (R2 0.82 vs 0.61),
+confirming the injected nonlinear interactions are learnable.
+
+### Engineered features (39 total)
+
+**Categorical (one-hot encoded, 23 features):**
+
+| Source column | Encoded features |
+|---------------|-----------------|
+| product_id | PROD_A, PROD_B, PROD_C |
+| fab_id | FAB_01, FAB_02 |
+| process_route | ROUTE_1, ROUTE_2, ROUTE_3 |
+| etch_tool | ETCH_01, ETCH_02, ETCH_03 |
+| etch_chamber | CH_A, CH_B |
+| etch_recipe | RECIPE_A, RECIPE_B, RECIPE_C |
+| deposition_tool | DEP_01, DEP_02, DEP_03 |
+| deposition_chamber | DCH_A, DCH_B |
+| deposition_recipe | DEP_RECIPE_A, DEP_RECIPE_B |
+
+**Numeric (16 features, all "current" - no rolling windows):**
+
+| Feature | Description |
+|---------|-------------|
+| etch_temperature_mean_current | Etch process mean temperature |
+| etch_temperature_std_current | Etch temperature variability (key driver) |
+| etch_pressure_mean_current | Etch process mean pressure |
+| etch_pressure_std_current | Etch pressure variability |
+| etch_gas_flow_mean_current | Etch gas flow rate |
+| etch_rf_power_mean_current | Etch RF power |
+| etch_process_time_current | Etch process duration |
+| deposition_temperature_mean_current | Deposition mean temperature |
+| deposition_temperature_std_current | Deposition temperature variability |
+| deposition_pressure_mean_current | Deposition mean pressure |
+| deposition_pressure_std_current | Deposition pressure variability |
+| deposition_process_time_current | Deposition duration |
+| exposure_dose_current | Lithography exposure dose |
+| focus_offset_current | Lithography focus offset |
+| maintenance_age_etch_current | Hours since etch tool maintenance |
+| maintenance_age_deposition_current | Hours since deposition tool maintenance |
+
+### Sample predictions
+
+| Wafer | Predicted Yield | Actual Yield | Error |
+|-------|----------------|-------------|-------|
+| WAFER_000001 | 0.9616 | 0.9526 | +0.009 |
+| WAFER_005000 | 0.9688 | 0.9867 | -0.018 |
+| WAFER_010000 | 0.9711 | 0.9803 | -0.009 |
+| WAFER_015000 | 0.9312 | 0.9317 | -0.0005 |
+
+### Interesting slice discovery
+
+`find_interesting_slices` searches 1, 2, and 3-dimensional combinations
+of categorical columns and ranks by deviation from the overall yield
+baseline (minimum 100 rows per slice).
+
+Top slices for semiconductor yield:
+
+| Dimensions | Values | Rows | Mean Yield | Diff |
+|-----------|--------|------|-----------|------|
+| etch_tool, etch_chamber, etch_recipe | ETCH_02, CH_B, RECIPE_B | 1,669 | 92.4% | -3.5pp |
+| etch_tool, etch_chamber, deposition_tool | ETCH_02, CH_B, DEP_03 | 1,654 | 92.4% | -3.4pp |
+| product_id, etch_tool, etch_chamber | PROD_A, ETCH_02, CH_B | 1,676 | 92.5% | -3.4pp |
+
+The ETCH_02 + CH_B interaction is correctly identified as the worst yield
+combination - matching the injected hidden relationship.
+
+### How to use
+
+**Generate data and train (admin):**
+```bash
+# Generate synthetic data
+python scripts/generate_semiconductor_yield_data.py --wafers 30000
+
+# Register dataset
+python -c "
+from backend.services import get_services
+svc = get_services()
+svc.register_dataset_from_config(
+    'datasets/semiconductor_yield/dataset.yaml',
+    'data/semiconductor_yield/data.parquet',
+    'data/semiconductor_yield/data.parquet',
+)
+"
+
+# Train XGBoost regressor
+python scripts/train_model.py --dataset semiconductor_yield \
+  --model-type xgboost_regressor --model-id wafer-yield-xgb-v001
+
+# Train linear baseline
+python scripts/train_model.py --dataset semiconductor_yield \
+  --model-type linear_regression --model-id wafer-yield-linear-v001
+```
+
+**Predict via Claude Desktop (MCP):**
+> "List all Anistroph models"
+> "Predict wafer yield for WAFER_015000 using model wafer-yield-xgb-v001"
+> "Explain that prediction - what are the top drivers?"
+> "Find the worst yield combinations in the semiconductor dataset"
+> "Show yield by etch tool and chamber"
+
+**Predict via REST:**
+```bash
+curl -X POST http://localhost:9500/predictions \
+  -H "Content-Type: application/json" \
+  -d '{"model_id": "wafer-yield-xgb-v001", "entity_id": "WAFER_015000"}'
+```
+
+**Predict via Python:**
+```python
+from backend.services import get_services
+svc = get_services()
+
+# Predict
+pred = svc.predict("wafer-yield-xgb-v001", entity_id="WAFER_015000")
+print(f"Predicted: {pred['predicted_yield']:.4f}, Actual: {pred['actual_yield']:.4f}")
+
+# Find interesting slices
+slices = svc.find_interesting_slices("semiconductor_yield", "wafer_yield", top_k=10)
+for s in slices:
+    print(f"  {s['values']} rows={s['row_count']} yield={s['metric_value']:.4f} diff={s['difference']:.4f}")
+```
+
+### Insights
+
+- **R2 0.82** means the XGBoost model explains 82% of yield variance -
+  strong for synthetic manufacturing data with injected noise.
+- **MAE 0.65 pp** means average prediction error is less than 1 percentage
+  point - useful for screening wafers or flagging at-risk lots.
+- **XGBoost >> Linear** (R2 0.82 vs 0.61) confirms the yield relationships
+  are nonlinear interactions, not simple additive effects.
+- **ETCH_02 + CH_B** is the dominant yield driver - the interesting slice
+  finder correctly identifies this as the worst combination.
+- **Maintenance age** has a gradual continuous effect - older maintenance
+  on ETCH_02 compounds the chamber effect.
+- **Focus offset** has a small but consistent effect - absolute offset
+  matters regardless of direction.
+
+### Limitations
+
+- Synthetic data - real semiconductor yield data has more complex
+  spatial, temporal, and equipment interactions.
+- Wafer-level only - die-level spatial patterns are not modeled in v0.1.
+- No SHAP - explanation uses XGBoost feature importance x feature value,
+  not SHAP values (SHAP can be added later).
+- Predictions are model estimates - actual yield depends on many factors
+  not captured in the synthetic features.

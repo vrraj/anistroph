@@ -61,6 +61,24 @@ TOOL_DEFS: list[tuple[str, str, dict[str, Any]]] = [
         },
     ),
     (
+        "anistroph_find_interesting_slices",
+        "Find slices with the largest deviation from the overall metric baseline. Searches 1, 2, and 3-dimensional combinations of categorical columns.",
+        {
+            "type": "object",
+            "properties": {
+                "dataset_id": {"type": "string"},
+                "metric": {"type": "string"},
+                "dimensions": {"type": "array", "items": {"type": "string"}},
+                "min_sample_size": {"type": "integer", "default": 100},
+                "max_dimensions": {"type": "integer", "default": 3},
+                "aggregation": {"type": "string", "default": "mean"},
+                "filters": {"type": "object"},
+                "top_k": {"type": "integer", "default": 20},
+            },
+            "required": ["dataset_id", "metric"],
+        },
+    ),
+    (
         "anistroph_list_models",
         "List all registered trained models in Anistroph.",
         {"type": "object", "properties": {}, "required": []},
@@ -145,6 +163,17 @@ async def call_tool(name: str, arguments: dict[str, Any]) -> list[types.TextCont
                 arguments["metric"],
                 arguments.get("aggregation", "mean"),
                 arguments.get("filters"),
+            )
+        elif name == "anistroph_find_interesting_slices":
+            result = svc.find_interesting_slices(
+                arguments["dataset_id"],
+                arguments["metric"],
+                arguments.get("dimensions"),
+                arguments.get("min_sample_size", 100),
+                arguments.get("max_dimensions", 3),
+                arguments.get("aggregation", "mean"),
+                arguments.get("filters"),
+                arguments.get("top_k", 20),
             )
         elif name == "anistroph_list_models":
             result = [m.model_dump() for m in svc.list_models()]

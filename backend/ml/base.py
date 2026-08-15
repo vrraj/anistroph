@@ -12,9 +12,15 @@ import numpy as np
 
 
 class Predictor(ABC):
-    """Abstract predictor contract."""
+    """Abstract predictor contract.
+
+    Subclasses set ``task_type`` to ``"classification"`` or ``"regression"``.
+    Regression predictors implement ``predict`` to return continuous values
+    and ``predict_proba`` may raise NotImplementedError.
+    """
 
     model_type: str = "base"
+    task_type: str = "classification"
 
     @abstractmethod
     def fit(self, X: np.ndarray, y: np.ndarray, X_val: np.ndarray | None = None, y_val: np.ndarray | None = None) -> None:
@@ -22,11 +28,15 @@ class Predictor(ABC):
 
     @abstractmethod
     def predict(self, X: np.ndarray) -> np.ndarray:
-        """Return predicted class labels."""
+        """Return predicted class labels (classification) or values (regression)."""
 
-    @abstractmethod
     def predict_proba(self, X: np.ndarray) -> np.ndarray:
-        """Return predicted probabilities (positive class in column 1)."""
+        """Return predicted probabilities (positive class in column 1).
+
+        Only meaningful for classification. Regression predictors should
+        override this to raise NotImplementedError.
+        """
+        raise NotImplementedError(f"{self.model_type} is a regression predictor; use predict()")
 
     @abstractmethod
     def save(self, path: str) -> None:
