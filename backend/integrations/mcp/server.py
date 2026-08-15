@@ -18,11 +18,11 @@ from backend.integrations.mcp.tools import call_tool, get_tool_list
 server = Server("anistroph")
 
 
-def _handle_list_tools(params: types.ListToolsRequest) -> types.ListToolsResult:
+async def _handle_list_tools(ctx: Any, params: types.ListToolsRequest) -> types.ListToolsResult:
     return types.ListToolsResult(tools=get_tool_list())
 
 
-async def _handle_call_tool(params: types.CallToolRequest) -> types.CallToolResult:
+async def _handle_call_tool(ctx: Any, params: types.CallToolRequest) -> types.CallToolResult:
     result = await call_tool(params.name, dict(params.arguments or {}))
     return types.CallToolResult(content=result)
 
