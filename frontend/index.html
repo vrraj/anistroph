@@ -136,7 +136,10 @@
       <div class="card">
         <h2>Predict</h2>
         <div class="row">
-          <div><label>Model ID</label><input id="pr-model" placeholder="model-id"></div>
+          <div>
+            <label>Model</label>
+            <select id="pr-model"><option value="">Loading models...</option></select>
+          </div>
           <div><label>Entity ID</label><input id="pr-entity" value="TOOL_000"></div>
         </div>
         <div class="row">
@@ -213,7 +216,10 @@ async function registerDataset() {
   const el = document.getElementById('ds-list');
   el.innerHTML = '<div class="muted">Registering...</div>';
   try {
-    const r = await api('/datasets', 'POST', {config_path: ds_config.value, source_path: ds_source.value});
+    const r = await api('/datasets', 'POST', {
+      config_path: document.getElementById('ds-config').value,
+      source_path: document.getElementById('ds-source').value
+    });
     el.innerHTML = banner('Dataset registered successfully.', 'success');
     listDatasets();
   } catch (e) {
@@ -245,7 +251,7 @@ async function profileDataset() {
   const el = document.getElementById('ds-profile-result');
   el.innerHTML = '<div class="muted">Profiling...</div>';
   try {
-    const r = await api('/datasets/' + ds_profile_id.value + '/profile');
+    const r = await api('/datasets/' + document.getElementById('ds-profile-id').value + '/profile');
     el.innerHTML = '<pre>' + JSON.stringify(r, null, 2) + '</pre>';
   } catch (e) {
     el.innerHTML = banner('Error: ' + e.message);
@@ -258,10 +264,10 @@ async function sliceData() {
   el.innerHTML = '<div class="muted">Slicing...</div>';
   try {
     const r = await api('/analysis/slice', 'POST', {
-      dataset_id: sl_dataset.value,
-      dimensions: sl_dims.value.split(',').map(s => s.trim()),
-      metric: sl_metric.value,
-      aggregation: sl_agg.value
+      dataset_id: document.getElementById('sl-dataset').value,
+      dimensions: document.getElementById('sl-dims').value.split(',').map(s => s.trim()),
+      metric: document.getElementById('sl-metric').value,
+      aggregation: document.getElementById('sl-agg').value
     });
     el.innerHTML = tbl(r.slices || r);
   } catch (e) {
@@ -274,10 +280,10 @@ async function compareData() {
   el.innerHTML = '<div class="muted">Comparing...</div>';
   try {
     const r = await api('/analysis/compare', 'POST', {
-      dataset_id: cmp_dataset.value,
-      dimension: cmp_dim.value,
-      metric: cmp_metric.value,
-      aggregation: cmp_agg.value
+      dataset_id: document.getElementById('cmp-dataset').value,
+      dimension: document.getElementById('cmp-dim').value,
+      metric: document.getElementById('cmp-metric').value,
+      aggregation: document.getElementById('cmp-agg').value
     });
     el.innerHTML = tbl(r.comparisons || r);
   } catch (e) {
@@ -291,11 +297,12 @@ async function trainModel() {
   el.innerHTML = '<div class="muted">Training... this may take a moment.</div>';
   try {
     const body = {
-      dataset_id: tr_dataset.value,
-      target_name: tr_target.value,
-      model_type: tr_type.value
+      dataset_id: document.getElementById('tr-dataset').value,
+      target_name: document.getElementById('tr-target').value,
+      model_type: document.getElementById('tr-type').value
     };
-    if (tr_modelid.value) body.model_id = tr_modelid.value;
+    const mid = document.getElementById('tr-modelid').value;
+    if (mid) body.model_id = mid;
     const r = await api('/models/train', 'POST', body);
     el.innerHTML = banner('Model trained: ' + (r.model_id || 'unknown'), 'success');
     el.innerHTML += '<pre>' + JSON.stringify(r, null, 2) + '</pre>';
@@ -332,7 +339,7 @@ async function listModels() {
 async function getModel() {
   const el = document.getElementById('md-result');
   try {
-    const r = await api('/models/' + md_id.value);
+    const r = await api('/models/' + document.getElementById('md-id').value);
     el.innerHTML = '<pre>' + JSON.stringify(r, null, 2) + '</pre>';
   } catch (e) {
     el.innerHTML = banner('Error: ' + e.message);
@@ -342,7 +349,7 @@ async function getModel() {
 async function getModelMetrics() {
   const el = document.getElementById('md-metrics-result');
   try {
-    const r = await api('/models/' + md_metrics_id.value + '/metrics');
+    const r = await api('/models/' + document.getElementById('md-metrics-id').value + '/metrics');
     if (r.metrics) {
       let h = '<div class="metric-cards">';
       for (const [k, v] of Object.entries(r.metrics)) {
@@ -363,11 +370,15 @@ async function predict() {
   const el = document.getElementById('pr-result');
   el.innerHTML = '<div class="muted">Predicting...</div>';
   try {
-    const body = {model_id: pr_model.value, entity_id: pr_entity.value};
-    if (pr_timestamp.value) body.timestamp = pr_timestamp.value;
+    const body = {
+      model_id: document.getElementById('pr-model').value,
+      entity_id: document.getElementById('pr-entity').value
+    };
+    const ts = document.getElementById('pr-timestamp').value;
+    if (ts) body.timestamp = ts;
     const r = await api('/predictions', 'POST', body);
     let h = '<div class="result-card">';
-    h += `<div class="result-title">Prediction for ${r.entity_id || pr_entity.value}</div>`;
+    h += `<div class="result-title">Prediction for ${r.entity_id || document.getElementById('pr-entity').value}</div>`;
     h += '<div class="result-metrics">';
     if (r.prediction !== undefined) h += `<div class="result-metric"><span class="result-metric-label">Prediction</span><span class="result-metric-value">${r.prediction}</span></div>`;
     if (r.probability !== undefined) h += `<div class="result-metric"><span class="result-metric-label">Probability</span><span class="result-metric-value">${(r.probability * 100).toFixed(1)}%</span></div>`;
@@ -388,11 +399,12 @@ async function explain() {
   el.innerHTML = '<div class="muted">Explaining with SHAP...</div>';
   try {
     const body = {
-      model_id: pr_model.value,
-      entity_id: pr_entity.value,
-      top_k: parseInt(pr_topk.value) || 10
+      model_id: document.getElementById('pr-model').value,
+      entity_id: document.getElementById('pr-entity').value,
+      top_k: parseInt(document.getElementById('pr-topk').value) || 10
     };
-    if (pr_timestamp.value) body.timestamp = pr_timestamp.value;
+    const ts = document.getElementById('pr-timestamp').value;
+    if (ts) body.timestamp = ts;
     const r = await api('/predictions/explain', 'POST', body);
     let h = '<div class="result-card">';
     h += `<div class="result-title">SHAP Explanation</div>`;
@@ -437,9 +449,32 @@ async function explain() {
   }
 }
 
-// Auto-load datasets and models on page load
+// Populate the model dropdown on the prediction tab
+async function loadModelDropdown() {
+  const sel = document.getElementById('pr-model');
+  try {
+    const r = await api('/models');
+    if (Array.isArray(r) && r.length) {
+      sel.innerHTML = '<option value="">Select a model...</option>' +
+        r.map(m => {
+          const id = m.model_id || m.id || '?';
+          const type = m.model_type || '';
+          const task = m.task_type || '';
+          const label = `${id} (${type}${task ? ', ' + task : ''})`;
+          return `<option value="${id}">${label}</option>`;
+        }).join('');
+    } else {
+      sel.innerHTML = '<option value="">No models available — train one first</option>';
+    }
+  } catch (e) {
+    sel.innerHTML = '<option value="">Error loading models</option>';
+  }
+}
+
+// Auto-load datasets, models, and prediction dropdown on page load
 listDatasets();
 listModels();
+loadModelDropdown();
 </script>
 </body>
 </html>
