@@ -30,6 +30,7 @@ class XGBoostRegressorPredictor(Predictor):
         )
         self._model: xgb.XGBRegressor | None = None
         self._feature_names: list[str] | None = None
+        self._shap_explainer = None
 
     def fit(self, X: np.ndarray, y: np.ndarray, X_val: np.ndarray | None = None, y_val: np.ndarray | None = None) -> None:
         self._model = xgb.XGBRegressor(**self.params)
@@ -58,3 +59,19 @@ class XGBoostRegressorPredictor(Predictor):
             return None
         scores = self._model.feature_importances_
         return {name: float(score) for name, score in zip(self._feature_names, scores)}
+
+    def explain_instance(self, X: np.ndarray) -> np.ndarray:
+        """Return SHAP values for a single instance (or batch).
+
+        Uses TreeExplainer (TreeSHAP) for exact, model-derived contributions.
+        Returns an array of shape (n_samples, n_features) with signed
+        contributions: positive values increase the predicted yield,
+        negative values decrease it.
+        """
+        if self._model is None:
+            raise ValueError("model not fitted")
+        if self._shap_explainer is None:
+            import shap
+            self._shap_explainer = shap.TreeExplainer(self._model)
+        shap_values = self._shap_explainer.shap_values(X)
+        return np.asarray(shap_values)

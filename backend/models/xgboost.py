@@ -15,6 +15,7 @@ class XGBoostPredictor(Predictor):
     """XGBoost binary classifier."""
 
     model_type = "xgboost"
+    task_type = "classification"
 
     def __init__(self, **params: object) -> None:
         self.params = dict(
@@ -30,6 +31,7 @@ class XGBoostPredictor(Predictor):
         )
         self._model: xgb.XGBClassifier | None = None
         self._feature_names: list[str] | None = None
+        self._shap_explainer = None
 
     def fit(self, X: np.ndarray, y: np.ndarray, X_val: np.ndarray | None = None, y_val: np.ndarray | None = None) -> None:
         self._model = xgb.XGBClassifier(**self.params)
@@ -61,3 +63,25 @@ class XGBoostPredictor(Predictor):
             return None
         scores = self._model.feature_importances_
         return {name: float(score) for name, score in zip(self._feature_names, scores)}
+
+    def explain_instance(self, X: np.ndarray) -> np.ndarray:
+        """Return SHAP values for a single instance (or batch).
+
+        Uses TreeExplainer (TreeSHAP) for exact, model-derived contributions.
+        Returns an array of shape (n_samples, n_features) with signed
+        contributions: positive values increase the prediction, negative
+        values decrease it.
+        """
+        if self._model is None:
+            raise ValueError("model not fitted")
+        if self._shap_explainer is None:
+            import shap
+            self._shap_explainer = shap.TreeExplainer(self._model)
+        shap_values = self._shap_explainer.shap_values(X)
+        # For binary classification, shap may return a list of two arrays
+        # (one per class) or a 3D array. We want the positive-class (index 1).
+        if isinstance(shap_values, list):
+            shap_values = shap_values[1]
+        elif shap_values.ndim == 3:
+            shap_values = shap_values[:, :, 1]
+        return np.asarray(shap_values)

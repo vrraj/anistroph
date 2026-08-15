@@ -50,3 +50,12 @@ class Predictor(ABC):
     def feature_importance(self) -> dict[str, float] | None:
         """Return feature importance if available (feature_name -> score)."""
         return None
+
+    def explain_instance(self, X: np.ndarray) -> np.ndarray:
+        """Return per-prediction feature contributions (e.g. SHAP values).
+
+        Returns an array of shape (n_samples, n_features) with signed
+        contributions. Not all predictors support this — those that don't
+        should leave the default implementation which raises.
+        """
+        raise NotImplementedError(f"{self.model_type} does not support per-instance explanation")

@@ -108,7 +108,7 @@ TOOL_DEFS: list[tuple[str, str, dict[str, Any]]] = [
     ),
     (
         "anistroph_explain_prediction",
-        "Explain a prediction by returning the top contributing features.",
+        "Explain a prediction using SHAP TreeExplainer (for XGBoost models) or importance-weighted contributions. Returns top_positive (features that increase the prediction) and top_negative (features that decrease it), plus a combined top_drivers list. For temporal datasets, provide entity_id and timestamp. For non-temporal datasets, provide entity_id.",
         {
             "type": "object",
             "properties": {

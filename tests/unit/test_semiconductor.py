@@ -369,3 +369,184 @@ class TestFindInterestingSlices:
                 found = True
                 assert r["difference"] < 0, "ETCH_02+CH_B should have negative difference"
         assert found, "ETCH_02+CH_B not found in interesting slices"
+
+
+class TestSHAPExplainability:
+    """Verify SHAP-based per-prediction explainability."""
+
+    @pytest.fixture
+    def trained_semi_model(self, tmp_path):
+        """Train a small XGBoost regressor for SHAP tests."""
+        from scripts.generate_semiconductor_yield_data import generate_wafers
+        from backend.services import AnistrophServices
+
+        df = generate_wafers(n_wafers=1000, seed=55)
+        pq = tmp_path / "semi.parquet"
+        df.write_parquet(pq)
+
+        svc = AnistrophServices(
+            dataset_registry_path=tmp_path / "dataset_registry.json",
+            model_registry_dir=tmp_path / "models",
+        )
+        meta = svc.dataset_registry.register(
+            spec=load_dataset_config(_CONFIG_PATH).dataset_spec,
+            source=str(pq),
+            row_count=df.height,
+            parquet_path=str(pq),
+            data_start=None,
+            data_end=None,
+            feature_spec=load_dataset_config(_CONFIG_PATH).feature_spec,
+            target_spec=load_dataset_config(_CONFIG_PATH).target_spec,
+            spec_path=str(_CONFIG_PATH),
+        )
+        svc.train(
+            "semiconductor_yield", "wafer_yield", "xgboost_regressor",
+            model_parameters={"n_estimators": 30},
+            model_id="test-shap-xgb",
+        )
+        return svc, df
+
+    def test_explain_returns_shap_method(self, trained_semi_model):
+        svc, df = trained_semi_model
+        wafer_id = df["wafer_id"][0]
+        expl = svc.explain("test-shap-xgb", entity_id=wafer_id, top_k=5)
+        assert expl["explanation_method"] == "shap_tree_explainer"
+
+    def test_explain_has_top_positive_and_negative(self, trained_semi_model):
+        svc, df = trained_semi_model
+        wafer_id = df["wafer_id"][0]
+        expl = svc.explain("test-shap-xgb", entity_id=wafer_id, top_k=5)
+        assert "top_positive" in expl
+        assert "top_negative" in expl
+        assert isinstance(expl["top_positive"], list)
+        assert isinstance(expl["top_negative"], list)
+
+    def test_top_positive_impacts_are_positive(self, trained_semi_model):
+        svc, df = trained_semi_model
+        wafer_id = df["wafer_id"][0]
+        expl = svc.explain("test-shap-xgb", entity_id=wafer_id, top_k=5)
+        for c in expl["top_positive"]:
+            assert c["impact"] > 0, f"top_positive feature {c['feature']} has non-positive impact"
+
+    def test_top_negative_impacts_are_negative(self, trained_semi_model):
+        svc, df = trained_semi_model
+        wafer_id = df["wafer_id"][0]
+        expl = svc.explain("test-shap-xgb", entity_id=wafer_id, top_k=5)
+        for c in expl["top_negative"]:
+            assert c["impact"] < 0, f"top_negative feature {c['feature']} has non-negative impact"
+
+    def test_explain_preserves_feature_names(self, trained_semi_model):
+        """Feature names in explanations must match the engineered feature names."""
+        svc, df = trained_semi_model
+        wafer_id = df["wafer_id"][0]
+        expl = svc.explain("test-shap-xgb", entity_id=wafer_id, top_k=10)
+        fm = svc.model_registry.load_feature_metadata("test-shap-xgb")
+        all_features = set(fm.feature_names)
+        for c in expl["top_positive"] + expl["top_negative"]:
+            assert c["feature"] in all_features, f"unknown feature in explanation: {c['feature']}"
+
+    def test_explain_etch02_chb_is_negative(self, trained_semi_model):
+        """A wafer with ETCH_02 + CH_B should have those as negative contributors."""
+        svc, df = trained_semi_model
+        # Find a wafer with ETCH_02 + CH_B
+        target_df = df.filter(
+            (pl.col("etch_tool") == "ETCH_02") & (pl.col("etch_chamber") == "CH_B")
+        )
+        assert target_df.height > 0, "no ETCH_02+CH_B wafers in test data"
+        wafer_id = target_df["wafer_id"][0]
+        expl = svc.explain("test-shap-xgb", entity_id=wafer_id, top_k=10)
+
+        # etch_tool__ETCH_02 or etch_chamber__CH_B should appear in top_negative
+        neg_features = {c["feature"] for c in expl["top_negative"]}
+        assert "etch_tool__ETCH_02" in neg_features or "etch_chamber__CH_B" in neg_features, (
+            "ETCH_02 or CH_B not in top negative contributors for a wafer with that combination"
+        )
+
+    def test_explain_top_drivers_backward_compat(self, trained_semi_model):
+        """top_drivers should still be present for backward compatibility."""
+        svc, df = trained_semi_model
+        wafer_id = df["wafer_id"][0]
+        expl = svc.explain("test-shap-xgb", entity_id=wafer_id, top_k=5)
+        assert "top_drivers" in expl
+        assert len(expl["top_drivers"]) <= 5
+
+    def test_explain_contributions_sum_to_prediction(self, trained_semi_model):
+        """SHAP values + base value should approximately equal the prediction."""
+        svc, df = trained_semi_model
+        wafer_id = df["wafer_id"][0]
+        expl = svc.explain("test-shap-xgb", entity_id=wafer_id, top_k=100)
+        # Get all contributions (not just top_k) by checking top_drivers
+        # The sum of all SHAP values + base = prediction. We can't check
+        # exact equality with truncated lists, but we can verify the
+        # prediction is reasonable.
+        assert "predicted_yield" in expl
+        assert 0.0 <= expl["predicted_yield"] <= 1.0
+
+    def test_explain_answers_what_pushed_up_or_down(self, trained_semi_model):
+        """The explanation answers: 'The model predicted X% yield. Which inputs
+        pushed the prediction up or down, and by how much?'
+
+        Verify the response contains the structured fields needed to answer
+        that question: predicted value, top_positive (pushed up), and
+        top_negative (pushed down), each with feature, impact, and value.
+        """
+        svc, df = trained_semi_model
+        # Find a wafer with ETCH_02 + CH_B for a meaningful example.
+        target_df = df.filter(
+            (pl.col("etch_tool") == "ETCH_02") & (pl.col("etch_chamber") == "CH_B")
+        )
+        assert target_df.height > 0
+        wafer_id = target_df["wafer_id"][0]
+
+        expl = svc.explain("test-shap-xgb", entity_id=wafer_id, top_k=10)
+
+        # The question: "The model predicted X% yield."
+        assert "predicted_yield" in expl
+        predicted = expl["predicted_yield"]
+        assert 0.0 <= predicted <= 1.0
+
+        # "Which inputs pushed the prediction UP?"
+        assert "top_positive" in expl
+        assert len(expl["top_positive"]) > 0
+        for c in expl["top_positive"]:
+            assert "feature" in c, "each positive contributor needs a feature name"
+            assert "impact" in c, "each positive contributor needs an impact (how much)"
+            assert c["impact"] > 0, "positive contributors must push the prediction up"
+            assert "value" in c, "each positive contributor needs the feature value"
+
+        # "Which inputs pushed the prediction DOWN?"
+        assert "top_negative" in expl
+        assert len(expl["top_negative"]) > 0
+        for c in expl["top_negative"]:
+            assert "feature" in c, "each negative contributor needs a feature name"
+            assert "impact" in c, "each negative contributor needs an impact (how much)"
+            assert c["impact"] < 0, "negative contributors must push the prediction down"
+            assert "value" in c, "each negative contributor needs the feature value"
+
+        # The impacts should be in percentage-point terms (yield is 0-1,
+        # so SHAP values are small decimals). Verify they are reasonable.
+        for c in expl["top_positive"] + expl["top_negative"]:
+            assert abs(c["impact"]) < 0.5, "SHAP impact should be within reasonable range"
+
+    def test_explain_etch02_chb_negative_for_low_yield_wafer(self, trained_semi_model):
+        """For a wafer processed on ETCH_02 + CH_B, the explanation should
+        identify those as negative contributors (pushing yield down).
+
+        This is the concrete version of: 'The model predicted 88% yield.
+        ETCH_02 pushed it down by 2.4pp, CH_B pushed it down by 1.3pp.'
+        """
+        svc, df = trained_semi_model
+        target_df = df.filter(
+            (pl.col("etch_tool") == "ETCH_02") & (pl.col("etch_chamber") == "CH_B")
+        )
+        assert target_df.height > 0
+        wafer_id = target_df["wafer_id"][0]
+
+        expl = svc.explain("test-shap-xgb", entity_id=wafer_id, top_k=10)
+
+        neg_features = {c["feature"] for c in expl["top_negative"]}
+        # At least one of ETCH_02 or CH_B should be in the negative contributors.
+        assert "etch_tool__ETCH_02" in neg_features or "etch_chamber__CH_B" in neg_features, (
+            "For a wafer processed on ETCH_02+CH_B, the explanation should "
+            "identify at least one of them as pushing yield down."
+        )

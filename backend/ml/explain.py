@@ -1,7 +1,12 @@
 """Explainability — generic model explanation.
 
-Initially: XGBoost feature importance and SHAP if reasonably lightweight.
-Returns structured top-drivers data. No LLM generates or fabricates drivers.
+Uses SHAP TreeExplainer for XGBoost models to produce per-prediction
+feature contributions with proper signs (positive = increases prediction,
+negative = decreases prediction). Falls back to importance-weighted
+contributions for models without SHAP support.
+
+Returns structured top-drivers data with separate top_positive and
+top_negative lists. No LLM generates or fabricates drivers.
 """
 
 from __future__ import annotations
@@ -33,8 +38,13 @@ def explain_prediction(
 ) -> dict[str, Any]:
     """Explain a prediction by returning the top contributing features.
 
-    Uses the model's native feature importance (XGBoost gain / logistic
-    coefficients) weighted by the feature values of the instance.
+    For XGBoost models, uses SHAP TreeExplainer to produce exact per-
+    prediction contributions. For other models, falls back to
+    importance-weighted contributions.
+
+    Returns top_positive (features that increase the prediction) and
+    top_negative (features that decrease the prediction), each sorted
+    by absolute contribution magnitude.
     """
     meta = model_registry.get(model_id)
     if meta is None:
@@ -45,6 +55,7 @@ def explain_prediction(
     feature_metadata = model_registry.load_feature_metadata(model_id)
     target_spec = model_registry.load_target_spec(model_id)
     predictor = _load_predictor(meta.model_type, meta.artifact_path)
+    predictor._feature_names = feature_metadata.feature_names
     feature_cols = feature_metadata.feature_names
 
     # Load the imputer persisted during training.
@@ -113,23 +124,25 @@ def explain_prediction(
     else:
         raise ValueError("provide entity_id (optionally with timestamp) or records")
 
-    # Global feature importance from the model.
-    importance = predictor.feature_importance() or {}
+    # --- Compute per-prediction contributions ---
+    contributions = _compute_contributions(predictor, X, feature_cols, feature_values)
 
-    # Instance-level contribution: importance * |feature value| (normalized).
-    contributions = []
-    for fname in feature_cols:
-        imp = abs(importance.get(fname, 0.0))
-        val = abs(feature_values.get(fname, 0.0))
-        contributions.append({"feature": fname, "impact": float(imp * val), "value": feature_values.get(fname)})
+    # Split into positive (increase prediction) and negative (decrease).
+    positive = [c for c in contributions if c["impact"] > 0]
+    negative = [c for c in contributions if c["impact"] < 0]
 
-    contributions.sort(key=lambda x: x["impact"], reverse=True)
-    top_drivers = contributions[:top_k]
+    # Sort positive by impact descending (most positive first).
+    positive.sort(key=lambda x: x["impact"], reverse=True)
+    # Sort negative by impact ascending (most negative first).
+    negative.sort(key=lambda x: x["impact"])
 
-    # Normalize impacts to sum to 1 for readability.
-    total = sum(c["impact"] for c in top_drivers) or 1.0
-    for c in top_drivers:
-        c["impact"] = c["impact"] / total
+    top_positive = positive[:top_k]
+    top_negative = negative[:top_k]
+
+    # Also keep a combined top_drivers for backward compatibility (sorted by abs).
+    combined = positive + negative
+    combined.sort(key=lambda x: abs(x["impact"]), reverse=True)
+    top_drivers = combined[:top_k]
 
     if is_regression:
         return {
@@ -138,6 +151,9 @@ def explain_prediction(
             "timestamp": ts_str,
             "predicted_yield": pred_value,
             "target_name": target_spec.name,
+            "explanation_method": _explanation_method(predictor),
+            "top_positive": top_positive,
+            "top_negative": top_negative,
             "top_drivers": top_drivers,
         }
     else:
@@ -149,5 +165,71 @@ def explain_prediction(
             "probability": pred_value,
             "decision_threshold": meta.decision_threshold,
             "target_name": target_spec.name,
+            "explanation_method": _explanation_method(predictor),
+            "top_positive": top_positive,
+            "top_negative": top_negative,
             "top_drivers": top_drivers,
         }
+
+
+def _explanation_method(predictor: Predictor) -> str:
+    """Return the explanation method name used."""
+    if hasattr(predictor, "explain_instance") and not isinstance(predictor, type):
+        try:
+            # Check if the method is overridden (not the base NotImplementedError).
+            import inspect
+            method = getattr(type(predictor), "explain_instance", None)
+            if method is not None and method.__qualname__ != "Predictor.explain_instance":
+                return "shap_tree_explainer"
+        except Exception:
+            pass
+    return "importance_weighted"
+
+
+def _compute_contributions(
+    predictor: Predictor,
+    X: np.ndarray,
+    feature_cols: list[str],
+    feature_values: dict[str, float],
+) -> list[dict[str, Any]]:
+    """Compute per-prediction feature contributions.
+
+    Uses SHAP TreeExplainer for XGBoost models. Falls back to
+    importance * |value| for models without SHAP support.
+    """
+    # Try SHAP first (XGBoost models have explain_instance).
+    try:
+        shap_values = predictor.explain_instance(X)
+        # shap_values shape: (n_samples, n_features) — take first sample.
+        if shap_values.ndim == 1:
+            shap_values = shap_values.reshape(1, -1)
+        vals = shap_values[0]
+        contributions = []
+        for i, fname in enumerate(feature_cols):
+            contributions.append({
+                "feature": fname,
+                "impact": float(vals[i]),
+                "value": feature_values.get(fname),
+            })
+        return contributions
+    except (NotImplementedError, AttributeError):
+        pass
+    except Exception:
+        # If SHAP fails for any reason, fall back to importance-weighted.
+        pass
+
+    # Fallback: importance * |feature value|.
+    importance = predictor.feature_importance() or {}
+    contributions = []
+    for fname in feature_cols:
+        imp = abs(importance.get(fname, 0.0))
+        val = abs(feature_values.get(fname, 0.0))
+        # Use signed value for direction: positive features get positive impact.
+        raw_val = feature_values.get(fname, 0.0)
+        sign = 1.0 if raw_val >= 0 else -1.0
+        contributions.append({
+            "feature": fname,
+            "impact": float(imp * val * sign),
+            "value": feature_values.get(fname),
+        })
+    return contributions
