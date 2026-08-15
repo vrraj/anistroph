@@ -1,4 +1,4 @@
-.PHONY: start stop rebuild start-debug start-native stop-native generate-data test logs logs-mcp shell
+.PHONY: start stop rebuild start-debug start-native stop-native generate-data test logs logs-mcp shell start-gpt stop-gpt stop-ngrok
 
 UNAME := $(shell uname)
 
@@ -121,3 +121,74 @@ logs-mcp:
 # Open a shell inside the running webapp container
 shell:
 	docker compose exec webapp bash
+
+# =============================================================================
+# ChatGPT GPT Action (ngrok tunnel)
+# =============================================================================
+
+# Start the native server + ngrok tunnel for ChatGPT GPT Actions.
+# Displays the public URL and the filtered OpenAPI spec URL.
+# Usage: make start-gpt
+start-gpt:
+	@echo "Starting Anistroph for ChatGPT GPT Actions..."
+	@echo ""
+	# Kill any existing process on port 9500
+	@lsof -ti:9500 | xargs kill -9 2>/dev/null || true
+	# Kill any existing ngrok tunnel
+	@pkill -f "ngrok http 9500" 2>/dev/null || true
+	# Start the native server in the background
+	@. .venv/bin/activate && nohup uvicorn backend.main:app --host 0.0.0.0 --port 9500 > /tmp/anistroph_server.log 2>&1 &
+	@echo "Waiting for server to start..."
+	@sleep 3
+	@if ! curl -s http://localhost:9500/health >/dev/null 2>&1; then \
+		echo "Error: server did not start. Check /tmp/anistroph_server.log"; \
+		exit 1; \
+	fi
+	@echo "Server is running on http://localhost:9500"
+	# Start ngrok tunnel in the background
+	@nohup ngrok http 9500 > /tmp/anistroph_ngrok.log 2>&1 &
+	@echo "Waiting for ngrok tunnel..."
+	@sleep 3
+	# Fetch the public URL from ngrok's local API
+	@NGROK_URL=$$(curl -s http://localhost:4040/api/tunnels | .venv/bin/python -c "import sys,json; print(json.load(sys.stdin)['tunnels'][0]['public_url'])" 2>/dev/null); \
+	if [ -z "$$NGROK_URL" ]; then \
+		echo "Error: ngrok tunnel did not start. Check /tmp/anistroph_ngrok.log"; \
+		echo "You may need to run 'ngrok config add-authtoken <token>' first."; \
+		exit 1; \
+	fi; \
+	echo ""; \
+	echo "========================================================"; \
+	echo "  Anistroph is now public for ChatGPT GPT Actions"; \
+	echo "========================================================"; \
+	echo ""; \
+	echo "  Public URL:        $$NGROK_URL"; \
+	echo "  OpenAPI (GPT):     $$NGROK_URL/openapi-gpt.json"; \
+	echo "  OpenAPI (full):    $$NGROK_URL/openapi.json"; \
+	echo "  Health:            $$NGROK_URL/health"; \
+	echo ""; \
+	echo "  To configure ChatGPT:"; \
+	echo "    1. Go to https://chat.openai.com/gpts"; \
+	echo "    2. Create a new GPT -> Configure -> Actions"; \
+	echo "    3. Import from URL: $$NGROK_URL/openapi-gpt.json"; \
+	echo "    4. No auth required"; \
+	echo ""; \
+	echo "  To stop:  make stop-gpt"; \
+	echo "========================================================"; \
+	echo ""; \
+	echo "  Server log:  /tmp/anistroph_server.log"; \
+	echo "  Ngrok log:   /tmp/anistroph_ngrok.log"; \
+	echo "  Ngrok dashboard: http://localhost:4040"
+
+# Stop both the ngrok tunnel and the native server.
+# Usage: make stop-gpt
+stop-gpt:
+	@echo "Stopping Anistroph GPT Action tunnel..."
+	@pkill -f "ngrok http 9500" 2>/dev/null && echo "  ngrok tunnel stopped." || echo "  ngrok was not running."
+	@lsof -ti:9500 | xargs kill -9 2>/dev/null && echo "  server stopped." || echo "  server was not running."
+	@echo "Anistroph GPT Action stopped. The public URL is no longer accessible."
+
+# Stop only the ngrok tunnel (keep the local server running).
+# Usage: make stop-ngrok
+stop-ngrok:
+	@echo "Stopping ngrok tunnel only (server stays on localhost:9500)..."
+	@pkill -f "ngrok http 9500" 2>/dev/null && echo "  ngrok tunnel stopped. Public URL no longer accessible." || echo "  ngrok was not running."

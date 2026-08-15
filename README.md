@@ -110,6 +110,66 @@ Wafer Yield
 
 Synthetic wafer manufacturing data representing process history across tools, chambers, recipes, and operating conditions. ~30,000 wafer rows. Wafer-level regression target.
 
+## AI Integration — Claude and ChatGPT
+
+Anistroph exposes runtime analysis and inference through two AI integration
+protocols. Both call the same underlying Python services. Neither exposes
+model training.
+
+| | Claude (MCP) | ChatGPT (GPT Actions) |
+|---|---|---|
+| **Protocol** | Model Context Protocol (stdio) | OpenAPI / REST |
+| **Transport** | Local subprocess (stdio) | Public HTTPS via ngrok tunnel |
+| **Scope** | 9 runtime tools | 13 runtime REST endpoints |
+| **Training exposed?** | No | No |
+| **Setup** | Claude Desktop config JSON | Custom GPT → Actions → Import URL |
+
+### Claude Desktop (MCP stdio)
+
+No public URL needed — MCP runs as a local subprocess.
+
+```json
+{
+  "mcpServers": {
+    "anistroph": {
+      "command": "/Users/raj/Documents/Raj/anistroph/.venv/bin/python",
+      "args": ["-m", "backend.integrations.mcp.server"],
+      "cwd": "/Users/raj/Documents/Raj/anistroph"
+    }
+  }
+}
+```
+
+Then ask Claude: *"Predict wafer yield for WAFER_015000 and explain what pushed it up or down."*
+
+### ChatGPT (GPT Actions via ngrok)
+
+ChatGPT runs in the cloud and needs a public URL. Use ngrok to temporarily
+tunnel your local server.
+
+```bash
+# One-time setup
+brew install ngrok
+ngrok config add-authtoken <your-token>
+
+# Start server + tunnel
+make start-gpt
+
+# Output shows the public URL + OpenAPI spec URL
+# Paste the OpenAPI URL into ChatGPT: GPTs → Create → Configure → Actions → Import from URL
+
+# Stop when done (closes the public tunnel)
+make stop-gpt
+```
+
+The filtered OpenAPI spec at `/openapi-gpt.json` excludes training and
+dataset registration — only runtime prediction, explanation, and analysis
+are exposed. The ngrok URL is temporary and only works while `make start-gpt`
+is running.
+
+See **[README_SETUP_USAGE.md](README_SETUP_USAGE.md)** for detailed setup
+instructions for both protocols.
+
 ## Why this exists
 
 Predictive analytics problems across different domains share a common lifecycle: data ingestion, feature engineering, target construction, model training, evaluation, persistence, inference, and explanation. Most implementations either build a domain-specific application that cannot extend to new problems, or build a generic platform that is too abstract to be useful.

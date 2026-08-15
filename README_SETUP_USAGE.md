@@ -6,6 +6,129 @@ through REST, Python, MCP, and the web UI.
 
 ---
 
+## 0. AI Integration — Claude (MCP) and ChatGPT (GPT Actions)
+
+Anistroph exposes runtime analysis and inference through two AI integration
+protocols. Both call the same underlying Python services. Neither exposes
+model training — training is an admin operation.
+
+### Protocol Comparison
+
+| | Claude (MCP) | ChatGPT (GPT Actions) |
+|---|---|---|
+| **Protocol** | Model Context Protocol (stdio) | OpenAPI / REST |
+| **Transport** | Local subprocess (stdio) | Public HTTPS via ngrok tunnel |
+| **Spec URL** | N/A (tools defined in Python) | `https://<ngrok-url>/openapi-gpt.json` |
+| **Scope** | 9 runtime tools | 13 runtime REST endpoints |
+| **Training exposed?** | No | No |
+| **Setup** | Claude Desktop config JSON | Custom GPT → Actions → Import URL |
+| **Best for** | Local analysis, IDE integration | Cloud-based conversational analysis |
+
+### What is exposed (runtime only)
+
+Both protocols expose the same capabilities:
+
+| Capability | MCP Tool | REST Endpoint |
+|-----------|----------|---------------|
+| List datasets | `anistroph_list_datasets` | `GET /datasets` |
+| Profile dataset | `anistroph_profile_dataset` | `GET /datasets/{id}/profile` |
+| Slice data | `anistroph_slice_data` | `POST /analysis/slice` |
+| Compare data | `anistroph_compare_data` | `POST /analysis/compare` |
+| Find interesting slices | `anistroph_find_interesting_slices` | *(via /analysis/slice)* |
+| List models | `anistroph_list_models` | `GET /models` |
+| Get model metrics | `anistroph_get_model_metrics` | `GET /models/{id}/metrics` |
+| Predict | `anistroph_predict` | `POST /predictions` |
+| Explain (SHAP) | `anistroph_explain_prediction` | `POST /predictions/explain` |
+
+### Claude Desktop (MCP stdio)
+
+MCP uses a local stdio subprocess — no public URL needed.
+
+1. Add to `~/Library/Application Support/Claude/claude_desktop_config.json`:
+
+```json
+{
+  "mcpServers": {
+    "anistroph": {
+      "command": "/Users/raj/Documents/Raj/anistroph/.venv/bin/python",
+      "args": ["-m", "backend.integrations.mcp.server"],
+      "cwd": "/Users/raj/Documents/Raj/anistroph"
+    }
+  }
+}
+```
+
+2. Restart Claude Desktop.
+
+3. Ask Claude:
+> "List all Anistroph datasets"
+> "Predict wafer yield for WAFER_015000 using model wafer-yield-xgb-v001"
+> "Explain that prediction — what pushed the yield up or down?"
+> "Find the worst yield combinations in the semiconductor dataset"
+
+### ChatGPT (GPT Actions via ngrok)
+
+ChatGPT runs in the cloud and needs a public URL. Use ngrok to temporarily
+tunnel your local server.
+
+1. Install ngrok (one-time):
+```bash
+brew install ngrok
+ngrok config add-authtoken <your-token>   # get a free token at ngrok.com
+```
+
+2. Start the server + tunnel:
+```bash
+make start-gpt
+```
+
+Output:
+```
+========================================================
+  Anistroph is now public for ChatGPT GPT Actions
+========================================================
+
+  Public URL:        https://abc123.ngrok.app
+  OpenAPI (GPT):     https://abc123.ngrok.app/openapi-gpt.json
+  Health:            https://abc123.ngrok.app/health
+
+  To configure ChatGPT:
+    1. Go to https://chat.openai.com/gpts
+    2. Create a new GPT -> Configure -> Actions
+    3. Import from URL: https://abc123.ngrok.app/openapi-gpt.json
+    4. No auth required
+
+  To stop:  make stop-gpt
+========================================================
+```
+
+3. In ChatGPT, create a Custom GPT:
+   - Go to **https://chat.openai.com/gpts** → **Create**
+   - **Configure** → **Actions** → **Import from URL**
+   - Paste the OpenAPI URL from `make start-gpt` output
+   - No authentication required
+   - Save
+
+4. Ask your GPT:
+> "List all Anistroph datasets"
+> "Predict wafer yield for WAFER_015000 using model wafer-yield-xgb-v001"
+> "Explain that prediction with SHAP"
+> "Slice the semiconductor dataset by etch tool and chamber"
+
+5. Stop the tunnel when done (the public URL becomes inaccessible):
+```bash
+make stop-gpt       # stops both ngrok + server
+make stop-ngrok     # stops only ngrok (server stays on localhost)
+```
+
+> **Security:** The ngrok URL is temporary and random. It only works while
+> `make start-gpt` is running. Running `make stop-gpt` immediately closes
+> the public tunnel. The filtered OpenAPI spec (`/openapi-gpt.json`)
+> excludes training and dataset registration — only runtime prediction,
+> explanation, and analysis are exposed.
+
+---
+
 ## 1. Installation
 
 ### Local (native)
