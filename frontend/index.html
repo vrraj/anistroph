@@ -1,191 +1,445 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Anistroph — Predictive Analytics</title>
-<style>
-* { margin: 0; padding: 0; box-sizing: border-box; }
-body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #0f1117; color: #e0e0e0; }
-header { background: #161821; padding: 12px 24px; border-bottom: 1px solid #2a2d3a; display: flex; align-items: center; gap: 16px; }
-header h1 { font-size: 18px; color: #7c9eff; }
-nav { display: flex; gap: 4px; }
-nav button { background: none; border: none; color: #888; padding: 8px 16px; cursor: pointer; font-size: 14px; border-radius: 6px; }
-nav button:hover { background: #1e2030; color: #ccc; }
-nav button.active { background: #2a2d3a; color: #7c9eff; }
-main { padding: 24px; max-width: 1200px; margin: 0 auto; }
-.panel { display: none; }
-.panel.active { display: block; }
-.card { background: #161821; border: 1px solid #2a2d3a; border-radius: 8px; padding: 20px; margin-bottom: 16px; }
-.card h2 { font-size: 16px; color: #7c9eff; margin-bottom: 12px; }
-label { display: block; font-size: 13px; color: #888; margin-bottom: 4px; }
-input, select, textarea { width: 100%; background: #0f1117; border: 1px solid #2a2d3a; color: #e0e0e0; padding: 8px 12px; border-radius: 6px; font-size: 14px; margin-bottom: 12px; }
-button.btn { background: #7c9eff; color: #0f1117; border: none; padding: 10px 20px; border-radius: 6px; cursor: pointer; font-size: 14px; font-weight: 600; }
-button.btn:hover { background: #6b8aef; }
-button.btn:disabled { background: #444; cursor: not-allowed; }
-pre { background: #0a0b10; border: 1px solid #2a2d3a; border-radius: 6px; padding: 12px; overflow-x: auto; font-size: 12px; max-height: 400px; overflow-y: auto; }
-table { width: 100%; border-collapse: collapse; font-size: 13px; }
-th, td { text-align: left; padding: 8px 12px; border-bottom: 1px solid #2a2d3a; }
-th { color: #888; font-weight: 600; }
-.row { display: flex; gap: 12px; }
-.row > * { flex: 1; }
-.metric { display: inline-block; background: #1e2030; padding: 4px 12px; border-radius: 4px; margin: 2px; font-size: 13px; }
-.metric b { color: #7c9eff; }
-.risk-high { color: #ff6b6b; font-weight: bold; }
-.risk-med { color: #ffd93d; font-weight: bold; }
-.risk-low { color: #6bcf7f; font-weight: bold; }
-#status { margin-left: auto; font-size: 12px; color: #888; }
-.driver { padding: 6px 0; border-bottom: 1px solid #1e2030; }
-.driver .feat { color: #7c9eff; } .driver .imp { color: #888; float: right; }
-</style>
+<link rel="stylesheet" href="/static/assets/style.css">
 </head>
 <body>
-<header>
-<h1>Anistroph</h1>
-<nav>
-<button class="nav-btn active" data-panel="datasets">Datasets</button>
-<button class="nav-btn" data-panel="analysis">Analysis</button>
-<button class="nav-btn" data-panel="training">Training</button>
-<button class="nav-btn" data-panel="models">Models</button>
-<button class="nav-btn" data-panel="prediction">Prediction</button>
-</nav>
-<span id="status">checking...</span>
-</header>
-<main>
+<div class="top-bar">
+<span class="top-bar-title">Anistroph</span>
+<span class="top-bar-status" id="status">checking...</span>
+</div>
+<div class="shell">
+<main class="main">
+  <div class="page-header">
+    <div>
+      <h1 class="page-title">Anistroph: Predictive Analytics Platform</h1>
+      <p class="page-subtitle">Train models, predict outcomes, and explain predictions with SHAP</p>
+    </div>
+  </div>
 
-<!-- Datasets Panel -->
-<div class="panel active" id="panel-datasets">
-<div class="card">
-<h2>Register Dataset</h2>
-<div class="row">
-<div><label>Config YAML path</label><input id="ds-config" value="datasets/predictive_maintenance/dataset.yaml"></div>
-<div><label>Source data path</label><input id="ds-source" value="data/synthetic/predictive_maintenance.csv"></div>
-</div>
-<button class="btn" onclick="registerDataset()">Register</button>
-</div>
-<div class="card"><h2>Registered Datasets</h2><div id="ds-list"><pre>Click "Register" or refresh to list datasets.</pre></div></div>
-<div class="card"><h2>Dataset Profile</h2>
-<label>Dataset ID</label><input id="ds-profile-id" placeholder="predictive_maintenance">
-<button class="btn" onclick="profileDataset()">Profile</button>
-<pre id="ds-profile-result"></pre>
-</div>
-</div>
+  <section class="card">
+    <div class="tabs">
+      <button class="tab-button active" data-tab-target="datasets">Datasets</button>
+      <button class="tab-button" data-tab-target="analysis">Analysis</button>
+      <button class="tab-button" data-tab-target="training">Training</button>
+      <button class="tab-button" data-tab-target="models">Models</button>
+      <button class="tab-button" data-tab-target="prediction">Prediction</button>
+    </div>
 
-<!-- Analysis Panel -->
-<div class="panel" id="panel-analysis">
-<div class="card"><h2>Slice Data</h2>
-<div class="row">
-<div><label>Dataset ID</label><input id="sl-dataset" value="predictive_maintenance"></div>
-<div><label>Dimensions (comma-sep)</label><input id="sl-dims" value="machine_type"></div>
-</div>
-<div class="row">
-<div><label>Metric</label><input id="sl-metric" value="failure"></div>
-<div><label>Aggregation</label><select id="sl-agg"><option>mean</option><option>sum</option><option>count</option><option>max</option><option>min</option><option>std</option></select></div>
-</div>
-<button class="btn" onclick="sliceData()">Slice</button>
-<pre id="sl-result"></pre>
-</div>
-<div class="card"><h2>Compare Data</h2>
-<div class="row">
-<div><label>Dataset ID</label><input id="cmp-dataset" value="predictive_maintenance"></div>
-<div><label>Dimension</label><input id="cmp-dim" value="machine_type"></div>
-</div>
-<div class="row">
-<div><label>Metric</label><input id="cmp-metric" value="failure"></div>
-<div><label>Aggregation</label><select id="cmp-agg"><option>mean</option><option>sum</option><option>count</option></select></div>
-</div>
-<button class="btn" onclick="compareData()">Compare</button>
-<pre id="cmp-result"></pre>
-</div>
-</div>
+    <!-- Datasets Tab -->
+    <div id="datasets-panel" data-tab-panel="datasets">
+      <div class="card">
+        <h2>Register Dataset</h2>
+        <div class="row">
+          <div><label>Config YAML path</label><input id="ds-config" value="datasets/predictive_maintenance/dataset.yaml"></div>
+          <div><label>Source data path</label><input id="ds-source" value="data/synthetic/predictive_maintenance.csv"></div>
+        </div>
+        <button onclick="registerDataset()">Register</button>
+      </div>
+      <div class="card">
+        <h2>Registered Datasets</h2>
+        <button onclick="listDatasets()">Refresh</button>
+        <div id="ds-list" style="margin-top:16px;"><div class="muted">Click refresh to list datasets.</div></div>
+      </div>
+      <div class="card">
+        <h2>Dataset Profile</h2>
+        <label>Dataset ID</label><input id="ds-profile-id" placeholder="predictive_maintenance">
+        <button onclick="profileDataset()">Profile</button>
+        <div id="ds-profile-result" style="margin-top:16px;"></div>
+      </div>
+    </div>
 
-<!-- Training Panel -->
-<div class="panel" id="panel-training">
-<div class="card"><h2>Train Model</h2>
-<div class="row">
-<div><label>Dataset ID</label><input id="tr-dataset" value="predictive_maintenance"></div>
-<div><label>Target name</label><input id="tr-target" value="failure_within_horizon"></div>
-</div>
-<div class="row">
-<div><label>Model type</label><select id="tr-type"><option>xgboost</option><option>logistic_regression</option></select></div>
-<div><label>Model ID (optional)</label><input id="tr-modelid" placeholder="auto-generated"></div>
-</div>
-<button class="btn" onclick="trainModel()">Train</button>
-<pre id="tr-result">Training results will appear here.</pre>
-</div>
-</div>
+    <!-- Analysis Tab -->
+    <div id="analysis-panel" data-tab-panel="analysis" class="panel-hidden">
+      <div class="card">
+        <h2>Slice Data</h2>
+        <div class="row">
+          <div><label>Dataset ID</label><input id="sl-dataset" value="predictive_maintenance"></div>
+          <div><label>Dimensions (comma-sep)</label><input id="sl-dims" value="machine_type"></div>
+        </div>
+        <div class="row">
+          <div><label>Metric</label><input id="sl-metric" value="failure"></div>
+          <div><label>Aggregation</label>
+            <select id="sl-agg"><option>mean</option><option>sum</option><option>count</option><option>max</option><option>min</option><option>std</option></select>
+          </div>
+        </div>
+        <button onclick="sliceData()">Slice</button>
+        <div id="sl-result" style="margin-top:16px;"></div>
+      </div>
+      <div class="card">
+        <h2>Compare Data</h2>
+        <div class="row">
+          <div><label>Dataset ID</label><input id="cmp-dataset" value="predictive_maintenance"></div>
+          <div><label>Dimension</label><input id="cmp-dim" value="machine_type"></div>
+        </div>
+        <div class="row">
+          <div><label>Metric</label><input id="cmp-metric" value="failure"></div>
+          <div><label>Aggregation</label>
+            <select id="cmp-agg"><option>mean</option><option>sum</option><option>count</option></select>
+          </div>
+        </div>
+        <button onclick="compareData()">Compare</button>
+        <div id="cmp-result" style="margin-top:16px;"></div>
+      </div>
+    </div>
 
-<!-- Models Panel -->
-<div class="panel" id="panel-models">
-<div class="card"><h2>Registered Models</h2><button class="btn" onclick="listModels()">Refresh</button><div id="md-list"></div></div>
-<div class="card"><h2>Model Details</h2>
-<label>Model ID</label><input id="md-id" placeholder="model-id">
-<button class="btn" onclick="getModel()">Get Details</button>
-<pre id="md-result"></pre>
-</div>
-</div>
+    <!-- Training Tab -->
+    <div id="training-panel" data-tab-panel="training" class="panel-hidden">
+      <div class="card">
+        <h2>Train Model</h2>
+        <div class="row">
+          <div><label>Dataset ID</label><input id="tr-dataset" value="predictive_maintenance"></div>
+          <div><label>Target name</label><input id="tr-target" value="failure_within_horizon"></div>
+        </div>
+        <div class="row">
+          <div><label>Model type</label>
+            <select id="tr-type">
+              <option>xgboost</option>
+              <option>logistic_regression</option>
+              <option>xgboost_regressor</option>
+              <option>linear_regression</option>
+            </select>
+          </div>
+          <div><label>Model ID (optional)</label><input id="tr-modelid" placeholder="auto-generated"></div>
+        </div>
+        <button onclick="trainModel()">Train</button>
+        <div id="tr-result" style="margin-top:16px;"><div class="muted">Training results will appear here.</div></div>
+      </div>
+    </div>
 
-<!-- Prediction Panel -->
-<div class="panel" id="panel-prediction">
-<div class="card"><h2>Predict</h2>
-<div class="row">
-<div><label>Model ID</label><input id="pr-model" placeholder="model-id"></div>
-<div><label>Entity ID</label><input id="pr-entity" value="TOOL_000"></div>
-</div>
-<div class="row"><div><label>Timestamp</label><input id="pr-timestamp" value="2026-07-15T12:00:00"></div></div>
-<button class="btn" onclick="predict()">Predict</button>
-<div id="pr-result"></div>
-</div>
-<div class="card"><h2>Explain Prediction</h2>
-<button class="btn" onclick="explain()">Explain</button>
-<div id="pr-explain"></div>
-</div>
-</div>
+    <!-- Models Tab -->
+    <div id="models-panel" data-tab-panel="models" class="panel-hidden">
+      <div class="card">
+        <h2>Registered Models</h2>
+        <button onclick="listModels()">Refresh</button>
+        <div id="md-list" style="margin-top:16px;"></div>
+      </div>
+      <div class="card">
+        <h2>Model Details</h2>
+        <label>Model ID</label><input id="md-id" placeholder="model-id">
+        <button onclick="getModel()">Get Details</button>
+        <div id="md-result" style="margin-top:16px;"></div>
+      </div>
+      <div class="card">
+        <h2>Model Metrics</h2>
+        <label>Model ID</label><input id="md-metrics-id" placeholder="model-id">
+        <button onclick="getModelMetrics()">Get Metrics</button>
+        <div id="md-metrics-result" style="margin-top:16px;"></div>
+      </div>
+    </div>
 
+    <!-- Prediction Tab -->
+    <div id="prediction-panel" data-tab-panel="prediction" class="panel-hidden">
+      <div class="card">
+        <h2>Predict</h2>
+        <div class="row">
+          <div><label>Model ID</label><input id="pr-model" placeholder="model-id"></div>
+          <div><label>Entity ID</label><input id="pr-entity" value="TOOL_000"></div>
+        </div>
+        <div class="row">
+          <div><label>Timestamp (optional)</label><input id="pr-timestamp" placeholder="2026-07-15T12:00:00"></div>
+        </div>
+        <button onclick="predict()">Predict</button>
+        <div id="pr-result" style="margin-top:16px;"></div>
+      </div>
+      <div class="card">
+        <h2>Explain Prediction (SHAP)</h2>
+        <label>Top K features</label>
+        <input id="pr-topk" type="number" value="10">
+        <button onclick="explain()">Explain</button>
+        <div id="pr-explain" style="margin-top:16px;"></div>
+      </div>
+    </div>
+  </section>
 </main>
+</div>
+
 <script>
 const API = '';
+
 async function api(path, method='GET', body=null) {
   const opts = {method, headers: {'Content-Type': 'application/json'}};
   if (body) opts.body = JSON.stringify(body);
   const r = await fetch(API + path, opts);
-  if (!r.ok) { const e = await r.json().catch(()=>({detail: r.statusText})); throw new Error(e.detail||r.statusText); }
+  if (!r.ok) {
+    const e = await r.json().catch(() => ({detail: r.statusText}));
+    throw new Error(e.detail || r.statusText);
+  }
   return r.json();
 }
-function pre(id, data) { document.getElementById(id).textContent = typeof data === 'string' ? data : JSON.stringify(data, null, 2); }
+
+function pre(id, data) {
+  const el = document.getElementById(id);
+  el.innerHTML = '<pre>' + (typeof data === 'string' ? data : JSON.stringify(data, null, 2)) + '</pre>';
+}
+
 function tbl(data) {
-  if (!Array.isArray(data) || !data.length) return '<pre>No data.</pre>';
+  if (!Array.isArray(data) || !data.length) return '<div class="muted">No data.</div>';
   const cols = Object.keys(data[0]);
-  let h = '<table><tr>' + cols.map(c=>`<th>${c}</th>`).join('') + '</tr>';
-  h += data.map(r=>'<tr>' + cols.map(c=>`<td>${JSON.stringify(r[c]??'')}</td>`).join('') + '</tr>').join('');
+  let h = '<table><tr>' + cols.map(c => `<th>${c}</th>`).join('') + '</tr>';
+  h += data.map(r => '<tr>' + cols.map(c => `<td>${JSON.stringify(r[c] ?? '')}</td>`).join('') + '</tr>').join('');
   return h + '</table>';
 }
-// Nav
-document.querySelectorAll('.nav-btn').forEach(b => b.onclick = () => {
-  document.querySelectorAll('.nav-btn').forEach(x=>x.classList.remove('active'));
-  document.querySelectorAll('.panel').forEach(x=>x.classList.remove('active'));
-  b.classList.add('active');
-  document.getElementById('panel-'+b.dataset.panel).classList.add('active');
+
+function banner(text, type='error') {
+  return `<div class="${type}-banner">${text}</div>`;
+}
+
+// Tabs
+document.querySelectorAll('.tab-button').forEach(btn => {
+  btn.onclick = () => {
+    document.querySelectorAll('.tab-button').forEach(b => b.classList.remove('active'));
+    document.querySelectorAll('[data-tab-panel]').forEach(p => p.classList.add('panel-hidden'));
+    btn.classList.add('active');
+    const target = btn.dataset.tabTarget;
+    document.getElementById(target + '-panel').classList.remove('panel-hidden');
+  };
 });
-// Health
-api('/health').then(()=>{ document.getElementById('status').textContent = 'connected'; document.getElementById('status').style.color='#6bcf7f'; }).catch(()=>{ document.getElementById('status').textContent='offline'; document.getElementById('status').style.color='#ff6b6b'; });
+
+// Health check
+api('/health').then(() => {
+  const s = document.getElementById('status');
+  s.innerHTML = '<span class="status-badge connected">connected</span>';
+}).catch(() => {
+  const s = document.getElementById('status');
+  s.innerHTML = '<span class="status-badge offline">offline</span>';
+});
+
 // Datasets
-async function registerDataset() { try { pre('ds-list','Registering...'); const r = await api('/datasets','POST',{config_path:ds_config.value, source_path:ds_source.value}); pre('ds-list', r); listDatasets(); } catch(e){ pre('ds-list','Error: '+e.message); } }
-async function listDatasets() { try { const r = await api('/datasets'); document.getElementById('ds-list').innerHTML = tbl(r); } catch(e){ pre('ds-list','Error: '+e.message); } }
-async function profileDataset() { try { const r = await api('/datasets/'+ds_profile_id.value+'/profile'); pre('ds-profile-result', r); } catch(e){ pre('ds-profile-result','Error: '+e.message); } }
+async function registerDataset() {
+  const el = document.getElementById('ds-list');
+  el.innerHTML = '<div class="muted">Registering...</div>';
+  try {
+    const r = await api('/datasets', 'POST', {config_path: ds_config.value, source_path: ds_source.value});
+    el.innerHTML = banner('Dataset registered successfully.', 'success');
+    listDatasets();
+  } catch (e) {
+    el.innerHTML = banner('Error: ' + e.message);
+  }
+}
+
+async function listDatasets() {
+  const el = document.getElementById('ds-list');
+  try {
+    const r = await api('/datasets');
+    if (Array.isArray(r) && r.length) {
+      el.innerHTML = tbl(r.map(d => ({
+        dataset_id: d.dataset_id || d.id || '?',
+        name: d.name || '',
+        rows: d.row_count || d.rows || '?',
+        entity_key: d.entity_key || '',
+        time_key: d.time_key || ''
+      })));
+    } else {
+      el.innerHTML = '<div class="muted">No datasets registered.</div>';
+    }
+  } catch (e) {
+    el.innerHTML = banner('Error: ' + e.message);
+  }
+}
+
+async function profileDataset() {
+  const el = document.getElementById('ds-profile-result');
+  el.innerHTML = '<div class="muted">Profiling...</div>';
+  try {
+    const r = await api('/datasets/' + ds_profile_id.value + '/profile');
+    el.innerHTML = '<pre>' + JSON.stringify(r, null, 2) + '</pre>';
+  } catch (e) {
+    el.innerHTML = banner('Error: ' + e.message);
+  }
+}
+
 // Analysis
-async function sliceData() { try { const r = await api('/analysis/slice','POST',{dataset_id:sl_dataset.value, dimensions:sl_dims.value.split(',').map(s=>s.trim()), metric:sl_metric.value, aggregation:sl_agg.value}); document.getElementById('sl-result').innerHTML = tbl(r); } catch(e){ pre('sl-result','Error: '+e.message); } }
-async function compareData() { try { const r = await api('/analysis/compare','POST',{dataset_id:cmp_dataset.value, dimension:cmp_dim.value, metric:cmp_metric.value, aggregation:cmp_agg.value}); document.getElementById('cmp-result').innerHTML = tbl(r); } catch(e){ pre('cmp-result','Error: '+e.message); } }
+async function sliceData() {
+  const el = document.getElementById('sl-result');
+  el.innerHTML = '<div class="muted">Slicing...</div>';
+  try {
+    const r = await api('/analysis/slice', 'POST', {
+      dataset_id: sl_dataset.value,
+      dimensions: sl_dims.value.split(',').map(s => s.trim()),
+      metric: sl_metric.value,
+      aggregation: sl_agg.value
+    });
+    el.innerHTML = tbl(r.slices || r);
+  } catch (e) {
+    el.innerHTML = banner('Error: ' + e.message);
+  }
+}
+
+async function compareData() {
+  const el = document.getElementById('cmp-result');
+  el.innerHTML = '<div class="muted">Comparing...</div>';
+  try {
+    const r = await api('/analysis/compare', 'POST', {
+      dataset_id: cmp_dataset.value,
+      dimension: cmp_dim.value,
+      metric: cmp_metric.value,
+      aggregation: cmp_agg.value
+    });
+    el.innerHTML = tbl(r.comparisons || r);
+  } catch (e) {
+    el.innerHTML = banner('Error: ' + e.message);
+  }
+}
+
 // Training
-async function trainModel() { try { pre('tr-result','Training...'); const body={dataset_id:tr_dataset.value, target_name:tr_target.value, model_type:tr_type.value}; if(tr_modelid.value) body.model_id=tr_modelid.value; const r = await api('/models/train','POST',body); pre('tr-result', r); } catch(e){ pre('tr-result','Error: '+e.message); } }
+async function trainModel() {
+  const el = document.getElementById('tr-result');
+  el.innerHTML = '<div class="muted">Training... this may take a moment.</div>';
+  try {
+    const body = {
+      dataset_id: tr_dataset.value,
+      target_name: tr_target.value,
+      model_type: tr_type.value
+    };
+    if (tr_modelid.value) body.model_id = tr_modelid.value;
+    const r = await api('/models/train', 'POST', body);
+    el.innerHTML = banner('Model trained: ' + (r.model_id || 'unknown'), 'success');
+    el.innerHTML += '<pre>' + JSON.stringify(r, null, 2) + '</pre>';
+  } catch (e) {
+    el.innerHTML = banner('Error: ' + e.message);
+  }
+}
+
 // Models
-async function listModels() { try { const r = await api('/models'); document.getElementById('md-list').innerHTML = tbl(r); } catch(e){ document.getElementById('md-list').innerHTML='<pre>Error: '+e.message+'</pre>'; } }
-async function getModel() { try { const r = await api('/models/'+md_id.value); pre('md-result', r); } catch(e){ pre('md-result','Error: '+e.message); } }
+async function listModels() {
+  const el = document.getElementById('md-list');
+  try {
+    const r = await api('/models');
+    if (Array.isArray(r) && r.length) {
+      el.innerHTML = r.map(m => `
+        <div class="result-card" style="margin-bottom:12px;">
+          <div class="result-header">
+            <div>
+              <div class="result-title">${m.model_id || m.id || '?'}</div>
+              <span class="category-tag">${m.model_type || '?'}</span>
+              ${m.task_type ? `<span class="source-pill ${m.task_type}">${m.task_type}</span>` : ''}
+            </div>
+          </div>
+        </div>
+      `).join('');
+    } else {
+      el.innerHTML = '<div class="muted">No models registered.</div>';
+    }
+  } catch (e) {
+    el.innerHTML = banner('Error: ' + e.message);
+  }
+}
+
+async function getModel() {
+  const el = document.getElementById('md-result');
+  try {
+    const r = await api('/models/' + md_id.value);
+    el.innerHTML = '<pre>' + JSON.stringify(r, null, 2) + '</pre>';
+  } catch (e) {
+    el.innerHTML = banner('Error: ' + e.message);
+  }
+}
+
+async function getModelMetrics() {
+  const el = document.getElementById('md-metrics-result');
+  try {
+    const r = await api('/models/' + md_metrics_id.value + '/metrics');
+    if (r.metrics) {
+      let h = '<div class="metric-cards">';
+      for (const [k, v] of Object.entries(r.metrics)) {
+        h += `<div class="metric-card"><span class="metric-label">${k}</span><span class="metric-value">${typeof v === 'number' ? v.toFixed(4) : v}</span></div>`;
+      }
+      h += '</div>';
+      el.innerHTML = h;
+    } else {
+      el.innerHTML = '<pre>' + JSON.stringify(r, null, 2) + '</pre>';
+    }
+  } catch (e) {
+    el.innerHTML = banner('Error: ' + e.message);
+  }
+}
+
 // Prediction
-async function predict() { try { const r = await api('/predictions','POST',{model_id:pr_model.value, entity_id:pr_entity.value, timestamp:pr_timestamp.value}); const risk = r.probability >= 0.66 ? 'HIGH' : r.probability >= 0.33 ? 'MEDIUM' : 'LOW'; const cls = risk==='HIGH'?'risk-high':risk==='MEDIUM'?'risk-med':'risk-low'; document.getElementById('pr-result').innerHTML = `<div class="card"><p>Probability: <b>${(r.probability*100).toFixed(1)}%</b></p><p>Risk: <span class="${cls}">${risk}</span></p><p>Prediction: ${r.prediction}</p><p>Threshold: ${r.decision_threshold}</p></div>`; } catch(e){ document.getElementById('pr-result').innerHTML='<pre>Error: '+e.message+'</pre>'; } }
-async function explain() { try { const r = await api('/predictions/explain','POST',{model_id:pr_model.value, entity_id:pr_entity.value, timestamp:pr_timestamp.value, top_k:10}); let h = `<div class="card"><p>Probability: <b>${(r.probability*100).toFixed(1)}%</b></p>`; h += '<h3>Top Drivers</h3>'; r.top_drivers.forEach(d=>{ h += `<div class="driver"><span class="feat">${d.feature}</span><span class="imp">${(d.impact*100).toFixed(1)}%</span></div>`; }); h += '</div>'; document.getElementById('pr-explain').innerHTML = h; } catch(e){ document.getElementById('pr-explain').innerHTML='<pre>Error: '+e.message+'</pre>'; } }
-// Auto-load
-listDatasets(); listModels();
+async function predict() {
+  const el = document.getElementById('pr-result');
+  el.innerHTML = '<div class="muted">Predicting...</div>';
+  try {
+    const body = {model_id: pr_model.value, entity_id: pr_entity.value};
+    if (pr_timestamp.value) body.timestamp = pr_timestamp.value;
+    const r = await api('/predictions', 'POST', body);
+    let h = '<div class="result-card">';
+    h += `<div class="result-title">Prediction for ${r.entity_id || pr_entity.value}</div>`;
+    h += '<div class="result-metrics">';
+    if (r.prediction !== undefined) h += `<div class="result-metric"><span class="result-metric-label">Prediction</span><span class="result-metric-value">${r.prediction}</span></div>`;
+    if (r.probability !== undefined) h += `<div class="result-metric"><span class="result-metric-label">Probability</span><span class="result-metric-value">${(r.probability * 100).toFixed(1)}%</span></div>`;
+    if (r.predicted_yield !== undefined) h += `<div class="result-metric"><span class="result-metric-label">Predicted Yield</span><span class="result-metric-value">${(r.predicted_yield * 100).toFixed(2)}%</span></div>`;
+    if (r.actual_yield !== undefined) h += `<div class="result-metric"><span class="result-metric-label">Actual Yield</span><span class="result-metric-value">${(r.actual_yield * 100).toFixed(2)}%</span></div>`;
+    if (r.threshold !== undefined) h += `<div class="result-metric"><span class="result-metric-label">Threshold</span><span class="result-metric-value">${(r.threshold * 100).toFixed(1)}%</span></div>`;
+    h += '</div>';
+    h += `<pre style="margin-top:12px;">${JSON.stringify(r, null, 2)}</pre>`;
+    h += '</div>';
+    el.innerHTML = h;
+  } catch (e) {
+    el.innerHTML = banner('Error: ' + e.message);
+  }
+}
+
+async function explain() {
+  const el = document.getElementById('pr-explain');
+  el.innerHTML = '<div class="muted">Explaining with SHAP...</div>';
+  try {
+    const body = {
+      model_id: pr_model.value,
+      entity_id: pr_entity.value,
+      top_k: parseInt(pr_topk.value) || 10
+    };
+    if (pr_timestamp.value) body.timestamp = pr_timestamp.value;
+    const r = await api('/predictions/explain', 'POST', body);
+    let h = '<div class="result-card">';
+    h += `<div class="result-title">SHAP Explanation</div>`;
+    h += `<span class="category-tag">${r.explanation_method || 'unknown'}</span>`;
+    if (r.predicted_yield !== undefined) {
+      h += `<div class="result-metrics"><div class="result-metric"><span class="result-metric-label">Predicted Yield</span><span class="result-metric-value">${(r.predicted_yield * 100).toFixed(2)}%</span></div></div>`;
+    }
+    if (r.probability !== undefined) {
+      h += `<div class="result-metrics"><div class="result-metric"><span class="result-metric-label">Probability</span><span class="result-metric-value">${(r.probability * 100).toFixed(1)}%</span></div></div>`;
+    }
+
+    if (r.top_positive && r.top_positive.length) {
+      h += '<h3 style="margin:16px 0 8px;color:#2e7d32;">Top Positive (pushed prediction up)</h3>';
+      h += '<div class="driver-list">';
+      r.top_positive.forEach(d => {
+        h += `<div class="driver-row positive">
+          <span class="driver-feature">${d.feature}</span>
+          <span class="driver-value">value: ${typeof d.value === 'number' ? d.value.toFixed(4) : d.value}</span>
+          <span class="driver-impact positive">${d.impact >= 0 ? '+' : ''}${d.impact.toFixed(4)}</span>
+        </div>`;
+      });
+      h += '</div>';
+    }
+
+    if (r.top_negative && r.top_negative.length) {
+      h += '<h3 style="margin:16px 0 8px;color:#c62828;">Top Negative (pushed prediction down)</h3>';
+      h += '<div class="driver-list">';
+      r.top_negative.forEach(d => {
+        h += `<div class="driver-row negative">
+          <span class="driver-feature">${d.feature}</span>
+          <span class="driver-value">value: ${typeof d.value === 'number' ? d.value.toFixed(4) : d.value}</span>
+          <span class="driver-impact negative">${d.impact.toFixed(4)}</span>
+        </div>`;
+      });
+      h += '</div>';
+    }
+
+    h += '</div>';
+    el.innerHTML = h;
+  } catch (e) {
+    el.innerHTML = banner('Error: ' + e.message);
+  }
+}
+
+// Auto-load datasets and models on page load
+listDatasets();
+listModels();
 </script>
 </body>
 </html>
