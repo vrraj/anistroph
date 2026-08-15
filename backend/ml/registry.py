@@ -125,12 +125,15 @@ class ModelRegistry:
         return meta
 
     def get(self, model_id: str) -> Optional[ModelMetadata]:
+        self._load()
         return self._models.get(model_id)
 
     def list(self) -> list[ModelMetadata]:
+        self._load()
         return list(self._models.values())
 
     def exists(self, model_id: str) -> bool:
+        self._load()
         return model_id in self._models
 
     def remove(self, model_id: str) -> bool:

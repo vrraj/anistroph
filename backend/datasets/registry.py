@@ -98,12 +98,15 @@ class DatasetRegistry:
         return meta
 
     def get(self, dataset_id: str) -> Optional[DatasetMeta]:
+        self._load()
         return self._datasets.get(dataset_id)
 
     def list(self) -> list[DatasetMeta]:
+        self._load()
         return list(self._datasets.values())
 
     def exists(self, dataset_id: str) -> bool:
+        self._load()
         return dataset_id in self._datasets
 
     def remove(self, dataset_id: str) -> bool:
