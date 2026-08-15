@@ -22,13 +22,13 @@ async def _handle_list_tools(ctx: Any, params: types.ListToolsRequest) -> types.
     return types.ListToolsResult(tools=get_tool_list())
 
 
-async def _handle_call_tool(ctx: Any, params: types.CallToolRequest) -> types.CallToolResult:
+async def _handle_call_tool(ctx: Any, params: types.CallToolRequestParams) -> types.CallToolResult:
     result = await call_tool(params.name, dict(params.arguments or {}))
     return types.CallToolResult(content=result)
 
 
 server.add_request_handler("tools/list", types.ListToolsRequest, _handle_list_tools)
-server.add_request_handler("tools/call", types.CallToolRequest, _handle_call_tool)
+server.add_request_handler("tools/call", types.CallToolRequestParams, _handle_call_tool)
 
 
 async def run() -> None:
