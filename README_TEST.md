@@ -232,13 +232,57 @@ With uvicorn running, open **http://127.0.0.1:9500**:
 
 ## 6. Test the MCP Server
 
-### Run the server
+### How the MCP server works
+
+The MCP server runs over **stdio** (standard input/output), not HTTP. There
+is no port. The MCP client (e.g., Claude Desktop) spawns the server as a
+subprocess and communicates via JSON-RPC messages piped through stdin/stdout.
+
+```
+Claude Desktop
+    │
+    ├── spawns subprocess: python -m backend.integrations.mcp.server
+    │
+    ├── stdin  → JSON-RPC requests (tools/list, tools/call)
+    └── stdout ← JSON-RPC responses (tool results)
+```
+
+The server uses the low-level `mcp.server.Server` API (not `FastMCP`, which
+is unavailable in MCP SDK 2.0.0). Each handler has the signature:
+
+```python
+async def handler(ctx: Any, params: RequestType) -> ResultType:
+```
+
+- **`ctx`** — the request context object passed by the MCP SDK. Contains
+  session info, logging utilities, and progress reporting. Anistroph's tools
+  are stateless and don't use it, but it must be accepted as the first
+  parameter.
+- **`params`** — the typed request parameters (e.g., `ListToolsRequest`,
+  `CallToolRequest`).
+
+All 8 tools call the same `AnistrophServices` as the REST API — no
+duplicated logic, no separate analytical code, no arbitrary Python
+execution. Training is intentionally not exposed through MCP.
+
+### Run the server standalone
 
 ```bash
+source .venv/bin/activate
 python -m backend.integrations.mcp.server
 ```
 
-This runs an MCP server over stdio. Connect from any MCP-compatible client.
+The server will wait for JSON-RPC messages on stdin. It doesn't print
+anything until it receives a request.
+
+### Test the server manually via stdio
+
+```bash
+printf '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"test","version":"1.0"}}}\n{"jsonrpc":"2.0","method":"notifications/initialized","params":{}}\n{"jsonrpc":"2.0","id":2,"method":"tools/list","params":{}}\n' | .venv/bin/python -m backend.integrations.mcp.server
+```
+
+Expected: two JSON responses — the `initialize` result and the `tools/list`
+result containing all 8 Anistroph tools.
 
 ### Available MCP tools
 
@@ -335,8 +379,8 @@ Restart Claude Desktop after saving the config.
    the MCP server is connected.
 4. If you don't see it, check Claude Desktop logs:
    ```bash
-   # macOS
-   tail -f ~/Library/Logs/Claude/mcp*.log
+   # macOS — main.log contains MCP connection errors (mcp.log may be empty)
+   tail -100 ~/Library/Logs/Claude/main.log | grep -i "mcp\|anistroph\|error"
    ```
 
 #### Test prompts (run in order)
@@ -412,11 +456,41 @@ or Python directly.
 
 **Claude Desktop doesn't show Anistroph tools:**
 - Check that the config JSON is valid (no trailing commas, proper braces).
+- The config file must contain **only** the `mcpServers` key. If you mix in
+  other keys (like `preferences`), Claude Desktop may overwrite the file and
+  strip `mcpServers` on save. Use the minimal config shown above.
 - Verify the Python path is correct: run
   `/Users/raj/Documents/Raj/Anistroph/.venv/bin/python -m backend.integrations.mcp.server`
   — it should start without errors.
-- Check Claude Desktop MCP logs for connection errors.
-- Restart Claude Desktop completely (quit, not just close window).
+- Check Claude Desktop logs for connection errors:
+  ```bash
+  # The main log file (not mcp.log, which may be empty)
+  tail -100 ~/Library/Logs/Claude/main.log | grep -i "mcp\|anistroph\|error"
+  ```
+- Restart Claude Desktop completely (`Cmd+Q`, not just close window).
+
+**Claude searches the web instead of using Anistroph tools:**
+- This means the MCP server connected but `tools/list` failed silently.
+- Test the server manually (see "Test the server manually via stdio" above).
+- If you see `TypeError: takes 1 positional argument but 2 were given`,
+  the handler is missing the `ctx` parameter. MCP SDK 2.0.0 passes a context
+  object as the first argument to every handler:
+  ```python
+  # Wrong (MCP 1.x style):
+  def handler(params) -> Result:
+
+  # Right (MCP 2.0.0):
+  async def handler(ctx: Any, params: RequestType) -> ResultType:
+  ```
+- If you see `TypeError: object ListToolsResult can't be used in 'await'
+  expression`, the handler is sync but MCP awaits all handlers. Make it
+  `async`.
+
+**Config file keeps getting overwritten by Claude Desktop:**
+- Claude Desktop writes to `claude_desktop_config.json` on startup. If the
+  file contains keys it doesn't recognize (or mixes `mcpServers` with
+  `preferences`), it may rewrite the file without `mcpServers`.
+- Solution: keep the config file minimal — only the `mcpServers` key.
 
 **Tool calls return errors:**
 - Ensure a dataset is registered and a model is trained before calling
