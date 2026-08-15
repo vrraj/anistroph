@@ -126,12 +126,25 @@ shell:
 # ChatGPT GPT Action (ngrok tunnel)
 # =============================================================================
 
+# Load NGROK_AUTHTOKEN from .env if present
+-include .env
+export NGROK_AUTHTOKEN
+
 # Start the native server + ngrok tunnel for ChatGPT GPT Actions.
 # Displays the public URL and the filtered OpenAPI spec URL.
+# Requires NGROK_AUTHTOKEN in .env or environment.
 # Usage: make start-gpt
 start-gpt:
 	@echo "Starting Anistroph for ChatGPT GPT Actions..."
 	@echo ""
+	# Verify ngrok authtoken is available
+	@if [ -z "$$NGROK_AUTHTOKEN" ]; then \
+		echo "Error: NGROK_AUTHTOKEN is not set."; \
+		echo "Add it to .env:  echo 'NGROK_AUTHTOKEN=<your-token>' >> .env"; \
+		echo "Get a free token at https://dashboard.ngrok.com/get-started/your-authtoken"; \
+		exit 1; \
+	fi
+	@echo "Using NGROK_AUTHTOKEN from .env"
 	# Kill any existing process on port 9500
 	@lsof -ti:9500 | xargs kill -9 2>/dev/null || true
 	# Kill any existing ngrok tunnel
@@ -145,7 +158,7 @@ start-gpt:
 		exit 1; \
 	fi
 	@echo "Server is running on http://localhost:9500"
-	# Start ngrok tunnel in the background
+	# Start ngrok tunnel in the background (authtoken passed via env var)
 	@nohup ngrok http 9500 > /tmp/anistroph_ngrok.log 2>&1 &
 	@echo "Waiting for ngrok tunnel..."
 	@sleep 3
@@ -153,7 +166,6 @@ start-gpt:
 	@NGROK_URL=$$(curl -s http://localhost:4040/api/tunnels | .venv/bin/python -c "import sys,json; print(json.load(sys.stdin)['tunnels'][0]['public_url'])" 2>/dev/null); \
 	if [ -z "$$NGROK_URL" ]; then \
 		echo "Error: ngrok tunnel did not start. Check /tmp/anistroph_ngrok.log"; \
-		echo "You may need to run 'ngrok config add-authtoken <token>' first."; \
 		exit 1; \
 	fi; \
 	echo ""; \
