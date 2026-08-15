@@ -523,3 +523,275 @@ brew install libomp
 | API docs (Swagger) | http://localhost:9500/docs |
 | API docs (ReDoc) | http://localhost:9500/redoc |
 | Health check | `curl http://localhost:9500/health` |
+
+---
+
+## 14. Reference Model: anistroph-sentinel-v1
+
+The reference model trained on the synthetic predictive-maintenance
+dataset. Use this to test predictions, explanations, and MCP tool calls.
+
+### Overview
+
+| Property | Value |
+|----------|-------|
+| Model ID | `anistroph-sentinel-v1` |
+| Model type | XGBoost (gradient-boosted trees) |
+| Dataset | `predictive_maintenance` |
+| Target | `failure_within_horizon` (binary: will this machine fail within 24h?) |
+| Decision threshold | 0.199 (optimized for F1) |
+| Training data | 20 machines, 30 days, 10-min intervals (86,400 rows) |
+| Split | Chronological — 70% train / 15% validation / 15% test |
+
+### Evaluation metrics (test set)
+
+| Metric | Value | Interpretation |
+|--------|-------|----------------|
+| ROC-AUC | 0.767 | Good discrimination — well above 0.5 (random) |
+| PR-AUC | 0.381 | Reasonable for imbalanced data (~0.14% failure rate) |
+| Precision | 0.394 | ~40% of predicted failures are true failures |
+| Recall | 0.701 | Catches ~70% of actual failures |
+| F1 Score | 0.505 | Harmonic mean of precision and recall |
+| True positives | 1,957 | Correctly predicted failures |
+| False positives | 3,009 | False alarms |
+| False negatives | 835 | Missed failures |
+| True negatives | 7,159 | Correctly predicted non-failures |
+
+### Training data details
+
+**Entities:** 20 machines (`TOOL_000` through `TOOL_019`)
+
+**Machine types:**
+- `TYPE_A` — 30,240 rows (failure rate: 0.136%)
+- `TYPE_B` — 30,240 rows (failure rate: 0.152%)
+- `TYPE_C` — 25,920 rows (failure rate: 0.147%)
+
+**Time range:** June 1 – June 30, 2026 (10-minute intervals)
+
+**Sensor columns:**
+
+| Column | Min | Mean | Max | Description |
+|--------|-----|------|-----|-------------|
+| temperature | 60.3 | 74.7 | 115.7 | Operating temperature (°C) |
+| vibration | 1.09 | 2.19 | 8.10 | Vibration intensity (g) |
+| pressure | 77.9 | 99.6 | 121.8 | System pressure (bar) |
+| current | 8.65 | 10.16 | 11.74 | Electrical current (A) |
+| voltage | 222.8 | 230.0 | 237.5 | Voltage (V) |
+| rpm | 1,699.8 | 1,793.6 | 1,884.1 | Rotational speed (RPM) |
+| flow_rate | 57.0 | 60.0 | 62.9 | Flow rate (L/min) |
+| maintenance_age_hours | -23.5 | 47.6 | 323.7 | Hours since last maintenance |
+| operating_hours | 33.7 | 2,802.0 | 5,686.0 | Total operating hours |
+
+**Event columns:**
+- `failure` (boolean): 125 failures out of 86,400 rows (~0.14%)
+- `failure_type`: PRESSURE (82), THERMAL (39), MECHANICAL (4)
+
+### Engineered features (26 total)
+
+The Feature Engine transforms raw sensor readings into 26 model-ready
+features. All rolling windows are computed per-entity (per machine) and
+are leakage-safe (no future data used).
+
+**Temperature features (6):**
+
+| Feature | Transform | Window | What it captures |
+|---------|-----------|--------|------------------|
+| `temperature_current` | current | — | Instantaneous temperature |
+| `temperature_mean_1h` | rolling mean | 1 hour | Short-term thermal trend |
+| `temperature_mean_6h` | rolling mean | 6 hours | Long-term thermal baseline |
+| `temperature_std_1h` | rolling std | 1 hour | Short-term thermal volatility |
+| `temperature_std_6h` | rolling std | 6 hours | Long-term thermal instability |
+| `temperature_slope_6h` | rolling slope | 6 hours | Temperature trend direction |
+
+**Vibration features (7):**
+
+| Feature | Transform | Window | What it captures |
+|---------|-----------|--------|------------------|
+| `vibration_current` | current | — | Instantaneous vibration |
+| `vibration_mean_1h` | rolling mean | 1 hour | Short-term vibration level |
+| `vibration_mean_6h` | rolling mean | 6 hours | Long-term vibration baseline |
+| `vibration_max_6h` | rolling max | 6 hours | Peak vibration in last 6h |
+| `vibration_std_1h` | rolling std | 1 hour | Short-term vibration volatility |
+| `vibration_std_6h` | rolling std | 6 hours | Long-term vibration instability |
+| `vibration_slope_6h` | rolling slope | 6 hours | Vibration trend direction |
+
+**Pressure features (3):**
+
+| Feature | Transform | Window | What it captures |
+|---------|-----------|--------|------------------|
+| `pressure_current` | current | — | Instantaneous pressure |
+| `pressure_mean_1h` | rolling mean | 1 hour | Short-term pressure level |
+| `pressure_std_6h` | rolling std | 6 hours | Long-term pressure instability |
+
+**RPM features (2):**
+
+| Feature | Transform | Window | What it captures |
+|---------|-----------|--------|------------------|
+| `rpm_current` | current | — | Instantaneous rotational speed |
+| `rpm_mean_1h` | rolling mean | 1 hour | Short-term RPM level |
+
+**Single-value features (5):**
+
+| Feature | What it captures |
+|---------|------------------|
+| `current_current` | Electrical current draw |
+| `voltage_current` | Operating voltage |
+| `flow_rate_current` | Fluid flow rate |
+| `maintenance_age_hours_current` | Hours since last maintenance |
+| `operating_hours_current` | Cumulative operating hours |
+
+**Categorical features (3 — one-hot encoded):**
+
+| Feature | What it captures |
+|---------|------------------|
+| `machine_type__TYPE_A` | Machine is type A |
+| `machine_type__TYPE_B` | Machine is type B |
+| `machine_type__TYPE_C` | Machine is type C |
+
+### Target construction
+
+The target `failure_within_horizon` is a **future_event** target:
+
+- **Source column:** `failure` (boolean — did a failure occur at this timestamp?)
+- **Horizon:** 24 hours forward
+- **Logic:** For each observation at time T, the target is 1 if the
+  machine will experience a failure at any point between T and T+24h.
+- **Entity isolation:** The horizon is computed per-machine — machine A's
+  future failures never affect machine B's target.
+- **Leakage prevention:** The target looks forward in time; features look
+  backward. Training/inference never see future target information.
+
+### Sample predictions
+
+Predictions return a probability (0.0–1.0) and a binary prediction
+(0 or 1, based on the 0.199 threshold).
+
+| Machine | Timestamp | Probability | Prediction | Interpretation |
+|---------|-----------|-------------|------------|----------------|
+| TOOL_000 | 2026-06-15T12:00 | 0.189 | 0 | Low risk — no failure expected in 24h |
+| TOOL_000 | 2026-06-28T12:00 | 0.384 | 1 | Elevated risk — failure likely within 24h |
+| TOOL_005 | 2026-06-28T12:00 | 0.000 | 0 | Very low risk — healthy machine |
+| TOOL_010 | 2026-06-28T12:00 | 0.986 | 1 | Very high risk — failure imminent |
+
+### Insights
+
+- **ROC-AUC 0.767** means the model ranks at-risk machines correctly
+  ~77% of the time — significantly better than random.
+- **Recall 70%** means the model catches 7 out of 10 actual failures.
+  The 30% missed failures (false negatives) are the most costly in a
+  real maintenance setting — consider lowering the threshold to catch
+  more, at the cost of more false alarms.
+- **Precision 39%** means ~4 in 10 predicted failures are real. The
+  ~6 in 10 false alarms could be filtered by a secondary review process.
+- **Failure type imbalance:** PRESSURE failures (82) dominate, followed
+  by THERMAL (39) and MECHANICAL (4). The model may perform better on
+  PRESSURE failures than MECHANICAL ones due to sample size.
+- **Machine type differences are small** (0.136%–0.152% failure rates),
+  suggesting the synthetic generator creates roughly balanced types.
+- **Late-month predictions are higher** because machines deteriorate
+  over time — `maintenance_age_hours` and `operating_hours` increase,
+  and rolling statistics capture the degradation trend.
+
+### How to use this model
+
+**Via Claude Desktop (MCP):**
+> "List all Anistroph models"
+> "Show me the metrics for model anistroph-sentinel-v1"
+> "Predict failure probability for TOOL_010 at 2026-06-28T12:00:00 using model anistroph-sentinel-v1"
+> "Explain that prediction — what are the top drivers?"
+
+**Via REST API:**
+```bash
+# Predict
+curl -X POST http://localhost:9500/predictions \
+  -H "Content-Type: application/json" \
+  -d '{"model_id": "anistroph-sentinel-v1", "entity_id": "TOOL_010", "timestamp": "2026-06-28T12:00:00"}'
+
+# Explain
+curl -X POST http://localhost:9500/predictions/explain \
+  -H "Content-Type: application/json" \
+  -d '{"model_id": "anistroph-sentinel-v1", "entity_id": "TOOL_010", "timestamp": "2026-06-28T12:00:00", "top_k": 10}'
+```
+
+**Via Python:**
+```python
+from backend.services import get_services
+svc = get_services()
+
+# Predict
+pred = svc.predict("anistroph-sentinel-v1", entity_id="TOOL_010", timestamp="2026-06-28T12:00:00")
+print(f"Probability: {pred['probability']:.4f}, Prediction: {pred['prediction']}")
+
+# Explain
+expl = svc.explain("anistroph-sentinel-v1", entity_id="TOOL_010", timestamp="2026-06-28T12:00:00", top_k=10)
+for d in expl["top_drivers"]:
+    print(f"  {d['feature']}: {d['impact']:.4f}")
+```
+
+---
+
+## 15. All Tools & API Reference
+
+### REST API endpoints
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | `/health` | Health check — returns `{"status": "ok", "version": "0.1.0"}` |
+| GET | `/datasets` | List all registered datasets |
+| POST | `/datasets` | Register a new dataset from config + source file |
+| GET | `/datasets/{dataset_id}` | Get metadata for a specific dataset |
+| GET | `/datasets/{dataset_id}/profile` | Profile a dataset (row count, distributions, time range) |
+| DELETE | `/datasets/{dataset_id}` | Remove a dataset from the registry |
+| GET | `/models` | List all trained models |
+| GET | `/models/types` | List available model types (`xgboost`, `logistic_regression`) |
+| POST | `/models/train` | Train a new model |
+| GET | `/models/{model_id}` | Get metadata for a specific model |
+| GET | `/models/{model_id}/metrics` | Get evaluation metrics (ROC-AUC, PR-AUC, precision, recall, F1, confusion matrix) |
+| DELETE | `/models/{model_id}` | Remove a model from the registry |
+| POST | `/predictions` | Make a single prediction (entity_id + timestamp or records) |
+| POST | `/predictions/batch` | Make multiple predictions in one request |
+| POST | `/predictions/explain` | Explain a prediction with top feature drivers |
+| POST | `/analysis/slice` | Slice data by dimensions with aggregation |
+| POST | `/analysis/compare` | Compare a metric across dimension values |
+| GET | `/` | Web UI (static HTML) |
+| GET | `/docs` | Swagger UI (interactive API docs) |
+| GET | `/redoc` | ReDoc (alternative API docs) |
+
+### MCP tools (Claude Desktop)
+
+| Tool | Arguments | Description |
+|------|-----------|-------------|
+| `anistroph_list_datasets` | *(none)* | List all registered datasets in Anistroph. Returns dataset IDs, names, row counts, entity keys, time ranges. |
+| `anistroph_profile_dataset` | `dataset_id` (string) | Profile a registered dataset. Returns row count, column count, column types, missing values, unique counts, numeric distributions (min/mean/max/std), categorical distributions, time range, entity count, and event distribution. |
+| `anistroph_slice_data` | `dataset_id` (string), `dimensions` (array of strings), `metric` (string), `aggregation` (string, default "mean"), `filters` (object, optional), `limit` (integer, optional) | Slice a dataset by dimensions with an aggregation over a metric. Returns one row per dimension combination with the aggregated metric value. |
+| `anistroph_compare_data` | `dataset_id` (string), `dimension` (string), `metric` (string), `aggregation` (string, default "mean"), `filters` (object, optional) | Compare a metric across values of a single dimension. Returns one row per dimension value with the aggregated metric. |
+| `anistroph_list_models` | *(none)* | List all registered trained models. Returns model IDs, types, dataset IDs, and creation timestamps. |
+| `anistroph_get_model_metrics` | `model_id` (string) | Get the evaluation metrics for a trained model. Returns ROC-AUC, PR-AUC, precision, recall, F1, confusion matrix, and decision threshold. |
+| `anistroph_predict` | `model_id` (string), `entity_id` (string, optional), `timestamp` (string, optional), `records` (array of objects, optional) | Make a prediction using a trained model. For temporal datasets, provide `entity_id` and `timestamp` — the server retrieves historical observations and builds features. For non-temporal datasets, provide `records` (raw feature dicts). Returns probability and binary prediction. |
+| `anistroph_explain_prediction` | `model_id` (string), `entity_id` (string, optional), `timestamp` (string, optional), `records` (array of objects, optional), `top_k` (integer, default 10) | Explain a prediction by returning the top contributing features. Returns the same probability plus a list of top drivers with feature names and impact values. Explanations are deterministic and model-derived — no LLM fabrication. |
+
+### Python service methods
+
+| Method | Arguments | Returns | Description |
+|--------|----------|---------|-------------|
+| `get_services().list_datasets()` | *(none)* | `list[DatasetMeta]` | List all registered datasets |
+| `get_services().register_dataset_from_config(config_path, source_path, parquet_path?)` | config_path (str/Path), source_path (str/Path), parquet_path (optional) | `DatasetMeta` | Register a dataset from YAML config + source data |
+| `get_services().get_dataset(dataset_id)` | dataset_id (str) | `DatasetMeta \| None` | Get metadata for a dataset |
+| `get_services().profile(dataset_id)` | dataset_id (str) | `dict` | Profile a dataset |
+| `get_services().train(dataset_id, target_name, model_type, model_id?)` | dataset_id, target_name, model_type, model_id (optional) | `dict` (model_id + metrics) | Train a new model |
+| `get_services().list_models()` | *(none)* | `list[ModelMetadata]` | List all trained models |
+| `get_services().get_model_metrics(model_id)` | model_id (str) | `dict` | Get model evaluation metrics |
+| `get_services().predict(model_id, entity_id?, timestamp?, records?)` | model_id, entity_id, timestamp, records (all optional except model_id) | `dict` (probability + prediction) | Make a prediction |
+| `get_services().explain(model_id, entity_id?, timestamp?, records?, top_k?)` | model_id, entity_id, timestamp, records, top_k (default 10) | `dict` (probability + top_drivers) | Explain a prediction |
+| `get_services().slice(dataset_id, dimensions, metric, aggregation?, filters?, limit?)` | dataset_id, dimensions, metric, aggregation, filters, limit | `list[dict]` | Slice data by dimensions |
+| `get_services().compare(dataset_id, dimension, metric, aggregation?, filters?)` | dataset_id, dimension, metric, aggregation, filters | `list[dict]` | Compare a metric across dimension values |
+
+### What's NOT exposed
+
+| Capability | Available via | NOT available via |
+|------------|--------------|-------------------|
+| Train a model | REST, Python, Web UI | MCP (by design — training is heavyweight) |
+| Register a dataset | REST, Python, Web UI | MCP (by design — registration is an admin operation) |
+| Delete a dataset | REST, Python | MCP |
+| Delete a model | REST, Python | MCP |
+| Arbitrary Python execution | *(nowhere)* | MCP (by design — only the 8 defined tools) |
