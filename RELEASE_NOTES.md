@@ -29,7 +29,7 @@ This is the first public release. The complete API surface is documented in [doc
 - Raw per-category SHAP retained in a `detail` field for debugging
 
 ### Evaluation
-- Held-out evaluation against `evaluation.parquet` (regression: MAE, MSE, RMSE, R², MAPE, max_error; classification: ROC-AUC, PR-AUC, F1, log loss)
+- Held-out evaluation against `evaluation.parquet` (regression: MAE, MSE, RMSE, R², MAPE, max error, median absolute error, 95th-percentile absolute error, mean prediction error, and baseline comparison; classification: ROC-AUC, PR-AUC, precision, recall, F1)
 - Slice-level evaluation — apply categorical filters to compare metrics on a subset
 - Error slice discovery — automatically searches 1/2/3-dimensional combinations for populations where prediction error deviates most from baseline
 
@@ -62,7 +62,7 @@ This is the first public release. The complete API surface is documented in [doc
 
 Stable MCP tools (13):
 - `anistroph_list_datasets` — list registered datasets
-- `anistroph_get_dataset_profile` — dataset schema, columns, target
+- `anistroph_profile_dataset` — dataset schema, columns, target
 - `anistroph_sample_rows` — raw row inspection with filters, columns, sort, limit
 - `anistroph_find_interesting_slices` — ranked unusual populations in the data
 - `anistroph_list_models` — compact model summary
@@ -71,11 +71,11 @@ Stable MCP tools (13):
 - `anistroph_predict` — entity lookup or records-based prediction
 - `anistroph_explain_prediction` — SHAP explanation with one-hot normalization
 - `anistroph_slice_data` — manual 1/2/3-dimensional slicing
-- `anistroph_compare_slices` — baseline comparison across slices
+- `anistroph_compare_data` — baseline comparison across slices
 - `anistroph_evaluate_model` — held-out evaluation with optional slice filters
 - `anistroph_find_evaluation_slices` — error slice discovery
 
-Stable REST endpoints (19): dataset discovery, profiling, row sampling, slicing and comparison, model listing, metrics, input schema, prediction, explanation, training, evaluation, and error slice discovery. Full table in `docs/setup-usage.md`.
+Stable REST endpoints: dataset discovery, profiling, row sampling, slicing and comparison, model listing, metrics, input schema, prediction, explanation, training, evaluation, and error slice discovery. Full table in `docs/setup-usage.md`.
 
 Stable Python entry points:
 - `AnistrophServices.register_dataset_from_config(config_path)` — register a dataset from YAML
