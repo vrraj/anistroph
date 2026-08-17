@@ -371,7 +371,7 @@ Train models through the admin CLI or REST API. Training is never exposed throug
 
 ```bash
 python scripts/train_model.py --dataset semiconductor_yield \
-  --model-type xgboost_regressor --model-id wafer-yield-xgb-v001
+  --model-type xgboost_regressor --model-id wafer-yield-xgboost
 ```
 
 ### Runtime Prediction and Explanation
@@ -383,11 +383,11 @@ from backend.services import get_services
 svc = get_services()
 
 # Predict
-pred = svc.predict("wafer-yield-xgb-v001", entity_id="WAFER_015000")
+pred = svc.predict("wafer-yield-xgboost", entity_id="WAFER_015000")
 print(f"Predicted: {pred['predicted_yield']:.4f}, Actual: {pred['actual_yield']:.4f}")
 
 # Explain with SHAP
-expl = svc.explain("wafer-yield-xgb-v001", entity_id="WAFER_015000", top_k=10)
+expl = svc.explain("wafer-yield-xgboost", entity_id="WAFER_015000", top_k=10)
 print(f"Method: {expl['explanation_method']}")
 for c in expl['top_positive']:
     print(f"  +{c['feature']}: {c['impact']:+.4f}")
@@ -423,7 +423,7 @@ Expose runtime analysis and inference to Claude Desktop through MCP stdio.
 
 Then ask Claude:
 > "List all Anistroph models"
-> "Predict wafer yield for WAFER_015000 using model wafer-yield-xgb-v001"
+> "Predict wafer yield for WAFER_015000 using model wafer-yield-xgboost"
 > "Explain that prediction — what are the top drivers?"
 > "Find the worst yield combinations in the semiconductor dataset"
 
@@ -501,7 +501,7 @@ Predict:
 ```bash
 curl -X POST http://localhost:9500/predictions \
   -H "Content-Type: application/json" \
-  -d '{"model_id": "wafer-yield-xgb-v001", "entity_id": "WAFER_015000"}'
+  -d '{"model_id": "wafer-yield-xgboost", "entity_id": "WAFER_015000"}'
 ```
 
 Explain:
@@ -509,7 +509,7 @@ Explain:
 ```bash
 curl -X POST http://localhost:9500/explain \
   -H "Content-Type: application/json" \
-  -d '{"model_id": "wafer-yield-xgb-v001", "entity_id": "WAFER_015000", "top_k": 10}'
+  -d '{"model_id": "wafer-yield-xgboost", "entity_id": "WAFER_015000", "top_k": 10}'
 ```
 
 ### Option C: Use with Claude Desktop via MCP
@@ -616,8 +616,8 @@ data/
     └── data.parquet
 
 artifacts/models/
-├── anistroph-sentinel-v1/
-└── wafer-yield-xgb-v001/
+├── predictive-maintenance-xgboost/
+└── wafer-yield-xgboost/
 ```
 
 Each dataset may have its own ingestion and feature-preparation logic while using common downstream services. This provides the foundation for adding additional analytical domains without creating separate applications.
@@ -788,7 +788,7 @@ The model type is **auto-selected from the dataset's task type** when omitted:
 
 ```bash
 # model_type is optional — auto-selected from task type
-python scripts/train_model.py --dataset semiconductor_yield --model-id wafer-yield-xgb-v001
+python scripts/train_model.py --dataset semiconductor_yield --model-id wafer-yield-xgboost
 ```
 
 Available model types (can be specified explicitly to override): `xgboost`, `logistic_regression`, `xgboost_regressor`, `linear_regression`.
@@ -830,18 +830,18 @@ Available via REST API, Python, MCP, and the Web UI Evaluation tab.
 
 ```python
 # Evaluate against the held-out eval partition
-result = svc.evaluate_model("wafer-yield-xgb-v001", sample_size=50)
+result = svc.evaluate_model("wafer-yield-xgboost", sample_size=50)
 print(result["metrics"]["r2"])  # 0.82
 print(result["metrics"]["mape"])  # 3.25 (% error)
 
 # Slice-level evaluation (filtered to a single city)
-result = svc.evaluate_model("home_prices-xgb-v001", filters={"city": "Saratoga"})
+result = svc.evaluate_model("home-prices-xgboost", filters={"city": "Saratoga"})
 print(result["metrics"]["mape"])        # overall MAPE
 print(result["filtered_metrics"]["mape"])  # Saratoga-only MAPE
 print(result["filtered_row_count"])     # n rows matching
 
 # Find populations where model error is worst
-slices = svc.find_evaluation_slices("home_prices-xgb-v001", top_k=10)
+slices = svc.find_evaluation_slices("home-prices-xgboost", top_k=10)
 for s in slices:
     vals = " + ".join(f"{k}={v}" for k, v in s["values"].items())
     print(f"  {vals}: n={s['row_count']}, MAE={s['metric_value']:.0f}, diff={s['difference']:+.0f}")
@@ -850,7 +850,7 @@ for s in slices:
 #   zip_code=95122: n=180, MAE=65337, diff=-29575   (San Jose 95122 — best)
 
 # Training-time metrics (stored in model registry, no recompute)
-metrics = svc.get_model_metrics("wafer-yield-xgb-v001")
+metrics = svc.get_model_metrics("wafer-yield-xgboost")
 ```
 
 ## Inference
@@ -860,14 +860,14 @@ The caller does not construct features. For temporal datasets, provide entity_id
 ```python
 # Temporal (predictive maintenance)
 pred = svc.predict(
-    model_id="anistroph-sentinel-v1",
+    model_id="predictive-maintenance-xgboost",
     entity_id="TOOL_000",
     timestamp="2026-07-15T12:00:00",
 )
 
 # Non-temporal (semiconductor yield)
 pred = svc.predict(
-    model_id="wafer-yield-xgb-v001",
+    model_id="wafer-yield-xgboost",
     entity_id="WAFER_015000",
 )
 ```
@@ -928,7 +928,7 @@ Inputs that pushed the prediction DOWN:
 
 ```python
 expl = svc.explain(
-    model_id="wafer-yield-xgb-v001",
+    model_id="wafer-yield-xgboost",
     entity_id="WAFER_015000",
     top_k=10,
 )
@@ -946,7 +946,7 @@ for c in expl['top_negative']:
 
 ```json
 {
-  "model_id": "wafer-yield-xgb-v001",
+  "model_id": "wafer-yield-xgboost",
   "entity_id": "WAFER_016756",
   "predicted_yield": 0.8827,
   "target_name": "wafer_yield",

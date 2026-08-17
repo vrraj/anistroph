@@ -64,7 +64,7 @@ MCP uses a local stdio subprocess — no public URL needed.
 
 3. Ask Claude:
 > "List all Anistroph datasets"
-> "Predict wafer yield for WAFER_015000 using model wafer-yield-xgb-v001"
+> "Predict wafer yield for WAFER_015000 using model wafer-yield-xgboost"
 > "Explain that prediction — what pushed the yield up or down?"
 > "Find the worst yield combinations in the semiconductor dataset"
 
@@ -113,7 +113,7 @@ Output:
 
 4. Ask your GPT:
 > "List all Anistroph datasets"
-> "Predict wafer yield for WAFER_015000 using model wafer-yield-xgb-v001"
+> "Predict wafer yield for WAFER_015000 using model wafer-yield-xgboost"
 > "Explain that prediction with SHAP"
 > "Slice the semiconductor dataset by etch tool and chamber"
 
@@ -175,6 +175,320 @@ python scripts/generate_sensor_data.py --machines 20 --days 30 --interval 10 --s
 Output:
 - CSV: `data/synthetic/predictive_maintenance.csv`
 - Parquet: `data/raw/predictive_maintenance.parquet`
+
+> **The generation script and `dataset.yaml` are independent files.** The
+> script hard-codes the columns it writes (it builds a `pl.DataFrame({...})`
+> with whatever columns the author chose). The YAML *describes* the schema of
+> that output so the ML pipeline knows how to interpret it. If you add a
+> column to a generator script, you must also add it to the YAML's `columns:`
+> block — otherwise the pipeline will ignore it. The YAML is never read by
+> the generator.
+
+---
+
+## 2a. Author the `dataset.yaml` Configuration
+
+Before registering a dataset, you author a `dataset.yaml` that declares the
+schema, the model inputs, and the target. This is the single source of truth
+the generic ML pipeline consults — no domain knowledge (e.g. "temperature
+means degrees Celsius") lives in the engine itself.
+
+A YAML has four required blocks and one optional block:
+
+```yaml
+dataset:        # schema + identifiers + split strategy
+  ...
+columns:        # per-column type and role (inside `dataset:`)
+  ...
+features:       # the actual model inputs (top-level)
+  ...
+target:         # what to predict (top-level)
+split:          # train/eval partitioning (inside `dataset:`, optional)
+  ...
+```
+
+### The `dataset:` block
+
+```yaml
+dataset:
+  dataset_id: home_prices          # unique id, used in API calls and model names
+  name: Bay Area Home Prices       # human-readable name
+  entity_key: property_id          # column that uniquely identifies one entity
+  time_key: timestamp              # optional — set only for temporal datasets
+```
+
+- **`entity_key`** (required): the column identifying one entity (one wafer,
+  one machine, one property). Used for grouping rolling windows and for
+  `entity_id` lookups at inference time.
+- **`time_key`** (optional): if present, the dataset is treated as *temporal*
+  — rolling-window transforms become available, splits are chronological by
+  default, and inference can be called with `(entity_id, timestamp)` to
+  predict from history. If absent, the dataset is *non-temporal* — only
+  `current` and `categorical` transforms are meaningful, splits are random,
+  and inference requires either `entity_id` (single-row lookup) or `records`
+  (raw values supplied by the caller).
+
+### The `columns:` block (inside `dataset:`)
+
+Declares every column the source data contains. Each entry has a `type` and a
+`role`. Columns present in the data but missing from this block are silently
+ignored by the pipeline.
+
+```yaml
+columns:
+  timestamp:
+    type: timestamp
+    role: identifier
+  property_id:
+    type: categorical
+    role: identifier
+  city:
+    type: categorical
+    role: feature
+  sqft:
+    type: numeric
+    role: feature
+  price:
+    type: numeric
+    role: target
+```
+
+**Column types** (`type:`):
+
+| Type | Meaning |
+|------|---------|
+| `numeric` | Continuous or discrete number (temperature, price, sqft) |
+| `categorical` | String label with finite categories (city, tool_id, machine_type) |
+| `boolean` | True/false flag (failure event) |
+| `timestamp` | Datetime column used for time-based operations |
+| `string` | Free-form text — rarely used as a feature |
+
+**Column roles** (`role:`):
+
+| Role | Meaning | Used by training? |
+|------|---------|-------------------|
+| `identifier` | Entity key, time key, or other IDs (lot_id, wafer_id) | No — used for joins and lookups only |
+| `feature` | A candidate input column | Only if also listed in `features:` (see below) |
+| `target` | The column the model predicts (or its source) | Yes — as the label |
+| `event` | A boolean event flag used to construct a `future_event` target | Yes — as the target source |
+| `metadata` | Informational only (e.g. `failure_mode`) | No — available in `sample_rows` but never fed to the model |
+| `ignore` | Explicitly excluded | No |
+
+> **`role: feature` is necessary but not sufficient.** A column with
+> `role: feature` is *eligible* to be a model input, but it only becomes one
+> if it is also listed in the top-level `features:` block. The `columns:`
+> block declares schema; the `features:` block declares model inputs. This
+> separation lets you keep a column in the schema (for profiling, slicing,
+> and `sample_rows`) without feeding it to the model.
+
+### The `features:` block (top-level)
+
+This is the contract between training and inference. Every entry here becomes
+a model input. Each entry maps a feature name to a source column plus one or
+more **transforms** that turn the raw column into engineered feature(s).
+
+```yaml
+features:
+  city:                            # feature name (also the output column base name)
+    column: city                   # source column to read from
+    transforms:
+      - categorical                # one-hot encode the categories
+  sqft:
+    column: sqft
+    transforms:
+      - current                    # pass through the raw value unchanged
+  temperature:                     # temporal example — multiple transforms
+    column: temperature
+    transforms:
+      - current
+      - mean:
+          windows: [1h, 6h]
+      - std:
+          windows: [1h, 6h]
+      - slope:
+          windows: [6h]
+```
+
+**Available transforms:**
+
+| Transform | Output | Applies to | Description |
+|-----------|--------|------------|-------------|
+| `current` | `{column}_current` | numeric, categorical | Pass through the raw value at the current row. For numeric columns this is just the value; the `_current` suffix is added unless the feature name already matches. This is the only transform that makes sense for non-temporal datasets. |
+| `categorical` | `{column}__{category}` (one column per learned category) | categorical | One-hot encode the column. Categories are **fit on training data only** and persisted in `FeatureMetadata`, so inference applies the identical encoding. Unseen categories at inference become all-zeros. Supports `min_frequency` (default 1) to drop rare categories. |
+| `mean` / `min` / `max` / `std` / `median` | `{column}_{op}_{window}` | numeric, temporal only | Rolling aggregate over a trailing time window, grouped by `entity_key`. Leakage-safe: only uses rows up to and including the current timestamp. Requires `windows: ["1h", "6h", ...]`. |
+| `slope` | `{column}_slope_{window}` | numeric, temporal only | Rolling linear-regression slope (cov(t,y)/var(t)) over the trailing window. Captures trend direction. |
+| `delta` | `{column}_delta_{window}` | numeric, temporal only | Current value minus the minimum value in the trailing window. Captures recent deviation. |
+| `hour_of_day` | `hour_of_day` | timestamp | Extract hour-of-day (0–23) from the `time_key`. Useful for capturing diurnal cycles. |
+| `day_of_week` | `day_of_week` | timestamp | Extract day-of-week (0–6) from the `time_key`. |
+| `elapsed_time` | `elapsed_time` | timestamp | Seconds elapsed since the entity's first observation. Captures aging / cumulative usage. |
+
+**Transform syntax:** a transform can be written as a bare string
+(`- current`) or as a mapping with parameters (`- mean: {windows: [1h, 6h]}`).
+The bare form is shorthand for `{op: <name>}`.
+
+> **The `features:` block is the inference contract.** For non-temporal
+> datasets, a caller sending `records` to `/predictions` must include every
+> source column listed here (e.g. `city`, `sqft`, `bedrooms`, ...). The
+> Feature Engine then applies the same transforms using the persisted
+> `FeatureMetadata` from training. The caller never constructs one-hot
+> vectors or rolling aggregates — only raw source values.
+
+### The `target:` block (top-level)
+
+Declares what the model predicts. Drives automatic model selection and the
+evaluation metrics reported after training.
+
+```yaml
+target:
+  name: price                      # internal target name (returned in predictions)
+  type: regression                 # task type — see table below
+  source_column: price             # the raw column to use as the label
+```
+
+For `future_event` targets (binary classification from a boolean event
+column over a time horizon):
+
+```yaml
+target:
+  name: failure_within_horizon
+  type: future_event
+  source_column: failure           # boolean event column
+  horizon: 24h                     # predict whether event occurs within 24h
+  positive_class: 1                # value indicating the positive class
+```
+
+**Target types:**
+
+| `type` | Meaning | Default model | Evaluation metrics |
+|--------|---------|---------------|--------------------|
+| `regression` | Predict a continuous number | `xgboost_regressor` | MAE, RMSE, R², MSE, MAPE, max_error |
+| `classification` | Binary classification (canonical name) | `xgboost` | ROC-AUC, PR-AUC, F1, precision, recall |
+| `binary` | Alias for `classification` (legacy) | `xgboost` | same as classification |
+| `future_event` | Classification with a time horizon (legacy) | `xgboost` | same as classification |
+
+`classification` is the canonical name in v0.1. `binary` and `future_event`
+are kept as aliases for backward compatibility with existing configs.
+
+### The `split:` block (inside `dataset:`, optional)
+
+Controls how the data is partitioned at registration time. Already covered in
+§3 ("Split configuration"), but included here for completeness:
+
+```yaml
+split:
+  strategy: chronological   # "chronological" (temporal) or "random" (non-temporal)
+  train: 0.80
+  validation: 0.0           # reserved for validate-during-training partition
+  test: 0.20                # becomes the held-out evaluation partition
+```
+
+If omitted, defaults are read from `.env` (`TRAIN_DATASET_PCT`,
+`EVAL_DATASET_PCT`, `VALIDATE_DATASET_PCT`). Set `train: 1.0` to skip
+partitioning entirely (single-file mode).
+
+### Worked example: non-temporal regression
+
+`datasets/home_prices/dataset.yaml` — one row per home listing, predict
+`price` from raw attributes (no rolling windows):
+
+```yaml
+dataset:
+  dataset_id: home_prices
+  name: Bay Area Home Prices
+  entity_key: property_id
+  time_key: timestamp              # present for chronological splitting, but
+                                   # no rolling transforms used → effectively
+                                   # non-temporal for feature purposes
+  columns:
+    timestamp:     {type: timestamp, role: identifier}
+    property_id:   {type: categorical, role: identifier}
+    city:          {type: categorical, role: feature}
+    zip_code:      {type: categorical, role: feature}
+    sqft:          {type: numeric, role: feature}
+    bedrooms:      {type: numeric, role: feature}
+    bathrooms:     {type: numeric, role: feature}
+    lot_size_sqft: {type: numeric, role: feature}
+    year_built:    {type: numeric, role: feature}
+    garage:        {type: numeric, role: feature}
+    price:         {type: numeric, role: target}
+  split:
+    strategy: chronological
+    train: 0.70
+    validation: 0.15
+    test: 0.15
+
+features:
+  city:          {column: city, transforms: [categorical]}
+  zip_code:      {column: zip_code, transforms: [categorical]}
+  sqft:          {column: sqft, transforms: [current]}
+  bedrooms:      {column: bedrooms, transforms: [current]}
+  bathrooms:     {column: bathrooms, transforms: [current]}
+  lot_size_sqft: {column: lot_size_sqft, transforms: [current]}
+  year_built:    {column: year_built, transforms: [current]}
+  garage:        {column: garage, transforms: [current]}
+
+target:
+  name: price
+  type: regression
+  source_column: price
+```
+
+Inference contract: send `records` with `city`, `zip_code`, `sqft`,
+`bedrooms`, `bathrooms`, `lot_size_sqft`, `year_built`, `garage`. The engine
+one-hot encodes the two categoricals and passes the numerics through.
+
+### Worked example: temporal classification with rolling windows
+
+`datasets/predictive_maintenance/dataset.yaml` — one row per machine
+observation at 5-min intervals, predict failure within 24h:
+
+```yaml
+dataset:
+  dataset_id: predictive_maintenance
+  entity_key: machine_id
+  time_key: timestamp              # temporal → rolling transforms available
+  columns: ...
+  split: {strategy: chronological, train: 0.70, validation: 0.15, test: 0.15}
+
+features:
+  temperature:
+    column: temperature
+    transforms:
+      - current                    # raw value at this observation
+      - mean: {windows: [1h, 6h]}  # trailing 1h and 6h averages
+      - std:  {windows: [1h, 6h]}  # trailing volatility
+      - slope: {windows: [6h]}     # is it trending up/down?
+  vibration:
+    column: vibration
+    transforms:
+      - current
+      - mean: {windows: [1h, 6h]}
+      - max:  {windows: [6h]}
+      - std:  {windows: [1h, 6h]}
+      - slope: {windows: [6h]}
+  # ... pressure, current, voltage, rpm, flow_rate, maintenance_age_hours,
+  #     operating_hours (all `current`), machine_type (`categorical`)
+
+target:
+  name: failure_within_horizon
+  type: future_event
+  source_column: failure           # boolean event column
+  horizon: 24h
+  positive_class: 1
+```
+
+Inference contract: send `(entity_id, timestamp)` — e.g.
+`{"model_id": "...", "entity_id": "MACHINE_0042", "timestamp":
+"2025-06-01T00:00:00"}`. Anistroph loads that machine's history up to the
+timestamp from the parquet, builds the rolling features using the persisted
+`FeatureMetadata`, and predicts. The caller supplies no feature values.
+
+### Multi-target datasets
+
+A single source parquet can back multiple targets by creating separate YAML
+files that all point at the same data. Each YAML has a different `target:`
+block and may have a different `features:` block. See §14 (predictive
+maintenance) and §16 (semiconductor) for the reference multi-target setups.
 
 ---
 
@@ -390,7 +704,7 @@ svc = get_services()
 result = svc.train(
     dataset_id="predictive_maintenance",
     target_name="failure_within_horizon",
-    model_id="pm-xgb",
+    model_id="predictive-maintenance-xgboost",
 )
 print(f"Model type: {result['model_type']}")  # xgboost
 print(f"ROC-AUC: {result['metrics']['roc_auc']:.3f}")
@@ -414,7 +728,7 @@ curl -X POST http://localhost:9500/models/train \
   -d '{
     "dataset_id": "predictive_maintenance",
     "target_name": "failure_within_horizon",
-    "model_id": "pm-xgb"
+    "model_id": "predictive-maintenance-xgboost"
   }'
 ```
 
@@ -480,7 +794,7 @@ Open the **Models** tab (`http://localhost:9500/#models`):
 ```python
 from backend.services import get_services
 
-metrics = get_services().get_model_metrics("pm-xgb")
+metrics = get_services().get_model_metrics("predictive-maintenance-xgboost")
 print(f"ROC-AUC: {metrics['roc_auc']:.3f}")
 print(f"PR-AUC: {metrics['pr_auc']:.3f}")
 print(f"Confusion matrix: {metrics['confusion_matrix']}")
@@ -489,12 +803,12 @@ print(f"Confusion matrix: {metrics['confusion_matrix']}")
 ### Via REST API
 
 ```bash
-curl http://localhost:9500/models/pm-xgb/metrics
+curl http://localhost:9500/models/predictive-maintenance-xgboost/metrics
 ```
 
 ### Via MCP (Claude Desktop)
 
-> "Show me the metrics for model pm-xgb."
+> "Show me the metrics for model predictive-maintenance-xgboost."
 
 ---
 
@@ -573,7 +887,7 @@ subset (not the full set).
 from backend.services import get_services
 
 # Overall evaluation (all eval rows)
-result = get_services().evaluate_model("wafer-yield-xgb-v001", sample_size=50)
+result = get_services().evaluate_model("wafer-yield-xgboost", sample_size=50)
 metrics = result["metrics"]
 print(f"R²: {metrics['r2']:.4f}")
 print(f"MAE: {metrics['mae']:.4f}")
@@ -583,7 +897,7 @@ print(f"Sample: {result['predictions_sample'][:3]}")
 
 # Slice-level evaluation (filtered to a single city)
 result = get_services().evaluate_model(
-    "home_prices-xgb-v001",
+    "home-prices-xgboost",
     sample_size=50,
     filters={"city": "Saratoga"},
 )
@@ -595,12 +909,12 @@ print(f"Saratoga MAPE: {result['filtered_metrics']['mape']:.2f}%  (n={result['fi
 
 ```bash
 # Overall evaluation
-curl -X POST http://localhost:9500/evaluations/wafer-yield-xgb-v001 \
+curl -X POST http://localhost:9500/evaluations/wafer-yield-xgboost \
   -H "Content-Type: application/json" \
   -d '{"sample_size": 50}'
 
 # Slice-level evaluation (filtered to Saratoga)
-curl -X POST http://localhost:9500/evaluations/home_prices-xgb-v001 \
+curl -X POST http://localhost:9500/evaluations/home-prices-xgboost \
   -H "Content-Type: application/json" \
   -d '{"sample_size": 50, "filters": {"city": "Saratoga"}}'
 ```
@@ -617,7 +931,7 @@ When `filters` is provided, the response also includes:
 
 ### Via MCP (Claude Desktop)
 
-> "Evaluate model wafer-yield-xgb-v001 on the held-out set"
+> "Evaluate model wafer-yield-xgboost on the held-out set"
 > "What's the MAPE for the home price model?"
 > "Show me the worst predictions in the evaluation set"
 > "Evaluate the home price model filtered to San Jose only"
@@ -699,7 +1013,7 @@ from backend.services import get_services
 
 # Find populations where absolute error is worst
 slices = get_services().find_evaluation_slices(
-    "home_prices-xgb-v001",
+    "home-prices-xgboost",
     metric="abs_error",
     min_sample_size=50,
     top_k=20,
@@ -710,14 +1024,14 @@ for s in slices:
 
 # Use percentage error for price datasets (relative, not absolute)
 slices = get_services().find_evaluation_slices(
-    "home_prices-xgb-v001",
+    "home-prices-xgboost",
     metric="pct_error",
     top_k=10,
 )
 
 # Then drill into a specific slice with filtered evaluation
 result = get_services().evaluate_model(
-    "home_prices-xgb-v001",
+    "home-prices-xgboost",
     filters={"zip_code": "95071"},
 )
 print(f"Overall MAPE: {result['metrics']['mape']:.2f}%")
@@ -727,7 +1041,7 @@ print(f"95071 MAPE:   {result['filtered_metrics']['mape']:.2f}%  (n={result['fil
 ### Via REST API
 
 ```bash
-curl -X POST http://localhost:9500/evaluations/home_prices-xgb-v001/slices \
+curl -X POST http://localhost:9500/evaluations/home-prices-xgboost/slices \
   -H "Content-Type: application/json" \
   -d '{"metric": "abs_error", "min_sample_size": 50, "top_k": 20}'
 ```
@@ -776,7 +1090,7 @@ Feature Engine + persisted metadata, and returns the prediction.
 from backend.services import get_services
 
 pred = get_services().predict(
-    model_id="pm-xgb",
+    model_id="predictive-maintenance-xgboost",
     entity_id="TOOL_000",
     timestamp="2026-06-15T12:00:00",
 )
@@ -790,7 +1104,7 @@ print(f"Prediction: {pred['prediction']}")
 curl -X POST http://localhost:9500/predictions \
   -H "Content-Type: application/json" \
   -d '{
-    "model_id": "pm-xgb",
+    "model_id": "predictive-maintenance-xgboost",
     "entity_id": "TOOL_000",
     "timestamp": "2026-06-15T12:00:00"
   }'
@@ -802,15 +1116,15 @@ curl -X POST http://localhost:9500/predictions \
 curl -X POST http://localhost:9500/predictions/batch \
   -H "Content-Type: application/json" \
   -d '[
-    {"model_id": "pm-xgb", "entity_id": "TOOL_000", "timestamp": "2026-06-15T12:00:00"},
-    {"model_id": "pm-xgb", "entity_id": "TOOL_001", "timestamp": "2026-06-15T12:00:00"}
+    {"model_id": "predictive-maintenance-xgboost", "entity_id": "TOOL_000", "timestamp": "2026-06-15T12:00:00"},
+    {"model_id": "predictive-maintenance-xgboost", "entity_id": "TOOL_001", "timestamp": "2026-06-15T12:00:00"}
   ]'
 ```
 
 ### Via MCP (Claude Desktop)
 
 > "Predict the failure probability for TOOL_000 at 2026-06-15T12:00:00
-> using model pm-xgb."
+> using model predictive-maintenance-xgboost."
 
 ---
 
@@ -826,7 +1140,7 @@ no LLM fabrication.
 from backend.services import get_services
 
 expl = get_services().explain(
-    model_id="pm-xgb",
+    model_id="predictive-maintenance-xgboost",
     entity_id="TOOL_000",
     timestamp="2026-06-15T12:00:00",
     top_k=10,
@@ -842,7 +1156,7 @@ for d in expl["top_drivers"]:
 curl -X POST http://localhost:9500/predictions/explain \
   -H "Content-Type: application/json" \
   -d '{
-    "model_id": "pm-xgb",
+    "model_id": "predictive-maintenance-xgboost",
     "entity_id": "TOOL_000",
     "timestamp": "2026-06-15T12:00:00",
     "top_k": 10
@@ -940,16 +1254,16 @@ result = svc.train(
     "predictive_maintenance",
     "failure_within_horizon",
     "xgboost",
-    model_id="pm-xgb",
+    model_id="predictive-maintenance-xgboost",
 )
 print(f"ROC-AUC: {result['metrics']['roc_auc']:.3f}")
 
 # 4. Predict
-pred = svc.predict("pm-xgb", entity_id="TOOL_000", timestamp="2026-06-15T12:00:00")
+pred = svc.predict("predictive-maintenance-xgboost", entity_id="TOOL_000", timestamp="2026-06-15T12:00:00")
 print(f"Probability: {pred['probability']:.4f}")
 
 # 5. Explain
-expl = svc.explain("pm-xgb", entity_id="TOOL_000", timestamp="2026-06-15T12:00:00", top_k=5)
+expl = svc.explain("predictive-maintenance-xgboost", entity_id="TOOL_000", timestamp="2026-06-15T12:00:00", top_k=5)
 print(f"Top drivers: {[d['feature'] for d in expl['top_drivers']]}")
 
 # 6. Analyze
@@ -1040,29 +1354,53 @@ appropriate `anistroph_*` tool call.
 
 **Models & metrics**
 - "What models are available?"
-- "Show me the metrics for model pm-xgb"
+- "Show me the metrics for model wafer-yield-xgboost"
+- "Show me the metrics for model critical-dimension-xgboost"
+- "Show me the metrics for model film-thickness-xgboost"
+- "Show me the metrics for model predictive-maintenance-xgboost"
+- "Show me the metrics for model rul-xgboost"
+- "Show me the metrics for model maintenance-required-xgboost"
 - "List models trained on semiconductor_yield"
 
 **Prediction & explanation**
-- "Predict failure probability for TOOL_000 at 2026-06-15T12:00:00 using model pm-xgb"
-- "Predict wafer yield for WAFER_015000 using model wafer-yield-xgb-v001"
+- "Predict failure probability for TOOL_000 at 2026-06-15T12:00:00 using model predictive-maintenance-xgboost"
+- "Predict wafer yield for WAFER_015000 using model wafer-yield-xgboost"
+- "Predict critical dimension for WAFER_015000 using model critical-dimension-xgboost"
+- "Predict film thickness for WAFER_015000 using model film-thickness-xgboost"
+- "Predict remaining useful life for TOOL_010 at 2026-07-15T12:00:00 using model rul-xgboost"
+- "Predict maintenance required for TOOL_010 at 2026-07-15T12:00:00 using model maintenance-required-xgboost"
 - "Explain that prediction — what are the top drivers?"
-- "Explain the prediction for WAFER_015000 with top_k=15"
+- "Explain the critical dimension prediction for WAFER_015000 with top_k=10"
+- "Explain the film thickness prediction for WAFER_015000 using model film-thickness-xgboost"
+- "Explain the RUL prediction for TOOL_010 at 2026-07-15T12:00:00 using model rul-xgboost"
 
 **Held-out evaluation**
-- "Evaluate model pm-xgb against the held-out evaluation set"
-- "Run evaluation on wafer-yield-xgb-v001 and show me 20 prediction-vs-actual rows"
-- "What's the MAE and R² for model wafer-yield-xgb-v001 on the evaluation partition?"
-- "Evaluate model pm-xgb — how does it compare to the baseline?"
+- "Evaluate model predictive-maintenance-xgboost against the held-out evaluation set"
+- "Run evaluation on wafer-yield-xgboost and show me 20 prediction-vs-actual rows"
+- "What's the MAE and R² for model critical-dimension-xgboost on the evaluation partition?"
+- "Evaluate model film-thickness-xgboost — how does it compare to the baseline?"
 - "Evaluate the home price model filtered to San Jose only"
 - "Compare MAPE for Saratoga vs Los Gatos vs San Jose in the home price model"
+- "Evaluate the maintenance-required-xgboost model filtered to machine_type=TYPE_B"
 
 **Error slice discovery**
 - "Find the populations where the home price model has the worst prediction error"
 - "Which wafer combinations does the semiconductor model struggle with most?"
+- "Find the worst prediction-error slices for the critical-dimension-xgboost model by etch_tool and etch_recipe"
+- "Find evaluation slices for the film-thickness-xgboost model by deposition_tool and deposition_recipe, with at least 100 rows"
+- "Compare overall model error with the worst deposition_tool/recipe combinations for film-thickness-xgboost"
+- "Find the top 10 evaluation slices for the rul-xgboost model ranked by MAE deviation"
 - "Show me error slices by percentage error for the home price model"
 - "Where is the model over-predicting vs under-predicting?"
 - "Find slices where the model's log loss is highest"
+
+**Multidimensional analysis across targets**
+- "Slice the semiconductor_cd dataset by etch_tool and show the mean critical_dimension_nm for each"
+- "Slice the predictive_maintenance_rul dataset by machine_type and show the mean remaining_useful_life_hours"
+- "Compare the predictive_maintenance_maint dataset: maintenance_required=1 vs maintenance_required=0. Show temperature, vibration, and maintenance_age_hours"
+- "Find interesting slices in the semiconductor_film_thickness dataset by deposition_tool. Which deposition tools have the most unusual film thickness?"
+- "Find the most interesting slices in the semiconductor_cd dataset by etch_tool, etch_recipe, and product_id"
+- "Slice the predictive_maintenance dataset by machine_type and failure_mode. How many failures of each mode does each machine type have?"
 
 **Not available via MCP** (use REST, Python, or the Web UI instead):
 - Dataset registration, model training, and deletion — these are admin
@@ -1086,7 +1424,7 @@ in a different environment (e.g., Docker) or artifacts were deleted.
 Re-train the model:
 
 ```bash
-python -c "from backend.services import get_services; get_services().train('predictive_maintenance', 'failure_within_horizon', 'xgboost', model_id='pm-xgb')"
+python -c "from backend.services import get_services; get_services().train('predictive_maintenance', 'failure_within_horizon', 'xgboost', model_id='predictive-maintenance-xgboost')"
 ```
 
 ### MCP returns empty lists
@@ -1289,8 +1627,8 @@ Predictions return a probability (0.0–1.0) and a binary prediction
 
 **Via Claude Desktop (MCP):**
 > "List all Anistroph models"
-> "Show me the metrics for model anistroph-sentinel-v1"
-> "Predict failure probability for TOOL_010 at 2026-06-28T12:00:00 using model anistroph-sentinel-v1"
+> "Show me the metrics for model predictive-maintenance-xgboost"
+> "Predict failure probability for TOOL_010 at 2026-06-28T12:00:00 using model predictive-maintenance-xgboost"
 > "Explain that prediction — what are the top drivers?"
 
 **Via REST API:**
@@ -1298,12 +1636,12 @@ Predictions return a probability (0.0–1.0) and a binary prediction
 # Predict
 curl -X POST http://localhost:9500/predictions \
   -H "Content-Type: application/json" \
-  -d '{"model_id": "anistroph-sentinel-v1", "entity_id": "TOOL_010", "timestamp": "2026-06-28T12:00:00"}'
+  -d '{"model_id": "predictive-maintenance-xgboost", "entity_id": "TOOL_010", "timestamp": "2026-06-28T12:00:00"}'
 
 # Explain
 curl -X POST http://localhost:9500/predictions/explain \
   -H "Content-Type: application/json" \
-  -d '{"model_id": "anistroph-sentinel-v1", "entity_id": "TOOL_010", "timestamp": "2026-06-28T12:00:00", "top_k": 10}'
+  -d '{"model_id": "predictive-maintenance-xgboost", "entity_id": "TOOL_010", "timestamp": "2026-06-28T12:00:00", "top_k": 10}'
 ```
 
 **Via Python:**
@@ -1312,11 +1650,11 @@ from backend.services import get_services
 svc = get_services()
 
 # Predict
-pred = svc.predict("anistroph-sentinel-v1", entity_id="TOOL_010", timestamp="2026-06-28T12:00:00")
+pred = svc.predict("predictive-maintenance-xgboost", entity_id="TOOL_010", timestamp="2026-06-28T12:00:00")
 print(f"Probability: {pred['probability']:.4f}, Prediction: {pred['prediction']}")
 
 # Explain
-expl = svc.explain("anistroph-sentinel-v1", entity_id="TOOL_010", timestamp="2026-06-28T12:00:00", top_k=10)
+expl = svc.explain("predictive-maintenance-xgboost", entity_id="TOOL_010", timestamp="2026-06-28T12:00:00", top_k=10)
 for d in expl["top_drivers"]:
     print(f"  {d['feature']}: {d['impact']:.4f}")
 ```
@@ -1587,7 +1925,7 @@ svc.register_dataset_from_config(
 
 # Train XGBoost regressor
 python scripts/train_model.py --dataset semiconductor_yield \
-  --model-type xgboost_regressor --model-id wafer-yield-xgb-v001
+  --model-type xgboost_regressor --model-id wafer-yield-xgboost
 
 # Train linear baseline
 python scripts/train_model.py --dataset semiconductor_yield \
@@ -1596,7 +1934,7 @@ python scripts/train_model.py --dataset semiconductor_yield \
 
 **Predict via MCP (Claude Desktop, Claude CLI, or any stdio MCP client):**
 > "List all Anistroph models"
-> "Predict wafer yield for WAFER_015000 using model wafer-yield-xgb-v001"
+> "Predict wafer yield for WAFER_015000 using model wafer-yield-xgboost"
 > "Explain that prediction - what are the top drivers?"
 > "Find the worst yield combinations in the semiconductor dataset"
 > "Show yield by etch tool and chamber"
@@ -1605,7 +1943,7 @@ python scripts/train_model.py --dataset semiconductor_yield \
 ```bash
 curl -X POST http://localhost:9500/predictions \
   -H "Content-Type: application/json" \
-  -d '{"model_id": "wafer-yield-xgb-v001", "entity_id": "WAFER_015000"}'
+  -d '{"model_id": "wafer-yield-xgboost", "entity_id": "WAFER_015000"}'
 ```
 
 **Predict via Python:**
@@ -1614,7 +1952,7 @@ from backend.services import get_services
 svc = get_services()
 
 # Predict
-pred = svc.predict("wafer-yield-xgb-v001", entity_id="WAFER_015000")
+pred = svc.predict("wafer-yield-xgboost", entity_id="WAFER_015000")
 print(f"Predicted: {pred['predicted_yield']:.4f}, Actual: {pred['actual_yield']:.4f}")
 
 # Find interesting slices
@@ -1733,7 +2071,7 @@ svc.register_dataset_from_config(
 
 # Train XGBoost regressor
 python scripts/train_model.py --dataset home_prices \
-  --model-type xgboost_regressor --model-id home-price-xgb-v001
+  --model-type xgboost_regressor --model-id home-prices-xgboost
 ```
 
 **Analyze via MCP (Claude Desktop, Claude CLI, or any stdio MCP client):**
