@@ -16,42 +16,39 @@ Each dataset moves through a common predictive modeling lifecycle: **define pred
 Trained models and analytical capabilities are accessible to **Claude and other agents through MCP (stdio and Streamable HTTP)**, as well as through **REST/OpenAPI and the Anistroph Web UI**. This enables supporting agent-driven inference and analysis with cross-interface validation.
 
 
-Anistroph provides a common predictive lifecycle while allowing each dataset to retain its own schema, features, targets, preprocessing, and models.
+A common predictive lifecycle — each dataset keeps its own schema, features, and models.
 
-<div align="center">
 
 ```text
-                  DATASETS (Multi-domain)
-                            │
-             Data Preparation / Feature Engineering
-                            │
-                     Train / Eval Split
-                            │
-             ┌──────────────┴──────────────┐
-             ▼                             ▼
-        MODEL TRAINING                 EVALUATION
-             │                             │
-       train.parquet                 evaluation.parquet
-             │                             │
-             ▼                             ▼
-        Train Model              Evaluate Persisted Model
-             │                             │
-             ▼                             ▼
-       Persist Model                Model Metrics
-                                   + Multidimensional
-                                      Evaluation
-             │                             │
-             └──────────────┬──────────────┘
-                            ▼
-                     SHARED RUNTIME
-                  Predict • Explain • Analyze
-                            │
-                  MCP • REST/OpenAPI • UI
-                            │
-              Claude • MCP Agents • Applications
+                       DATASETS (Multi-domain)
+                                  │
+                   Data Preparation / Feature Engineering
+                                  │
+                           Train / Eval Split
+                                  │
+                   ┌──────────────┴──────────────┐
+                   ▼                             ▼
+              MODEL TRAINING                 EVALUATION
+                   │                             │
+             train.parquet                 evaluation.parquet
+                   │                             │
+                   ▼                             ▼
+              Train Model              Evaluate Persisted Model
+                   │                             │
+                   ▼                             ▼
+             Persist Model                Model Metrics
+                                         + Multidimensional
+                                            Evaluation
+                   │                             │
+                   └──────────────┬──────────────┘
+                                  ▼
+                           SHARED RUNTIME
+                        Predict • Explain • Analyze
+                                  │
+                        MCP • REST/OpenAPI • UI
+                                  │
+                    Claude • MCP • Agents • Applications
 ```
-
-</div>
 
 ### What the architecture supports
 
