@@ -9,9 +9,11 @@
 
 **Anistroph (derived from anisotropy)**, reflecting how insights can shift with the **direction of analysis**, is a multi-domain predictive analytics architecture supporting structured datasets with different schemas, features, targets, preprocessing, and modeling objectives.
 
-Each dataset moves through a common predictive modeling lifecycle: **define prediction targets, select and transform source features, prepare training data, train and evaluate models, and persist models with their preprocessing contracts.**
+Each dataset moves through a common **predictive modeling** lifecycle: 
 
-**Multiple datasets** across different **domains** use the **same shared services** for prediction, explanation, evaluation, and multidimensional analysis. Each dataset retains its own schema, features, targets, preprocessing, and models, allowing **new datasets to be added without changing the shared services**.
+⮕ Define prediction **targets** ⮕ select and transform source **features** ⮕ prepare training **data** ⮕ **train** models ⮕  **evaluate** models ⮕ **persist** models with their preprocessing contracts.
+
+**Multiple datasets** across different **domains** use the **same shared services** factoss the pipeline. Each dataset retains its own schema, features, targets, preprocessing, and models, allowing **new datasets to be added without changing the shared services**.
 
 Trained models and analytical capabilities are accessible to **Claude and other agents through MCP (stdio and Streamable HTTP)**, as well as through **REST/OpenAPI and the Anistroph Web UI**. This enables supporting agent-driven inference and analysis with cross-interface validation.
 
