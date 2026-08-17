@@ -755,7 +755,16 @@ make start
 1. Create `datasets/<dataset>/dataset.yaml` — schema, features, target, split strategy.
 2. Add source data as CSV or Parquet.
 3. Add dataset-specific preparation where required.
-4. Register the dataset — partitions into train/eval automatically.
+4. **Register the dataset** — `svc.register_dataset_from_config(config_path, source_path)`. Registration runs a fixed pipeline:
+   1. **Load + parse the YAML** → schema, feature specs, target spec.
+   2. **Ingest the source** — read CSV/Parquet, coerce column types per the YAML, validate against the spec (fails on missing columns or type mismatches), persist the full dataset as a single Parquet.
+   3. **Profile** — compute per-column stats (distributions, null counts, cardinality, time range, entity count) used by the UI Data tab and `anistroph_profile_dataset`.
+   4. **Partition** — split into `train.parquet` / `evaluation.parquet` / `validate.parquet` (80/20/0 by default). Temporal datasets sort chronologically (oldest → train, newest → eval); non-temporal shuffle with a fixed seed. The two partitions never overlap.
+   5. **Register metadata** — write a `DatasetMeta` record to `artifacts/dataset_registry.json` with paths to the parquets, feature/target specs, and a pointer back to the YAML.
+
+   Registration does **not** train a model, apply feature transforms, or construct the target — those happen at training time. After register, the dataset is ready for `train()`.
+
+   See **[README_SETUP_USAGE.md](README_SETUP_USAGE.md#register-a-dataset)** for the Python call example, partition file table, and the full registration reference.
 5. Train a model — model type auto-selected from target type if omitted.
 6. Evaluate on the held-out partition.
 7. Use the common inference, explanation, analysis, REST, MCP, and UI services.
