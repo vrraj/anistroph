@@ -2129,3 +2129,245 @@ for s in slices:
 - No macroeconomic dynamics — listing timestamps span ~18 months but
   prices are not modeled as a time series.
 - Zip code boundaries are illustrative, not authoritative.
+
+---
+
+## 18. Staged Prediction — Same Target, Progressive Feature Sets
+
+This section documents an architectural pattern Anistroph supports **today,
+with no code changes**: training multiple models against the *same target*
+on the *same source data*, where each model is restricted to the features
+available at a particular stage of a physical process. The motivating
+example is wafer fabrication, where yield can be predicted at four points
+in the line with progressively more information:
+
+```
+                           Target = WAFER YIELD
+
+Before Etch          After Etch          After Deposition       Before Test
+    │                    │                      │                    │
+    ▼                    ▼                      ▼                    ▼
+ Model A              Model B                Model C              Model D
+    │                    │                      │                    │
+Product              + Etch actuals        + Deposition         + Litho
+Route                + Chamber               actuals              actuals
+Recipe               + Temp/Pressure       + Film thickness    + CD
+Setpoints            + RF/etc.
+```
+
+### Why this works without engine changes
+
+The mechanism is the same one already used for multi-target datasets
+(§16: `semiconductor_yield`, `semiconductor_cd`, `semiconductor_film_thickness`
+share one parquet but differ in their `target:` block). The staged pattern
+is the mirror image: **same target, different `features:` blocks**.
+
+The key guarantee is in the Feature Engine — it only reads columns listed
+in the YAML's `features:` block, even if the source parquet contains many
+more columns. Data leakage is prevented by the YAML, not by the engine:
+
+```python
+# backend/features/engine.py — the engine iterates ONLY over feature_spec.features
+for feat_name, col_spec in feature_spec.features.items():
+    source_col = col_spec.column
+    transforms = normalize_transforms(col_spec.transforms)
+    ...
+```
+
+A column present in the parquet but absent from a model's `features:` block
+is never read during training or inference for that model. So Model A can
+be trained on the same parquet that contains etch actuals, and those
+actuals will not leak into Model A — they simply aren't listed in Model A's
+`features:` block.
+
+### Configuration pattern
+
+Create one dataset config per stage. All configs share the same source
+parquet, the same `target:` block, and the same `split:` block. They differ
+only in their `features:` block (and, for clarity, in the `role:` of
+columns that are targets in one config but features in another).
+
+| Config | Stage | Features included (cumulative) |
+|--------|-------|-------------------------------|
+| `semiconductor_yield_stage_a` | Before Etch | Product route, recipes, setpoints (litho exposure dose, focus offset) |
+| `semiconductor_yield_stage_b` | After Etch | + Etch tool/chamber/temperature/pressure/RF/gas flow/process time |
+| `semiconductor_yield_stage_c` | After Deposition | + Deposition tool/chamber/temperature/pressure/process time + `film_thickness_nm` |
+| `semiconductor_yield_stage_d` | Before Test | + `critical_dimension_nm` (CD) |
+
+Each config trains a separate model with its own persisted `FeatureSpec`
+and `FeatureMetadata`. The data already contains every column needed —
+`film_thickness_nm` and `critical_dimension_nm` are already in the parquet
+(see §16).
+
+### Worked example: Stage A (Before Etch) YAML
+
+```yaml
+# datasets/semiconductor_yield_stage_a/dataset.yaml
+#
+# Predicts wafer_yield using ONLY information available before etch begins.
+# Etch and deposition actuals exist in the parquet but are deliberately
+# omitted from `features:` so they cannot leak into this model.
+
+dataset:
+  dataset_id: semiconductor_yield_stage_a
+  name: Semiconductor Yield — Stage A (Before Etch)
+  entity_key: wafer_id
+  time_key: timestamp
+  columns:
+    timestamp:        {type: timestamp, role: identifier}
+    lot_id:           {type: categorical, role: identifier}
+    wafer_id:         {type: categorical, role: identifier}
+    product_id:       {type: categorical, role: feature}
+    fab_id:           {type: categorical, role: feature}
+    process_route:    {type: categorical, role: feature}
+    etch_recipe:      {type: categorical, role: feature}     # recipe only, not actuals
+    deposition_recipe: {type: categorical, role: feature}    # recipe only, not actuals
+    exposure_dose:    {type: numeric, role: feature}         # litho setpoint
+    focus_offset:     {type: numeric, role: feature}         # litho setpoint
+    # Etch/deposition actuals are declared here for schema completeness
+    # but their role is `metadata` so they are never used as features.
+    etch_tool:                {type: categorical, role: metadata}
+    etch_chamber:             {type: categorical, role: metadata}
+    etch_temperature_mean:    {type: numeric, role: metadata}
+    # ... (other etch/deposition actuals as metadata)
+    film_thickness_nm:        {type: numeric, role: metadata}
+    critical_dimension_nm:    {type: numeric, role: metadata}
+    wafer_yield:              {type: numeric, role: target}
+  split:
+    strategy: chronological
+    train: 0.70
+    validation: 0.15
+    test: 0.15
+
+features:
+  product_id:        {column: product_id, transforms: [categorical]}
+  fab_id:            {column: fab_id, transforms: [categorical]}
+  process_route:     {column: process_route, transforms: [categorical]}
+  etch_recipe:       {column: etch_recipe, transforms: [categorical]}
+  deposition_recipe: {column: deposition_recipe, transforms: [categorical]}
+  exposure_dose:     {column: exposure_dose, transforms: [current]}
+  focus_offset:      {column: focus_offset, transforms: [current]}
+
+target:
+  name: wafer_yield
+  type: regression
+  source_column: wafer_yield
+```
+
+Stage B, C, and D YAMLs are identical except that each adds more entries to
+the `features:` block (and flips the corresponding `columns:` entries from
+`role: metadata` to `role: feature`). The `target:` block is the same in
+all four.
+
+### Why `role: metadata` for unused actuals
+
+Columns in the parquet that should be available for `sample_rows`, slicing,
+and profiling — but must never be model inputs for a given stage — should
+be declared with `role: metadata`. This makes the exclusion explicit and
+auditable. A column with `role: feature` that is *not* listed in `features:`
+would also be excluded from the model, but `role: metadata` documents the
+intent: "this column exists in the data but is not a model input for this
+stage."
+
+### Training and evaluation
+
+Register and train each stage independently:
+
+```python
+from backend.services import get_services
+
+svc = get_services()
+
+# Register all four stage configs (all point at the same parquet)
+for stage in ["a", "b", "c", "d"]:
+    svc.register_dataset_from_config(
+        f"datasets/semiconductor_yield_stage_{stage}/dataset.yaml",
+        parquet_path="data/semiconductor_yield/data.parquet",
+    )
+
+# Train one model per stage
+for stage in ["a", "b", "c", "d"]:
+    svc.train_model(
+        dataset_id=f"semiconductor_yield_stage_{stage}",
+        target_name="wafer_yield",
+        model_type="xgboost_regressor",
+    )
+```
+
+Because all four configs use the same chronological split on the same
+parquet, they are evaluated on the **same held-out wafers**. Their metrics
+(MAE, RMSE, R²) are directly comparable — you'd expect R² to increase from
+Stage A → D as more information becomes available.
+
+### Inference contract per stage
+
+Each model's persisted `FeatureSpec` determines what a caller must supply.
+For non-temporal datasets, send `records` with raw source values matching
+that model's `features:` block:
+
+```bash
+# Stage A — only pre-etch information
+curl -X POST http://localhost:9500/predictions -H "Content-Type: application/json" -d '{
+  "model_id": "semiconductor_yield_stage_a-xgboost_regressor-...",
+  "records": [{
+    "product_id": "PROD_A",
+    "fab_id": "FAB_1",
+    "process_route": "ROUTE_X",
+    "etch_recipe": "ETCH_02",
+    "deposition_recipe": "DEP_01",
+    "exposure_dose": 32.5,
+    "focus_offset": 0.12
+  }]
+}'
+
+# Stage D — full process history
+curl -X POST http://localhost:9500/predictions -H "Content-Type: application/json" -d '{
+  "model_id": "semiconductor_yield_stage_d-xgboost_regressor-...",
+  "records": [{
+    "product_id": "PROD_A", "fab_id": "FAB_1", "process_route": "ROUTE_X",
+    "etch_recipe": "ETCH_02", "deposition_recipe": "DEP_01",
+    "exposure_dose": 32.5, "focus_offset": 0.12,
+    "etch_tool": "ETCH_01", "etch_chamber": "CH_B",
+    "etch_temperature_mean": 85.2, "etch_pressure_mean": 4.1,
+    # ... all etch and deposition actuals ...
+    "film_thickness_nm": 511.3,
+    "critical_dimension_nm": 38.2
+  }]
+}'
+```
+
+Columns not in a model's `features:` block are silently ignored — so even
+if a caller sends etch actuals to a Stage A model, they do not leak in.
+
+> **Use `records`, not `entity_id`, for staged predictions in a real
+> deployment.** `entity_id` lookup loads the full row from the parquet,
+> which includes later-stage actuals that would not exist yet at the point
+> in the process where Stage A/B/C are called. The model still only builds
+> features from its own `features:` list, so the prediction is correct —
+> but in a live fab, those later-stage columns would not yet be populated.
+> Sending `records` with only the columns available at that stage is the
+> faithful representation.
+
+### What is NOT supported (and workarounds)
+
+| Limitation | Workaround |
+|------------|------------|
+| No first-class "stage" abstraction — the engine doesn't know Stage B follows Stage A | Represent stages via `dataset_id` naming (`_stage_a`, `_stage_b`, ...) and compare models individually via the Models list or Evaluation tab |
+| No UI view that plots the 4 models' R² on a single progression chart | Compare metrics manually via `anistroph_get_model_metrics` or the Evaluation tab, one model at a time |
+| No cascading model outputs as features (Model A's *prediction* cannot be an input feature to Model B) | Pre-compute Model A's predictions, write them as a new column in the parquet, then list that column in Model B's `features:` block. Requires a one-time offline scoring pass. |
+| No automatic stage comparison endpoint | Use `anistroph_evaluate_model` on each of the 4 models and compare the returned `metrics` dicts. All four are evaluated on the same held-out wafers, so the comparison is apples-to-apples. |
+| **Registration duplicates the parquet on disk** (known quirk — to be fixed) | Each `register_dataset_from_config` call calls `ingest()` → `persist_parquet()`, which writes a new copy of the source data plus new train/eval/validate partition files — even when the source parquet is identical to an existing dataset's. For the staged pattern (4 stages × same data) and the multi-target pattern (§16: 3 configs × same data), this means multiple copies of the same rows on disk. With the current semiconductor data (~7 MB × 4 configs), this is ~50 MB of duplicates. The duplication is wasteful but not incorrect — the model trains on the same rows, just from a duplicate file. A future "share parquet" registration mode that reuses an existing dataset's parquet + partitions and stores only a new config/feature-spec/target-spec would eliminate this. |
+
+### Relationship to multi-target datasets (§16)
+
+The staged pattern and the multi-target pattern are duals:
+
+| | Multi-target (§16) | Staged (this section) |
+|---|---|---|
+| Same | Source parquet, `features:` block, `split:` block | Source parquet, `target:` block, `split:` block |
+| Differs | `target:` block (different prediction goals) | `features:` block (different available information) |
+| Use case | One dataset, multiple things to predict | One thing to predict, multiple points in a process to predict it from |
+
+Both patterns rely on the same underlying property: a dataset config is a
+*view* over the source data, and the `features:` + `target:` blocks define
+that view. Multiple views can share one parquet.

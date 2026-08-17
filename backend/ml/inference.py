@@ -176,6 +176,20 @@ def predict(
                 }
         elif records is not None:
             df = pl.DataFrame(records)
+            # If the dataset has an entity_key / time_key (for chronological
+            # splitting) but the caller's records don't include them, add
+            # placeholder columns so build_features can sort without failing.
+            # This is safe: only `current`/`categorical` transforms are used
+            # with records-based prediction (rolling windows require the
+            # entity_id+timestamp path above), so the placeholder values are
+            # never read as features.
+            placeholder_cols = {}
+            if spec.entity_key and spec.entity_key not in df.columns:
+                placeholder_cols[spec.entity_key] = ["__record__"] * df.height
+            if spec.time_key and spec.time_key not in df.columns:
+                placeholder_cols[spec.time_key] = [datetime(2000, 1, 1)] * df.height
+            if placeholder_cols:
+                df = df.with_columns([pl.Series(k, v) for k, v in placeholder_cols.items()])
             engine = FeatureEngine()
             feat_df, _ = engine.build_features(df, spec, feature_spec, metadata=feature_metadata, fit=False)
             X = feat_df.select(feature_cols).to_numpy()

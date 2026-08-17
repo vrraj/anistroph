@@ -1,0 +1,165 @@
+# Anistroph — Semiconductor Wafer Yield, Stage A (Before Etch).
+#
+# Same source data and same target as semiconductor_yield, but restricted to
+# ONLY the information available before etch begins:
+#   - product / fab / process route
+#   - etch and deposition recipes (the planned recipe, not actuals)
+#   - lithography setpoints (exposure dose, focus offset)
+#
+# Etch and deposition actuals (temperatures, pressures, RF power, gas flow,
+# process times, tool/chamber) exist in the source parquet but are declared
+# with role: metadata so they are available for slicing / sample_rows yet
+# can never become model inputs for this stage. This prevents data leakage:
+# a Stage A prediction is faithful to what is known before etch starts.
+#
+# One row = one completed wafer. Non-temporal (no rolling windows), but has
+# a timestamp for chronological splitting. Shares the same source parquet as
+# semiconductor_yield, semiconductor_cd, and semiconductor_film_thickness.
+
+dataset:
+  dataset_id: semiconductor_yield_stage_a
+  name: Semiconductor Yield — Stage A (Before Etch)
+  entity_key: wafer_id
+  time_key: timestamp
+
+  columns:
+    timestamp:
+      type: timestamp
+      role: identifier
+    lot_id:
+      type: categorical
+      role: identifier
+    wafer_id:
+      type: categorical
+      role: identifier
+    # --- Pre-etch information (model inputs for Stage A) ---
+    product_id:
+      type: categorical
+      role: feature
+    fab_id:
+      type: categorical
+      role: feature
+    process_route:
+      type: categorical
+      role: feature
+    etch_recipe:
+      type: categorical
+      role: feature
+    deposition_recipe:
+      type: categorical
+      role: feature
+    exposure_dose:
+      type: numeric
+      role: feature
+    focus_offset:
+      type: numeric
+      role: feature
+    # --- Etch actuals (NOT available at Stage A — excluded from features) ---
+    etch_tool:
+      type: categorical
+      role: metadata
+    etch_chamber:
+      type: categorical
+      role: metadata
+    etch_temperature_mean:
+      type: numeric
+      role: metadata
+    etch_temperature_std:
+      type: numeric
+      role: metadata
+    etch_pressure_mean:
+      type: numeric
+      role: metadata
+    etch_pressure_std:
+      type: numeric
+      role: metadata
+    etch_gas_flow_mean:
+      type: numeric
+      role: metadata
+    etch_rf_power_mean:
+      type: numeric
+      role: metadata
+    etch_process_time:
+      type: numeric
+      role: metadata
+    # --- Deposition actuals (NOT available at Stage A) ---
+    deposition_tool:
+      type: categorical
+      role: metadata
+    deposition_chamber:
+      type: categorical
+      role: metadata
+    deposition_temperature_mean:
+      type: numeric
+      role: metadata
+    deposition_temperature_std:
+      type: numeric
+      role: metadata
+    deposition_pressure_mean:
+      type: numeric
+      role: metadata
+    deposition_pressure_std:
+      type: numeric
+      role: metadata
+    deposition_process_time:
+      type: numeric
+      role: metadata
+    # --- Post-deposition measurements (NOT available at Stage A) ---
+    film_thickness_nm:
+      type: numeric
+      role: metadata
+    critical_dimension_nm:
+      type: numeric
+      role: metadata
+    # --- Maintenance ages (NOT available at Stage A — depend on tool usage) ---
+    maintenance_age_etch:
+      type: numeric
+      role: metadata
+    maintenance_age_deposition:
+      type: numeric
+      role: metadata
+    # --- Target ---
+    wafer_yield:
+      type: numeric
+      role: target
+
+  split:
+    strategy: chronological
+    train: 0.70
+    validation: 0.15
+    test: 0.15
+
+features:
+  product_id:
+    column: product_id
+    transforms:
+      - categorical
+  fab_id:
+    column: fab_id
+    transforms:
+      - categorical
+  process_route:
+    column: process_route
+    transforms:
+      - categorical
+  etch_recipe:
+    column: etch_recipe
+    transforms:
+      - categorical
+  deposition_recipe:
+    column: deposition_recipe
+    transforms:
+      - categorical
+  exposure_dose:
+    column: exposure_dose
+    transforms:
+      - current
+  focus_offset:
+    column: focus_offset
+    transforms:
+      - current
+
+target:
+  name: wafer_yield
+  type: regression
+  source_column: wafer_yield

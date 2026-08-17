@@ -220,7 +220,20 @@ async def call_tool(name: str, arguments: dict[str, Any]) -> list[types.TextCont
                 arguments.get("top_k", 20),
             )
         elif name == "anistroph_list_models":
-            result = [m.model_dump() for m in svc.list_models()]
+            # Return a compact summary — full model_dump() can be multi-MB
+            # for classification models with large PR curves. Use
+            # anistroph_get_model_metrics for full metrics.
+            result = [
+                {
+                    "model_id": m.model_id,
+                    "model_type": m.model_type,
+                    "dataset_id": m.dataset_id,
+                    "target_name": m.target_name,
+                    "target_type": m.target_type,
+                    "created_at": m.created_at,
+                }
+                for m in svc.list_models()
+            ]
         elif name == "anistroph_get_model_metrics":
             result = svc.get_model_metrics(arguments["model_id"])
         elif name == "anistroph_predict":

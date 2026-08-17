@@ -61,8 +61,17 @@ def evaluate_binary(
     }
 
     # Precision-recall curve points for plotting.
+    # Downsample to at most 200 points — a PR curve with 200 points is visually
+    # indistinguishable from one with 100K, but avoids bloating the model
+    # registry (and MCP list_models responses) with multi-MB payloads.
     if has_both:
         p, r, t = precision_recall_curve(y_true, y_proba)
+        max_points = 200
+        if len(p) > max_points:
+            step = len(p) // max_points
+            p = p[::step]
+            r = r[::step]
+            t = t[::step]
         metrics["pr_curve"] = {
             "precision": p.tolist(),
             "recall": r.tolist(),
