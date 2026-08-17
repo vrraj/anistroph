@@ -89,45 +89,50 @@ Explanation, evaluation, and observed-data analysis provide different perspectiv
 
 Install process:
 
-1. **Clone and install** — venv + `pip install -e .`
-2. **Generate and register datasets** — `make setup`
-3. **Connect Claude Desktop** — add MCP server config (no server required)
+1. **Clone** — `git clone https://github.com/vrraj/anistroph && cd anistroph`
+2. **One-shot setup** — `make install` (venv + package + datasets + Claude config snippet)
+3. **Connect Claude Desktop** — paste the printed MCP config into Claude Desktop
 4. **(Optional) Start the server** — `make start-native` or `make start`
 
 
-**1. Clone and install:**
+**1. Clone:**
 
 ```bash
 git clone https://github.com/vrraj/anistroph
 cd anistroph
-
-python -m venv .venv
-source .venv/bin/activate
-pip install -e .
 ```
 
-> **macOS note:** XGBoost requires `libomp`. Install it with
-> `brew install libomp` if you see an XGBoost library loading error.
-
-**2. Generate and register reference datasets:**
+**2. One-shot setup (venv + install + datasets + Claude config):**
 
 ```bash
-make setup
+make install
 ```
 
-This runs the three synthetic data generators (predictive maintenance, semiconductor yield, Bay Area home prices) and registers all eleven dataset configs (multi-target and staged-prediction variants share source parquet files). It is **idempotent** — re-running skips datasets that are already generated and registered. See `scripts/setup_datasets.py` for flags (`--skip-gen`, `--force`).
+This runs `scripts/setup_anistroph.py`, which:
+- Checks for `libomp` on macOS (XGBoost dependency) and offers to install it via Homebrew if missing
+- Creates a virtualenv at `.venv` and installs the package in editable mode
+- Generates and registers all eleven reference dataset configs (idempotent — re-runs skip what's already done)
+- Prints the **ready-to-paste Claude Desktop MCP config** with absolute paths filled in
+
+> **Without `make install`**, the equivalent manual steps are:
+> ```bash
+> python -m venv .venv && source .venv/bin/activate && pip install -e .
+> brew install libomp   # macOS only — required by XGBoost
+> make setup            # generate + register datasets
+> ```
+> Then copy the MCP config block from [README_SETUP_USAGE.md → Claude Desktop](README_SETUP_USAGE.md#claude-desktop-mcp-stdio).
 
 **3. Connect Claude Desktop via MCP (stdio — no server required):**
 
-Add to `~/Library/Application Support/Claude/claude_desktop_config.json`:
+Paste the config printed by `make install` into `~/Library/Application Support/Claude/claude_desktop_config.json`. It will look like:
 
 ```json
 {
   "mcpServers": {
     "anistroph": {
-      "command": "/path/to/anistroph/.venv/bin/python",
+      "command": "/absolute/path/to/anistroph/.venv/bin/python",
       "args": ["-m", "backend.integrations.mcp.server"],
-      "cwd": "/path/to/anistroph"
+      "cwd": "/absolute/path/to/anistroph"
     }
   }
 }

@@ -1,4 +1,4 @@
-.PHONY: start stop rebuild start-debug start-native stop-native generate-data setup test logs logs-mcp shell start-gpt stop-gpt stop-ngrok
+.PHONY: start stop rebuild start-debug start-native stop-native generate-data setup install test logs logs-mcp shell start-gpt stop-gpt stop-ngrok
 
 UNAME := $(shell uname)
 
@@ -94,6 +94,17 @@ generate-data:
 	@echo "Generating synthetic predictive-maintenance data..."
 	@. .venv/bin/activate && python scripts/generate_sensor_data.py \
 		--machines $(MACHINES) --days $(DAYS) --interval $(INTERVAL) --seed $(SEED)
+
+# =============================================================================
+# One-shot install: venv + pip + datasets + Claude config snippet
+# =============================================================================
+
+# Full first-time setup: creates venv, installs package, generates + registers
+# all reference datasets, and prints the ready-to-paste Claude Desktop MCP config.
+# Usage: make install
+install:
+	@echo "Running Anistroph one-shot setup..."
+	@python3 scripts/setup_anistroph.py
 
 # =============================================================================
 # One-shot setup: generate all synthetic data + register all reference datasets
