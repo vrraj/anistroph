@@ -22,8 +22,10 @@ Declares per-column transforms: `current`, `mean`, `min`, `max`, `std`,
 
 ### 2.3 TargetSpec (`backend/targets/spec.py`)
 
-Three target types: `binary`, `regression`, `future_event`.
-`future_event` requires a `horizon` (e.g. `24h`).
+Target types: `regression`, `classification` (canonical), `binary` (legacy alias
+for classification), `future_event` (alias with a time `horizon`, e.g. `24h`).
+`classification` and `binary` produce binary outcomes; `future_event` constructs
+a forward-looking boolean label from an event column.
 
 ### 2.4 Feature Engine (`backend/features/engine.py`)
 
@@ -43,14 +45,18 @@ entity-isolated: a failure on entity B never labels entity A.
   `predict_proba`, `save`, `load`, `feature_importance`).
 - `backend/models/logistic.py` — LogisticRegression with StandardScaler.
 - `backend/models/xgboost.py` — XGBoost classifier.
+- `backend/models/xgboost_regressor.py` — XGBoost regressor for regression tasks.
+- `backend/models/linear_regression.py` — Linear/Ridge regression baseline.
 - `backend/ml/training.py` — `train_model()` pipeline: registry → spec →
   load → features → target → chronological split → impute → fit → evaluate
   → persist → register.
-- `backend/ml/evaluation.py` — ROC-AUC, PR-AUC, precision, recall, F1,
-  confusion matrix. Configurable threshold (optimized for F1 on validation).
+- `backend/ml/evaluation.py` — Classification (ROC-AUC, PR-AUC, precision,
+  recall, F1, confusion matrix) and regression (MAE, MSE, RMSE, R², MAPE,
+  max error) metrics. Configurable threshold (optimized for F1 on validation).
 - `backend/ml/inference.py` — `predict(model_id, entity_id, timestamp,
   records)`. Reconstructs features from history via the same engine.
-- `backend/ml/explain.py` — Feature importance weighted by instance values.
+- `backend/ml/explain.py` — SHAP TreeExplainer for XGBoost; importance-weighted
+  contributions as fallback. Groups one-hot SHAP values back to source features.
 - `backend/ml/registry.py` — Filesystem-backed model artifact store.
 
 ### 2.7 Analytical Engine (`backend/analysis/slice.py`)
@@ -71,8 +77,11 @@ FastAPI routers for datasets, analysis, models, predictions. All invoke
 
 ### 3.2 MCP (`backend/integrations/mcp/`)
 
-Low-level `mcp.server.Server` over stdio. Tools call `AnistrophServices`.
-No arbitrary Python execution. Training not exposed.
+Two transports, both calling `AnistrophServices` with no arbitrary Python
+execution and no training exposure:
+- **stdio** — local subprocess, used by Claude Desktop, Cursor, Cline.
+- **Streamable HTTP** — `POST /mcp` endpoint on the FastAPI server, used by
+  remote MCP clients.
 
 ### 3.3 UI (`frontend/index.html`)
 

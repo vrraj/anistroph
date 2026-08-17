@@ -1,4 +1,4 @@
-.PHONY: start stop rebuild start-debug start-native stop-native generate-data test logs logs-mcp shell start-gpt stop-gpt stop-ngrok
+.PHONY: start stop rebuild start-debug start-native stop-native generate-data setup test logs logs-mcp shell start-gpt stop-gpt stop-ngrok
 
 UNAME := $(shell uname)
 
@@ -94,6 +94,23 @@ generate-data:
 	@echo "Generating synthetic predictive-maintenance data..."
 	@. .venv/bin/activate && python scripts/generate_sensor_data.py \
 		--machines $(MACHINES) --days $(DAYS) --interval $(INTERVAL) --seed $(SEED)
+
+# =============================================================================
+# One-shot setup: generate all synthetic data + register all reference datasets
+# =============================================================================
+
+# Generate all three synthetic datasets and register all eleven dataset configs.
+# Idempotent — skips generation/registration for datasets already present.
+# Usage: make setup
+# Force re-registration: make setup SETUP_ARGS=--force
+# Skip generation (data already on disk): make setup SETUP_ARGS=--skip-gen
+setup:
+	@echo "Setting up Anistroph reference datasets..."
+	@. .venv/bin/activate && python scripts/setup_datasets.py $(SETUP_ARGS)
+	@echo ""
+	@echo "Setup complete. Start the server with:"
+	@echo "  make start         (Docker Compose, port 9500)"
+	@echo "  make start-native  (local .venv, port 9500)"
 
 # =============================================================================
 # Testing
