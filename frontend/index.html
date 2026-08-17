@@ -36,8 +36,8 @@
       <div class="card">
         <h2>Register Dataset</h2>
         <div class="form-row">
-          <div class="field"><label>Config YAML path</label><input id="ds-config" value="datasets/predictive_maintenance/dataset.yaml"></div>
-          <div class="field"><label>Source data path</label><input id="ds-source" value="data/synthetic/predictive_maintenance.csv"></div>
+          <div class="field"><label>Config YAML path <i class="tooltip-icon" data-tooltip="Path to the dataset YAML config file (relative to repo root or absolute). Defines columns, types, roles, entity/time keys, feature transforms, split strategy, and target semantics.">i</i></label><input id="ds-config" value="datasets/predictive_maintenance/dataset.yaml"></div>
+          <div class="field"><label>Source data path <i class="tooltip-icon" data-tooltip="Path to the source CSV or Parquet file to ingest (relative to repo root or absolute). The data is validated against the config, persisted as Parquet, and partitioned into train/eval files.">i</i></label><input id="ds-source" value="data/synthetic/predictive_maintenance.csv"></div>
         </div>
         <button onclick="registerDataset()">Register</button>
       </div>
@@ -48,7 +48,7 @@
       </div>
       <div class="card">
         <h2>Dataset Profile</h2>
-        <div class="field"><label>Dataset ID</label><input id="ds-profile-id" placeholder="predictive_maintenance"></div>
+        <div class="field"><label>Dataset ID <i class="tooltip-icon" data-tooltip="The registered dataset to profile (e.g. predictive_maintenance or semiconductor_yield). Shows row count, column types, distributions, missing values, time range, and entity count.">i</i></label><input id="ds-profile-id" placeholder="predictive_maintenance"></div>
         <button onclick="profileDataset()">Profile</button>
         <div id="ds-profile-result" style="margin-top:16px;"></div>
       </div>
@@ -60,21 +60,21 @@
         <h2>Browse Raw Data</h2>
         <div class="form-row">
           <div class="field">
-            <label>Dataset</label>
+            <label>Dataset <i class="tooltip-icon" data-tooltip="The registered dataset to browse raw rows from. Selecting a dataset populates the sort and filter options based on its column profile.">i</i></label>
             <select id="dt-dataset" onchange="onDataDatasetChange()"><option value="">Loading datasets...</option></select>
           </div>
           <div class="field field-narrow">
-            <label>Rows</label>
+            <label>Rows <i class="tooltip-icon" data-tooltip="Maximum number of rows to display (capped at 1000). Use filters and sort to focus on relevant rows.">i</i></label>
             <input id="dt-n" type="number" value="25" min="1" max="1000">
           </div>
         </div>
         <div class="form-row">
           <div class="field">
-            <label>Sort by</label>
+            <label>Sort by <i class="tooltip-icon" data-tooltip="Column to sort the rows by before sampling. Populated from the dataset's columns when a dataset is selected.">i</i></label>
             <select id="dt-sortby"><option value="">— none —</option></select>
           </div>
           <div class="field field-narrow">
-            <label>Order</label>
+            <label>Order <i class="tooltip-icon" data-tooltip="Sort direction: ascending (smallest/oldest first) or descending (largest/newest first).">i</i></label>
             <select id="dt-order">
               <option value="asc">Ascending</option>
               <option value="desc">Descending</option>
@@ -95,17 +95,17 @@
         <h2>Slice Data</h2>
         <div class="form-row">
           <div class="field">
-            <label>Dataset</label>
+            <label>Dataset <i class="tooltip-icon" data-tooltip="The registered dataset to slice. Selecting a dataset populates dimensions and metrics from its column profile.">i</i></label>
             <select id="sl-dataset" onchange="onAnalysisDatasetChange('sl')"><option value="">Select a dataset...</option></select>
           </div>
           <div class="field">
-            <label>Dimensions</label>
+            <label>Dimensions <i class="tooltip-icon" data-tooltip="Categorical columns to group by (Ctrl/Cmd-click for multiple). The metric is aggregated within each unique combination of dimension values.">i</i></label>
             <select id="sl-dims" multiple size="4" style="height:auto;min-height:96px;"><option value="" disabled>Select a dataset first</option></select>
           </div>
         </div>
         <div class="form-row">
-          <div class="field"><label>Metric</label><select id="sl-metric"><option value="" disabled>Select a dataset first</option></select></div>
-          <div class="field"><label>Aggregation</label>
+          <div class="field"><label>Metric <i class="tooltip-icon" data-tooltip="The numeric column to aggregate within each slice (e.g. temperature, wafer_yield). Populated from the dataset's numeric columns.">i</i></label><select id="sl-metric"><option value="" disabled>Select a dataset first</option></select></div>
+          <div class="field"><label>Aggregation <i class="tooltip-icon" data-tooltip="How to combine the metric values within each group: mean, sum, count, max, min, std, or median.">i</i></label>
             <select id="sl-agg"><option>mean</option><option>sum</option><option>count</option><option>max</option><option>min</option><option>std</option><option>median</option></select>
           </div>
         </div>
@@ -116,14 +116,14 @@
         <h2>Compare Data</h2>
         <div class="form-row">
           <div class="field">
-            <label>Dataset</label>
+            <label>Dataset <i class="tooltip-icon" data-tooltip="The registered dataset to compare values across. Selecting a dataset populates dimension and metric options.">i</i></label>
             <select id="cmp-dataset" onchange="onAnalysisDatasetChange('cmp')"><option value="">Select a dataset...</option></select>
           </div>
-          <div class="field"><label>Dimension</label><select id="cmp-dim"><option value="" disabled>Select a dataset first</option></select></div>
+          <div class="field"><label>Dimension <i class="tooltip-icon" data-tooltip="A single categorical column to compare across (e.g. machine_type, etch_tool). Shows the metric for each value of this dimension.">i</i></label><select id="cmp-dim"><option value="" disabled>Select a dataset first</option></select></div>
         </div>
         <div class="form-row">
-          <div class="field"><label>Metric</label><select id="cmp-metric"><option value="" disabled>Select a dataset first</option></select></div>
-          <div class="field"><label>Aggregation</label>
+          <div class="field"><label>Metric <i class="tooltip-icon" data-tooltip="The numeric column to compare across dimension values (e.g. temperature, wafer_yield).">i</i></label><select id="cmp-metric"><option value="" disabled>Select a dataset first</option></select></div>
+          <div class="field"><label>Aggregation <i class="tooltip-icon" data-tooltip="How to combine the metric values for each dimension value: mean, sum, count, max, min, std, or median.">i</i></label>
             <select id="cmp-agg"><option>mean</option><option>sum</option><option>count</option><option>max</option><option>min</option><option>std</option><option>median</option></select>
           </div>
         </div>
@@ -137,19 +137,31 @@
       <div class="card">
         <h2>Train Model</h2>
         <div class="form-row">
-          <div class="field"><label>Dataset ID</label><input id="tr-dataset" value="predictive_maintenance"></div>
-          <div class="field"><label>Target name</label><input id="tr-target" value="failure_within_horizon"></div>
-        </div>
-        <div class="form-row">
-          <div class="field"><label>Model type</label>
-            <select id="tr-type">
-              <option>xgboost</option>
-              <option>logistic_regression</option>
-              <option>xgboost_regressor</option>
-              <option>linear_regression</option>
+          <div class="field">
+            <label>Dataset <i class="tooltip-icon" data-tooltip="The registered dataset to train on. Training loads only the train partition (train.parquet); the held-out evaluation partition is never used during fitting.">i</i></label>
+            <select id="tr-dataset" onchange="onTrainDatasetChange()">
+              <option value="">Select a dataset...</option>
             </select>
           </div>
-          <div class="field"><label>Model ID (optional)</label><input id="tr-modelid" placeholder="auto-generated"></div>
+          <div class="field">
+            <label>Target name <i class="tooltip-icon" data-tooltip="The column the model learns to predict, as defined in the dataset's YAML config (e.g. failure_within_horizon for predictive maintenance, wafer_yield for semiconductor). Auto-populated when a dataset is selected.">i</i></label>
+            <input id="tr-target">
+          </div>
+        </div>
+        <div class="form-row">
+          <div class="field">
+            <label>Model type <i class="tooltip-icon" data-tooltip="The algorithm to use. xgboost / logistic_regression are classifiers (binary or future-event targets). xgboost_regressor / linear_regression are regressors (continuous targets like wafer_yield).">i</i></label>
+            <select id="tr-type">
+              <option value="xgboost">xgboost (classifier)</option>
+              <option value="logistic_regression">logistic_regression (classifier)</option>
+              <option value="xgboost_regressor">xgboost_regressor (regression)</option>
+              <option value="linear_regression">linear_regression (regression)</option>
+            </select>
+          </div>
+          <div class="field">
+            <label>Model ID (optional) <i class="tooltip-icon" data-tooltip="A custom name for this model. If left blank, an ID is auto-generated from the dataset ID, model type, and timestamp.">i</i></label>
+            <input id="tr-modelid" placeholder="auto-generated">
+          </div>
         </div>
         <button onclick="trainModel()">Train</button>
         <div id="tr-result" style="margin-top:16px;"><div class="muted">Training results will appear here.</div></div>
@@ -165,13 +177,13 @@
       </div>
       <div class="card">
         <h2>Model Details</h2>
-        <div class="field"><label>Model ID</label><input id="md-id" placeholder="model-id"></div>
+        <div class="field"><label>Model ID <i class="tooltip-icon" data-tooltip="The ID of a trained model to inspect. Shows model type, dataset, target, feature names, training/validation/test periods, and hyperparameters.">i</i></label><input id="md-id" placeholder="model-id"></div>
         <button onclick="getModel()">Get Details</button>
         <div id="md-result" style="margin-top:16px;"></div>
       </div>
       <div class="card">
         <h2>Model Metrics</h2>
-        <div class="field"><label>Model ID</label><input id="md-metrics-id" placeholder="model-id"></div>
+        <div class="field"><label>Model ID <i class="tooltip-icon" data-tooltip="The ID of a trained model to get evaluation metrics for. Classification: ROC-AUC, PR-AUC, precision, recall, F1, confusion matrix. Regression: MAE, RMSE, R², baseline comparison.">i</i></label><input id="md-metrics-id" placeholder="model-id"></div>
         <button onclick="getModelMetrics()">Get Metrics</button>
         <div id="md-metrics-result" style="margin-top:16px;"></div>
       </div>
@@ -183,18 +195,18 @@
         <h2>Predict</h2>
         <div class="form-row">
           <div class="field">
-            <label>Model</label>
+            <label>Model <i class="tooltip-icon" data-tooltip="The trained model to use for prediction. Train one first on the Training tab if none are available.">i</i></label>
             <select id="pr-model"><option value="">Loading models...</option></select>
           </div>
-          <div class="field"><label>Entity ID</label><input id="pr-entity" value="TOOL_000"></div>
+          <div class="field"><label>Entity ID <i class="tooltip-icon" data-tooltip="The entity to predict for (e.g. a machine_id like TOOL_000, or a wafer_id like WAFER_015000). For temporal datasets, Anistroph retrieves historical observations for this entity up to the given timestamp.">i</i></label><input id="pr-entity" value="TOOL_000"></div>
         </div>
-        <div class="field"><label>Timestamp (optional)</label><input id="pr-timestamp" placeholder="2026-07-15T12:00:00"></div>
+        <div class="field"><label>Timestamp (optional) <i class="tooltip-icon" data-tooltip="For temporal datasets, the point in time to predict at. Anistroph loads all observations for the entity up to and including this timestamp. Leave blank for non-temporal datasets.">i</i></label><input id="pr-timestamp" placeholder="2026-07-15T12:00:00"></div>
         <button onclick="predict()">Predict</button>
         <div id="pr-result" style="margin-top:16px;"></div>
       </div>
       <div class="card">
         <h2>Explain Prediction (SHAP)</h2>
-        <div class="field field-narrow"><label>Top K features</label><input id="pr-topk" type="number" value="10"></div>
+        <div class="field field-narrow"><label>Top K features <i class="tooltip-icon" data-tooltip="Number of top contributing features to show in the SHAP explanation. Features are ranked by absolute impact on the prediction.">i</i></label><input id="pr-topk" type="number" value="10"></div>
         <button onclick="explain()">Explain</button>
         <div id="pr-explain" style="margin-top:16px;"></div>
       </div>
@@ -210,11 +222,11 @@
         </p>
         <div class="form-row">
           <div class="field">
-            <label>Model</label>
+            <label>Model <i class="tooltip-icon" data-tooltip="The trained model to evaluate. The model's dataset must have been registered with partitioning (train/eval) enabled.">i</i></label>
             <select id="ev-model"><option value="">Loading models...</option></select>
           </div>
           <div class="field field-narrow">
-            <label>Sample rows</label>
+            <label>Sample rows <i class="tooltip-icon" data-tooltip="Number of prediction-vs-actual rows to display in the results table (capped at 1000). Aggregate metrics are always computed over the full evaluation set.">i</i></label>
             <input id="ev-sample" type="number" value="50" min="1" max="1000">
           </div>
         </div>
@@ -389,6 +401,52 @@ async function compareData() {
 }
 
 // Training
+let _trainDatasetMeta = {};  // cache dataset metadata by dataset_id
+
+async function loadTrainDatasetDropdown() {
+  const sel = document.getElementById('tr-dataset');
+  if (!sel) return;
+  try {
+    const r = await api('/datasets');
+    _trainDatasetMeta = {};
+    if (Array.isArray(r) && r.length) {
+      sel.innerHTML = '<option value="">Select a dataset...</option>' +
+        r.map(d => {
+          const id = d.dataset_id || d.id || '?';
+          const name = d.name || '';
+          _trainDatasetMeta[id] = d;
+          return `<option value="${id}">${id}${name ? ' — ' + name : ''}</option>`;
+        }).join('');
+    } else {
+      sel.innerHTML = '<option value="">No datasets available — register one first</option>';
+    }
+  } catch (e) {
+    sel.innerHTML = '<option value="">Error loading datasets</option>';
+  }
+}
+
+async function onTrainDatasetChange() {
+  const dsId = document.getElementById('tr-dataset').value;
+  const targetInput = document.getElementById('tr-target');
+  if (!dsId) {
+    targetInput.value = '';
+    return;
+  }
+  const meta = _trainDatasetMeta[dsId];
+  if (meta && meta.target_name) {
+    targetInput.value = meta.target_name;
+  } else {
+    // Fetch the dataset metadata to get target_name.
+    try {
+      const d = await api('/datasets/' + encodeURIComponent(dsId));
+      _trainDatasetMeta[dsId] = d;
+      targetInput.value = d.target_name || '';
+    } catch (e) {
+      targetInput.value = '';
+    }
+  }
+}
+
 async function trainModel() {
   const el = document.getElementById('tr-result');
   el.innerHTML = '<div class="muted">Training... this may take a moment.</div>';
@@ -873,6 +931,7 @@ loadModelDropdown();
 loadEvalModelDropdown();
 loadDataDatasetDropdown();
 loadAnalysisDatasetDropdowns();
+loadTrainDatasetDropdown();
 </script>
 </body>
 </html>
