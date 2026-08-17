@@ -143,6 +143,24 @@ class ModelRegistry:
             return True
         return False
 
+    def delete(self, model_id: str) -> bool:
+        """Remove a model from the registry and delete its artifact directory.
+
+        Returns True if the model was found and removed, False if not found.
+        The artifact directory is removed if it exists (best-effort — errors
+        during file deletion are ignored to ensure the registry entry is
+        always cleaned up).
+        """
+        meta = self.get(model_id)
+        removed = self.remove(model_id)
+        if removed and meta and meta.artifact_path:
+            import shutil
+            try:
+                shutil.rmtree(meta.artifact_path, ignore_errors=True)
+            except Exception:
+                pass  # best-effort cleanup
+        return removed
+
     def load_feature_metadata(self, model_id: str) -> FeatureMetadata:
         meta = self.get(model_id)
         if meta is None:

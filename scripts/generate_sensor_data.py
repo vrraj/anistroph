@@ -3,6 +3,12 @@
 Generates 50 machines × 60 days × 5-minute observations with intentionally
 learnable but imperfect deterioration patterns leading to failures.
 
+Multiple targets:
+  - failure: binary (0/1) — will the tool fail at this timestamp?
+  - failure_mode: categorical (NONE/THERMAL/PRESSURE/VIBRATION/POWER) — what kind of failure?
+  - remaining_useful_life_hours: regression — hours until next failure
+  - maintenance_required: binary (0/1) — does the tool need maintenance now?
+
 Failure probability is driven by:
   - increasing vibration
   - temperature drift
@@ -147,16 +153,19 @@ def generate_dataset(
                 fail_prob = 0.0
 
             failure = 0
-            failure_type = ""
+            failure_mode = "NONE"
             if rng.random() < fail_prob:
                 failure = 1
-                # Failure type correlated with dominant driver.
+                # Failure mode correlated with dominant driver.
+                press_deviation = abs(press - params["press_base"])
                 if vib - params["vib_base"] > 1.5:
-                    failure_type = "MECHANICAL"
+                    failure_mode = "VIBRATION"
                 elif temp - params["temp_base"] > 8:
-                    failure_type = "THERMAL"
+                    failure_mode = "THERMAL"
+                elif press_deviation > 8:
+                    failure_mode = "PRESSURE"
                 else:
-                    failure_type = "PRESSURE"
+                    failure_mode = "POWER"
                 # Trigger maintenance reset after failure.
                 last_maintenance_step = t + int(rng.uniform(6, 24) * 60 / interval_minutes)
                 failure_cooldown_until = t + int(rng.uniform(48, 120) * 60 / interval_minutes)
@@ -164,7 +173,9 @@ def generate_dataset(
                 # Scheduled maintenance when age exceeds interval.
                 if hours_since_maint >= maintenance_interval_hours and rng.random() < 0.01:
                     last_maintenance_step = t
-                    failure_type = ""
+
+            # Maintenance required: 1 if maintenance age is high OR risk is elevated.
+            maint_required = 1 if (hours_since_maint >= maintenance_interval_hours * 0.8 or risk > 0.5) else 0
 
             rows.append(
                 {
@@ -181,11 +192,35 @@ def generate_dataset(
                     "maintenance_age_hours": round(hours_since_maint, 2),
                     "operating_hours": round(operating_hours, 2),
                     "failure": failure,
-                    "failure_type": failure_type,
+                    "failure_mode": failure_mode,
+                    "maintenance_required": maint_required,
+                    # remaining_useful_life_hours is filled in post-hoc
+                    "remaining_useful_life_hours": 0.0,
                 }
             )
 
     df = pl.DataFrame(rows).sort(["machine_id", "timestamp"])
+
+    # --- Compute remaining_useful_life_hours (RUL) ---
+    # For each machine, look forward from each row to the next failure.
+    # RUL = hours until the next failure event (0 at the failure timestamp).
+    # If no future failure, RUL = a large value (capped at max lookahead).
+    interval_hours = interval_minutes / 60.0
+    rul_values = []
+    for machine_id in df["machine_id"].unique().to_list():
+        mdf = df.filter(pl.col("machine_id") == machine_id)
+        fail_indices = mdf["failure"].to_numpy()
+        n = len(fail_indices)
+        rul = np.full(n, 9999.0)  # default: no future failure
+        # Find failure positions
+        fail_positions = np.where(fail_indices == 1)[0]
+        for i in range(n):
+            # Find the next failure at or after position i
+            future_fails = fail_positions[fail_positions >= i]
+            if len(future_fails) > 0:
+                rul[i] = (future_fails[0] - i) * interval_hours
+        rul_values.extend(rul.tolist())
+    df = df.with_columns(pl.Series("remaining_useful_life_hours", rul_values))
 
     if out_csv:
         Path(out_csv).parent.mkdir(parents=True, exist_ok=True)
@@ -216,8 +251,13 @@ def main() -> None:
         out_parquet=args.out_parquet,
     )
     n_fail = df.filter(pl.col("failure") == 1).height
+    n_maint = df.filter(pl.col("maintenance_required") == 1).height
     print(f"Generated {df.height} rows, {df['machine_id'].n_unique()} machines, {n_fail} failures")
     print(f"Failure rate: {n_fail / df.height:.4%}")
+    print(f"Maintenance required rate: {n_maint / df.height:.4%}")
+    rul_col = df["remaining_useful_life_hours"]
+    print(f"RUL: min={rul_col.min():.1f}h, mean={rul_col.mean():.1f}h, max={rul_col.max():.1f}h")
+    print(f"Failure modes: {df['failure_mode'].unique().to_list()}")
     print(f"CSV: {args.out_csv}")
     print(f"Parquet: {args.out_parquet}")
 

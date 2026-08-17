@@ -1,6 +1,6 @@
 """Synthetic Bay Area home-price data generator.
 
-Generates ~20,000 home listing rows across three Silicon Valley cities:
+Generates ~40,000 home listing rows across three Silicon Valley cities:
 San Jose, Saratoga, and Los Gatos. The model predicts ``price`` (regression)
 primarily from square footage, with city/zip as the dominant price driver.
 
@@ -81,7 +81,7 @@ def _pick_city_zip(rng: np.random.Generator, n: int) -> tuple[np.ndarray, np.nda
 
 
 def generate_homes(
-    n_homes: int = 20_000,
+    n_homes: int = 40_000,
     seed: int = 42,
 ) -> pl.DataFrame:
     """Generate a synthetic Bay Area home-price dataset."""
@@ -186,7 +186,7 @@ def generate_homes(
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Generate synthetic Bay Area home-price data.")
-    parser.add_argument("--homes", type=int, default=20_000, help="Number of home rows to generate.")
+    parser.add_argument("--homes", type=int, default=40_000, help="Number of home rows to generate.")
     parser.add_argument("--seed", type=int, default=42, help="Random seed for reproducibility.")
     parser.add_argument("--output", type=str, default="data/home_prices/data.parquet",
                         help="Output Parquet path.")

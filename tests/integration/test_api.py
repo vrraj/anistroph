@@ -111,6 +111,43 @@ class TestModelAPI:
         assert r3.status_code == 200
         assert "roc_auc" in r3.json()
 
+    def test_train_auto_selects_model_type(self, client):
+        """Omitting model_type auto-selects from the dataset's task type."""
+        r = client.post("/models/train", json={
+            "dataset_id": "predictive_maintenance",
+            "target_name": "failure_within_horizon",
+            "model_id": "api-auto-classification",
+        })
+        assert r.status_code == 200
+        result = r.json()
+        # predictive_maintenance is a classification dataset → xgboost.
+        assert result["model_type"] == "xgboost"
+        assert result["metrics"]["roc_auc"] is not None
+
+    def test_delete_model(self, client):
+        """Delete a model via REST and verify it's gone."""
+        # Train a model to delete.
+        client.post("/models/train", json={
+            "dataset_id": "predictive_maintenance",
+            "target_name": "failure_within_horizon",
+            "model_id": "api-delete-test",
+        })
+        # Verify it exists.
+        r = client.get("/models/api-delete-test")
+        assert r.status_code == 200
+        # Delete it.
+        r = client.delete("/models/api-delete-test")
+        assert r.status_code == 200
+        assert r.json()["deleted"] is True
+        # Verify it's gone.
+        r = client.get("/models/api-delete-test")
+        assert r.status_code == 404
+
+    def test_delete_model_not_found(self, client):
+        """Deleting a nonexistent model returns 404."""
+        r = client.delete("/models/nonexistent-model")
+        assert r.status_code == 404
+
 
 class TestPredictionAPI:
     def test_predict(self, client):

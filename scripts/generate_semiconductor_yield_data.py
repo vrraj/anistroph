@@ -1,7 +1,12 @@
 """Synthetic semiconductor wafer-yield data generator.
 
-Generates ~30,000 wafer rows (one row = one completed wafer) with
+Generates ~50,000 wafer rows (one row = one completed wafer) with
 intentionally learnable but imperfect yield relationships.
+
+Three regression targets:
+  - wafer_yield: overall yield (0.0-1.0), driven by etch/deposition interactions
+  - critical_dimension_nm: measured CD after lithography/etch (~37-38 nm)
+  - film_thickness_nm: measured deposited film thickness (~500-520 nm)
 
 Yield is driven by:
   - etch_tool / etch_chamber interactions (ETCH_02 + CH_B = bad)
@@ -11,8 +16,20 @@ Yield is driven by:
   - maintenance age × tool interactions
   - process_route × temperature variability
 
+CD is driven by:
+  - exposure_dose (higher dose → smaller CD)
+  - focus_offset (larger |offset| → wider CD, more variation)
+  - etch_tool / etch_recipe (ETCH_02 tends to over-etch → smaller CD)
+  - etch_temperature (higher temp → faster etch → smaller CD)
+
+Film thickness is driven by:
+  - deposition_tool / deposition_recipe (DEP_02 tends thinner)
+  - deposition_process_time (longer → thicker, with diminishing returns)
+  - deposition_pressure (higher pressure → denser, slightly thicker)
+  - deposition_temperature (higher temp → more uniform, slightly thicker)
+
 Baseline yield ~96-98%. Degraded conditions can drop yield to ~87-93%.
-No single feature perfectly determines yield.
+No single feature perfectly determines any target.
 """
 
 from __future__ import annotations
@@ -39,7 +56,7 @@ PROCESS_ROUTES = ["ROUTE_1", "ROUTE_2", "ROUTE_3"]
 
 
 def generate_wafers(
-    n_wafers: int = 30_000,
+    n_wafers: int = 50_000,
     seed: int = 42,
 ) -> pl.DataFrame:
     """Generate a synthetic semiconductor wafer-yield dataset."""
@@ -157,6 +174,89 @@ def generate_wafers(
     wafer_yield = baseline - yield_penalty + noise
     wafer_yield = np.clip(wafer_yield, 0.0, 1.0)
 
+    # --- Critical Dimension (CD) model ---
+    # CD is measured in nm after lithography + etch.
+    # Nominal target: 38.0 nm. Driven by exposure dose, focus, etch conditions.
+    cd_noise = rng.normal(0, 0.3, n_wafers)  # ~0.3 nm measurement noise
+
+    # Exposure dose: higher dose → more resist removed → smaller CD
+    cd_dose_effect = (exposure_dose - 25.0) * -0.8  # -0.8 nm per unit dose
+
+    # Focus offset: larger |offset| → wider CD (defocus broadens the pattern)
+    cd_focus_effect = np.abs(focus_offset) * 15.0  # 15 nm per unit offset
+
+    # Etch tool: ETCH_02 tends to over-etch → smaller CD
+    cd_etch_effect = np.where(etch_tool == "ETCH_02", -0.5, 0.0)
+    cd_etch_effect += np.where(etch_tool == "ETCH_03", 0.3, 0.0)
+
+    # Etch recipe: RECIPE_C is more aggressive → smaller CD
+    cd_recipe_effect = np.where(etch_recipe == "RECIPE_C", -0.4, 0.0)
+    cd_recipe_effect += np.where(etch_recipe == "RECIPE_A", 0.3, 0.0)
+
+    # Etch temperature: higher temp → faster etch → slightly smaller CD
+    cd_temp_effect = (etch_temp_mean - 85.0) * -0.05
+
+    # Product: PROD_A has a slightly tighter CD spec
+    cd_product_effect = np.where(product == "PROD_A", -0.2, 0.0)
+
+    # Interaction: ETCH_02 + RECIPE_C → over-etch → significantly smaller CD
+    cd_interaction = np.where(
+        (etch_tool == "ETCH_02") & (etch_recipe == "RECIPE_C"), -0.6, 0.0
+    )
+
+    critical_dimension_nm = (
+        38.0  # nominal
+        + cd_dose_effect
+        + cd_focus_effect
+        + cd_etch_effect
+        + cd_recipe_effect
+        + cd_temp_effect
+        + cd_product_effect
+        + cd_interaction
+        + cd_noise
+    )
+
+    # --- Film Thickness model ---
+    # Film thickness measured in nm after deposition.
+    # Nominal target: 510.0 nm. Driven by deposition conditions.
+    ft_noise = rng.normal(0, 2.0, n_wafers)  # ~2 nm measurement noise
+
+    # Process time: longer → thicker (with diminishing returns, log-like)
+    ft_time_effect = (dep_process_time - 180.0) * 0.8  # 0.8 nm per minute
+
+    # Deposition tool: DEP_02 tends thinner, DEP_03 tends thicker
+    ft_tool_effect = np.where(dep_tool == "DEP_02", -8.0, 0.0)
+    ft_tool_effect += np.where(dep_tool == "DEP_03", 6.0, 0.0)
+
+    # Deposition recipe: DEP_RECIPE_B is a thicker deposition process
+    ft_recipe_effect = np.where(dep_recipe == "DEP_RECIPE_B", 5.0, 0.0)
+
+    # Pressure: higher pressure → slightly thicker (denser deposition)
+    ft_pressure_effect = (dep_pressure_mean - 5.0) * 8.0  # 8 nm per unit pressure
+
+    # Temperature: higher temp → more uniform, slightly thicker
+    ft_temp_effect = (dep_temp_mean - 400.0) * 0.3  # 0.3 nm per degree
+
+    # Maintenance age: older maintenance on deposition tool → more variation
+    ft_maint_effect = (maintenance_age_deposition / 600.0) * -3.0  # slight thinning
+
+    # Interaction: DEP_02 + DEP_RECIPE_A → significantly thinner
+    ft_interaction = np.where(
+        (dep_tool == "DEP_02") & (dep_recipe == "DEP_RECIPE_A"), -5.0, 0.0
+    )
+
+    film_thickness_nm = (
+        510.0  # nominal
+        + ft_time_effect
+        + ft_tool_effect
+        + ft_recipe_effect
+        + ft_pressure_effect
+        + ft_temp_effect
+        + ft_maint_effect
+        + ft_interaction
+        + ft_noise
+    )
+
     # --- Build DataFrame ---
     df = pl.DataFrame({
         "timestamp": timestamps,
@@ -188,6 +288,8 @@ def generate_wafers(
         "maintenance_age_etch": maintenance_age_etch,
         "maintenance_age_deposition": maintenance_age_deposition,
         "wafer_yield": wafer_yield,
+        "critical_dimension_nm": critical_dimension_nm,
+        "film_thickness_nm": film_thickness_nm,
     })
 
     return df
@@ -195,7 +297,7 @@ def generate_wafers(
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Generate synthetic semiconductor wafer-yield data.")
-    parser.add_argument("--wafers", type=int, default=30_000, help="Number of wafer rows to generate.")
+    parser.add_argument("--wafers", type=int, default=50_000, help="Number of wafer rows to generate.")
     parser.add_argument("--seed", type=int, default=42, help="Random seed for reproducibility.")
     parser.add_argument("--output", type=str, default="data/semiconductor_yield/data.parquet",
                         help="Output Parquet path.")
@@ -212,6 +314,10 @@ def main() -> None:
     # Quick summary.
     yield_col = df["wafer_yield"]
     print(f"  wafer_yield: min={yield_col.min():.4f}, mean={yield_col.mean():.4f}, max={yield_col.max():.4f}")
+    cd_col = df["critical_dimension_nm"]
+    print(f"  critical_dimension_nm: min={cd_col.min():.2f}, mean={cd_col.mean():.2f}, max={cd_col.max():.2f}")
+    ft_col = df["film_thickness_nm"]
+    print(f"  film_thickness_nm: min={ft_col.min():.2f}, mean={ft_col.mean():.2f}, max={ft_col.max():.2f}")
 
     # Verify hidden interactions.
     etch02_chb = df.filter((pl.col("etch_tool") == "ETCH_02") & (pl.col("etch_chamber") == "CH_B"))

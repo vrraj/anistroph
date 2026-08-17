@@ -1,12 +1,15 @@
-# Anistroph — Semiconductor Wafer Yield reference dataset configuration.
+# Anistroph — Semiconductor Critical Dimension reference dataset configuration.
 #
-# One row = one completed wafer. The model predicts wafer_yield (regression).
-# This is a non-temporal dataset (no rolling windows), but has a timestamp
-# for chronological splitting.
+# Same source data as semiconductor_yield, but predicts critical_dimension_nm
+# (regression) — the measured CD after lithography/etch, in nanometers.
+# CD is driven by exposure dose, focus offset, etch tool/recipe, and temperature.
+#
+# One row = one completed wafer. Non-temporal (no rolling windows), but has a
+# timestamp for chronological splitting.
 
 dataset:
-  dataset_id: semiconductor_yield
-  name: Semiconductor Wafer Yield
+  dataset_id: semiconductor_cd
+  name: Semiconductor Critical Dimension
   entity_key: wafer_id
   time_key: timestamp
 
@@ -214,6 +217,6 @@ features:
       - current
 
 target:
-  name: wafer_yield
+  name: critical_dimension_nm
   type: regression
-  source_column: wafer_yield
+  source_column: critical_dimension_nm

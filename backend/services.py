@@ -252,7 +252,15 @@ class AnistrophServices:
             raise ValueError(f"model {model_id!r} not found")
         return meta.metrics
 
-    def train(self, dataset_id: str, target_name: str, model_type: str,
+    def delete_model(self, model_id: str) -> bool:
+        """Delete a model from the registry and remove its artifact directory.
+
+        Returns True if the model was found and deleted, False if not found.
+        """
+        return self.model_registry.delete(model_id)
+
+    def train(self, dataset_id: str, target_name: str,
+              model_type: Optional[str] = None,
               model_parameters: Optional[dict[str, Any]] = None,
               model_id: Optional[str] = None) -> dict[str, Any]:
         config = self.get_config(dataset_id)

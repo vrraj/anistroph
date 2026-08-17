@@ -38,7 +38,7 @@ class CompareRequest(BaseModel):
 class TrainRequest(BaseModel):
     dataset_id: str
     target_name: str
-    model_type: str
+    model_type: Optional[str] = None  # auto-selected from task_type if omitted
     model_parameters: Optional[dict[str, Any]] = None
     model_id: Optional[str] = None
 

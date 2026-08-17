@@ -106,7 +106,7 @@ def _run_inference_on_eval_set(
     if imputer is not None:
         X = imputer.transform(X)
 
-    is_regression = target_spec.type in (TargetType.REGRESSION,)
+    is_regression = target_spec.type.is_regression
     threshold = meta.decision_threshold
 
     # --- Run inference ---

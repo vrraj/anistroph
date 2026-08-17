@@ -55,3 +55,13 @@ async def get_model_metrics(model_id: str):
         return svc.get_model_metrics(model_id)
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e))
+
+
+@router.delete("/{model_id}")
+async def delete_model(model_id: str):
+    """Delete a model from the registry and remove its artifacts."""
+    svc = get_services()
+    deleted = svc.delete_model(model_id)
+    if not deleted:
+        raise HTTPException(status_code=404, detail=f"model {model_id!r} not found")
+    return {"model_id": model_id, "deleted": True}

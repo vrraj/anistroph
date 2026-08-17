@@ -1,12 +1,16 @@
 """TargetSpec — configurable target construction.
 
-Supports three conceptual target types architecturally:
-  - binary
-  - regression
-  - future_event
+Supports these task types:
+  - regression       → numerical outcome (XGBoost regressor)
+  - classification   → binary class / probability (XGBoost classifier)
+  - binary           → alias for classification (legacy)
+  - future_event     → classification with a time horizon (legacy)
 
-Only ``future_event``/``binary`` is fully exercised by the v0.1 reference
-implementation, but the architecture recognises all three.
+The ``classification`` type is the canonical name for binary classification
+in v0.1. ``binary`` and ``future_event`` are kept as aliases for backward
+compatibility with existing dataset configs. Future task types (forecasting,
+anomaly detection) can be added to the enum without changing existing
+datasets.
 """
 
 from __future__ import annotations
@@ -20,9 +24,24 @@ from pydantic import BaseModel
 
 
 class TargetType(str, Enum):
-    BINARY = "binary"
     REGRESSION = "regression"
-    FUTURE_EVENT = "future_event"
+    CLASSIFICATION = "classification"
+    BINARY = "binary"            # alias for classification (legacy)
+    FUTURE_EVENT = "future_event"  # classification with horizon (legacy)
+
+    @property
+    def is_classification(self) -> bool:
+        """True for any classification-like task type."""
+        return self in (
+            TargetType.CLASSIFICATION,
+            TargetType.BINARY,
+            TargetType.FUTURE_EVENT,
+        )
+
+    @property
+    def is_regression(self) -> bool:
+        """True for regression task types."""
+        return self == TargetType.REGRESSION
 
 
 class TargetSpec(BaseModel):

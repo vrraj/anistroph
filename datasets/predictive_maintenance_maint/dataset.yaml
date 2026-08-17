@@ -5,8 +5,8 @@
 # machine_id, temperature, failure, etc.
 
 dataset:
-  dataset_id: predictive_maintenance
-  name: Predictive Maintenance Demo
+  dataset_id: predictive_maintenance_maint
+  name: Predictive Maintenance — Maintenance Required
   entity_key: machine_id
   time_key: timestamp
 
@@ -138,8 +138,8 @@ features:
       - categorical
 
 target:
-  name: failure_within_horizon
-  type: future_event
-  source_column: failure
-  horizon: 24h
-  positive_class: 1
+  name: maintenance_required
+  type: classification
+  source_column: maintenance_required
+  
+  

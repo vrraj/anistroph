@@ -181,8 +181,70 @@ Output:
 ## 3. Register a Dataset
 
 Registration reads the dataset config (`datasets/predictive_maintenance/dataset.yaml`),
-validates the data against the spec, converts CSV to Parquet, and stores
-metadata in the dataset registry.
+validates the data against the spec, converts CSV to Parquet, partitions the
+data into train/evaluation/validate sets, and stores metadata in the dataset
+registry.
+
+### What happens during registration
+
+```
+register_dataset_from_config()
+    │
+    ├── 1. Load YAML config
+    │      → DatasetSpec (entity_key, time_key, split strategy)
+    │      → FeatureSpec (which columns are features, their types)
+    │      → TargetSpec (target column, task type: regression/classification)
+    │
+    ├── 2. Ingest source data
+    │      → Read CSV or Parquet
+    │      → Validate columns against spec
+    │      → Write full Parquet: data/processed/{dataset_id}.parquet
+    │
+    ├── 3. Profile the full dataset
+    │      → Column types, unique counts, top values, time range
+    │
+    ├── 4. Partition into train / evaluation / validate
+    │      → Resolve split percentages (YAML overrides .env defaults)
+    │      → Temporal dataset → chronological split (oldest→train, newest→eval)
+    │      → Non-temporal dataset → random split with fixed seed
+    │      → Write partition files:
+    │         data/processed/{dataset_id}.train.parquet
+    │         data/processed/{dataset_id}.evaluation.parquet
+    │         data/processed/{dataset_id}.validate.parquet
+    │
+    └── 5. Register in dataset registry
+           → Store all paths + metadata in artifacts/dataset_registry.json
+           → partitioned=True
+           → train_parquet_path, eval_parquet_path, validate_parquet_path
+```
+
+### How evaluation finds the right dataset
+
+When you select a model in the Evaluation tab and click Evaluate, the system
+resolves the evaluation data through a 3-step lookup:
+
+```
+1. Model metadata (stored at training time)
+   → model.dataset_id = "semiconductor_yield"
+
+2. Dataset registry (stored at registration time)
+   → dataset.eval_parquet_path = "data/processed/semiconductor_yield.evaluation.parquet"
+
+3. Evaluation runner loads that eval parquet
+   → Builds features using the model's persisted FeatureMetadata (no refit)
+   → Runs inference with the persisted model
+   → Computes metrics against known actuals
+```
+
+This is why evaluation "just works" — the model stores which dataset it was
+trained on, and the dataset registry stores where the eval partition lives.
+No manual configuration needed. The same chain applies to `predict`,
+`find_evaluation_slices`, and `explain_prediction`.
+
+**Key guarantee:** Training loads only `train.parquet`; evaluation loads only
+`evaluation.parquet`. The two never overlap — the partition is done
+chronologically (temporal) or with a fixed random seed (non-temporal) at
+registration time, before any model is trained.
 
 ### Via Python
 
@@ -195,6 +257,9 @@ meta = svc.register_dataset_from_config(
     "data/synthetic/predictive_maintenance.csv",
 )
 print(f"Registered: {meta.dataset_id}, {meta.row_count} rows")
+print(f"Train:  {meta.train_parquet_path}")
+print(f"Eval:   {meta.eval_parquet_path}")
+print(f"Validate: {meta.validate_parquet_path}")
 ```
 
 ### Via REST API
@@ -208,6 +273,9 @@ curl -X POST http://localhost:9500/datasets \
   }'
 ```
 
+Response includes `partitioned: true` and the paths to all three partition
+files (`train_parquet_path`, `eval_parquet_path`, `validate_parquet_path`).
+
 ### Via web UI
 
 1. Open http://localhost:9500
@@ -215,19 +283,23 @@ curl -X POST http://localhost:9500/datasets \
 3. Click **Register** (fields are pre-filled)
 4. Click **Profile** to see dataset statistics
 
-### Dataset partitioning
+### Partition files
 
 Every registered dataset is automatically partitioned into separate Parquet
 files at registration time:
 
 | File | Purpose | Used during training? |
 |------|---------|----------------------|
-| `{dataset_id}.train.parquet` | Model fitting | Yes (training loads only this file) |
-| `{dataset_id}.evaluation.parquet` | Held-out evaluation | Never — used post-training via the Evaluation tab / `anistroph_evaluate_model` |
-| `{dataset_id}.validate.parquet` | Validation during training (optional) | Yes (early stopping, threshold tuning) — only if `VALIDATE_DATASET_PCT > 0` |
+| `{dataset_id}.train.parquet` | Model fitting | Yes — training loads only this file |
+| `{dataset_id}.evaluation.parquet` | Held-out evaluation | Never during training — used post-training via Evaluation tab / `anistroph_evaluate_model` / `anistroph_find_evaluation_slices` |
+| `{dataset_id}.validate.parquet` | Validation during training (threshold tuning, early stopping) | Yes — only if `VALIDATE_DATASET_PCT > 0` |
+| `{dataset_id}.parquet` | Full dataset (all rows) | No — used for profiling, slicing, and `sample_rows` |
 
-The full dataset is also persisted at `{dataset_id}.parquet` for backward
-compatibility (profiling, sample rows).
+The partition files are created at registration time and never modified
+afterward. Re-registering a dataset (e.g. after regenerating data) overwrites
+them with the new data.
+
+### Split configuration
 
 **Split percentages** — `.env` provides global defaults:
 
@@ -252,7 +324,8 @@ split:
 To skip partitioning entirely (single-file mode), set `train: 1.0` in the YAML.
 
 **Temporal datasets** sort chronologically — oldest rows go to train, newest
-to evaluation. **Non-temporal datasets** shuffle with a fixed seed before
+to evaluation. This prevents time leakage: the model never sees future data
+during training. **Non-temporal datasets** shuffle with a fixed seed before
 splitting.
 
 ---
@@ -292,7 +365,18 @@ Training builds features, constructs the target, splits chronologically,
 fits the model, evaluates on held-out test data, persists the model
 artifact, and registers it.
 
-Available model types: `xgboost`, `logistic_regression`.
+The model type is **auto-selected from the dataset's task type** when
+`model_type` is omitted:
+
+| Task type (`target.type` in YAML) | Default model | Evaluation metrics |
+|-----------------------------------|---------------|-------------------|
+| `regression` | `xgboost_regressor` | MAE, MSE, RMSE, R², MAPE, max error |
+| `classification` | `xgboost` | ROC-AUC, PR-AUC, precision, recall, F1 |
+| `binary` (alias) | `xgboost` | same as classification |
+| `future_event` (alias) | `xgboost` | same as classification |
+
+Available model types (specify explicitly to override the default):
+`xgboost`, `logistic_regression`, `xgboost_regressor`, `linear_regression`.
 
 ### Via Python
 
@@ -301,30 +385,35 @@ from backend.services import get_services
 
 svc = get_services()
 
-# Train XGBoost with a custom model ID
+# Auto-select model from task type (recommended)
+# predictive_maintenance is classification → xgboost
 result = svc.train(
     dataset_id="predictive_maintenance",
     target_name="failure_within_horizon",
-    model_type="xgboost",
     model_id="pm-xgb",
 )
-print(f"Model ID: {result['model_id']}")
+print(f"Model type: {result['model_type']}")  # xgboost
 print(f"ROC-AUC: {result['metrics']['roc_auc']:.3f}")
-print(f"PR-AUC: {result['metrics']['pr_auc']:.3f}")
-print(f"Recall: {result['metrics']['recall']:.3f}")
-print(f"Precision: {result['metrics']['precision']:.3f}")
-print(f"F1: {result['metrics']['f1']:.3f}")
+
+# Explicit model type (overrides auto-selection)
+result = svc.train(
+    dataset_id="semiconductor_yield",
+    target_name="wafer_yield",
+    model_type="linear_regression",
+    model_id="semi-lr",
+)
+print(f"Model type: {result['model_type']}")  # linear_regression
 ```
 
 ### Via REST API
 
 ```bash
+# Auto-select from task type (model_type omitted)
 curl -X POST http://localhost:9500/models/train \
   -H "Content-Type: application/json" \
   -d '{
     "dataset_id": "predictive_maintenance",
     "target_name": "failure_within_horizon",
-    "model_type": "xgboost",
     "model_id": "pm-xgb"
   }'
 ```
@@ -345,7 +434,7 @@ should be done explicitly via REST, Python, or the UI.
 
 ---
 
-## 6. List Models
+## 6. List & Delete Models
 
 ### Via Python
 
@@ -355,13 +444,28 @@ from backend.services import get_services
 models = get_services().list_models()
 for m in models:
     print(f"{m.model_id}: {m.model_type}, dataset={m.dataset_id}")
+
+# Delete a model (removes from registry + deletes artifact files)
+get_services().delete_model("old-model-id")
 ```
 
 ### Via REST API
 
 ```bash
+# List all models
 curl http://localhost:9500/models
+
+# Delete a model
+curl -X DELETE http://localhost:9500/models/old-model-id
 ```
+
+### Via web UI
+
+Open the **Models** tab (`http://localhost:9500/#models`):
+1. Click **Refresh** to list all registered models.
+2. Each model card shows the model ID, type, task type, and dataset.
+3. Click **Delete** to remove a model (with confirmation prompt).
+4. Use the Model Details and Model Metrics cards to inspect individual models.
 
 ### Via MCP (Claude Desktop)
 
@@ -1015,65 +1119,65 @@ brew install libomp
 
 ---
 
-## 14. Reference Model: anistroph-sentinel-v1
+## 14. Predictive Maintenance Datasets & Models
 
-The reference model trained on the synthetic predictive-maintenance
-dataset. Use this to test predictions, explanations, and MCP tool calls.
+The predictive maintenance reference data is a tool sensor dataset with
+**three targets**, each with its own dataset config and model:
 
-### Overview
+| Dataset ID | Target | Type | What it predicts |
+|------------|--------|------|-----------------|
+| `predictive_maintenance` | `failure_within_horizon` | classification (future_event) | Will the tool fail within 24h? |
+| `predictive_maintenance_rul` | `remaining_useful_life_hours` | regression | Hours until next failure |
+| `predictive_maintenance_maint` | `maintenance_required` | classification | Does the tool need maintenance now? |
 
-| Property | Value |
-|----------|-------|
-| Model ID | `anistroph-sentinel-v1` |
-| Model type | XGBoost (gradient-boosted trees) |
-| Dataset | `predictive_maintenance` |
-| Target | `failure_within_horizon` (binary: will this machine fail within 24h?) |
-| Decision threshold | 0.199 (optimized for F1) |
-| Training data | 20 machines, 30 days, 10-min intervals (86,400 rows) |
-| Split | Chronological — 70% train / 15% validation / 15% test |
+All three configs point to the same source Parquet file but define different
+targets. The `failure_mode` column (NONE/THERMAL/PRESSURE/VIBRATION/POWER) is
+stored as metadata for future multiclass classification support.
 
-### Evaluation metrics (test set)
+### Trained models
 
-| Metric | Value | Interpretation |
-|--------|-------|----------------|
-| ROC-AUC | 0.767 | Good discrimination — well above 0.5 (random) |
-| PR-AUC | 0.381 | Reasonable for imbalanced data (~0.14% failure rate) |
-| Precision | 0.394 | ~40% of predicted failures are true failures |
-| Recall | 0.701 | Catches ~70% of actual failures |
-| F1 Score | 0.505 | Harmonic mean of precision and recall |
-| True positives | 1,957 | Correctly predicted failures |
-| False positives | 3,009 | False alarms |
-| False negatives | 835 | Missed failures |
-| True negatives | 7,159 | Correctly predicted non-failures |
+| Model ID | Target | Type | Key Metrics |
+|----------|--------|------|-------------|
+| `predictive-maintenance-xgboost` | failure_within_horizon | classification | ROC-AUC=0.85, F1=0.61 |
+| `rul-xgboost` | remaining_useful_life_hours | regression | MAE=27.9h (R² low — RUL is hard from current state) |
+| `maintenance-required-xgboost` | maintenance_required | classification | ROC-AUC=1.00, F1=0.94 |
 
 ### Training data details
 
-**Entities:** 20 machines (`TOOL_000` through `TOOL_019`)
+**Source data:** `data/raw/predictive_maintenance.parquet`
+
+| Property | Value |
+|----------|-------|
+| Machines | 50 (`TOOL_000` through `TOOL_049`) |
+| Time range | June 1 – July 30, 2026 (5-minute intervals) |
+| Row count | 864,000 |
+| Failures | ~722 (~0.08% failure rate) |
+| Split | Chronological — 70% train / 15% validation / 15% test |
 
 **Machine types:**
-- `TYPE_A` — 30,240 rows (failure rate: 0.136%)
-- `TYPE_B` — 30,240 rows (failure rate: 0.152%)
-- `TYPE_C` — 25,920 rows (failure rate: 0.147%)
-
-**Time range:** June 1 – June 30, 2026 (10-minute intervals)
+- `TYPE_A` — baseline deterioration
+- `TYPE_B` — faster deterioration (1.3x)
+- `TYPE_C` — slower deterioration (0.8x)
 
 **Sensor columns:**
 
-| Column | Min | Mean | Max | Description |
-|--------|-----|------|-----|-------------|
-| temperature | 60.3 | 74.7 | 115.7 | Operating temperature (°C) |
-| vibration | 1.09 | 2.19 | 8.10 | Vibration intensity (g) |
-| pressure | 77.9 | 99.6 | 121.8 | System pressure (bar) |
-| current | 8.65 | 10.16 | 11.74 | Electrical current (A) |
-| voltage | 222.8 | 230.0 | 237.5 | Voltage (V) |
-| rpm | 1,699.8 | 1,793.6 | 1,884.1 | Rotational speed (RPM) |
-| flow_rate | 57.0 | 60.0 | 62.9 | Flow rate (L/min) |
-| maintenance_age_hours | -23.5 | 47.6 | 323.7 | Hours since last maintenance |
-| operating_hours | 33.7 | 2,802.0 | 5,686.0 | Total operating hours |
+| Column | Description |
+|--------|-------------|
+| temperature | Operating temperature (°C) |
+| vibration | Vibration intensity (g) |
+| pressure | System pressure (bar) |
+| current | Electrical current (A) |
+| voltage | Voltage (V) |
+| rpm | Rotational speed (RPM) |
+| flow_rate | Flow rate (L/min) |
+| maintenance_age_hours | Hours since last maintenance |
+| operating_hours | Total operating hours |
 
-**Event columns:**
-- `failure` (boolean): 125 failures out of 86,400 rows (~0.14%)
-- `failure_type`: PRESSURE (82), THERMAL (39), MECHANICAL (4)
+**Target/event columns:**
+- `failure` (boolean): 1 if the tool failed at this timestamp
+- `failure_mode` (categorical): NONE, THERMAL, PRESSURE, VIBRATION, or POWER
+- `remaining_useful_life_hours` (numeric): hours until next failure (0 at failure, 9999 if no future failure)
+- `maintenance_required` (boolean): 1 if maintenance age is high or risk is elevated
 
 ### Engineered features (26 total)
 
@@ -1274,9 +1378,11 @@ for d in expl["top_drivers"]:
 | `get_services().register_dataset_from_config(config_path, source_path, parquet_path?)` | config_path (str/Path), source_path (str/Path), parquet_path (optional) | `DatasetMeta` | Register a dataset from YAML config + source data |
 | `get_services().get_dataset(dataset_id)` | dataset_id (str) | `DatasetMeta \| None` | Get metadata for a dataset |
 | `get_services().profile(dataset_id)` | dataset_id (str) | `dict` | Profile a dataset |
-| `get_services().train(dataset_id, target_name, model_type, model_id?)` | dataset_id, target_name, model_type, model_id (optional) | `dict` (model_id + metrics) | Train a new model |
+| `get_services().train(dataset_id, target_name, model_type?, model_id?)` | dataset_id, target_name, model_type (optional — auto-selected from task type), model_id (optional) | `dict` (model_id, model_type, metrics) | Train a new model. Model type auto-selected from `target.type` if omitted. |
 | `get_services().list_models()` | *(none)* | `list[ModelMetadata]` | List all trained models |
+| `get_services().get_model(model_id)` | model_id (str) | `ModelMetadata` | Get a model's metadata |
 | `get_services().get_model_metrics(model_id)` | model_id (str) | `dict` | Get model evaluation metrics |
+| `get_services().delete_model(model_id)` | model_id (str) | `bool` | Delete a model and its artifacts |
 | `get_services().predict(model_id, entity_id?, timestamp?, records?)` | model_id, entity_id, timestamp, records (all optional except model_id) | `dict` (probability + prediction) | Make a prediction |
 | `get_services().explain(model_id, entity_id?, timestamp?, records?, top_k?)` | model_id, entity_id, timestamp, records, top_k (default 10) | `dict` (probability + top_drivers) | Explain a prediction |
 | `get_services().slice(dataset_id, dimensions, metric, aggregation?, filters?, limit?)` | dataset_id, dimensions, metric, aggregation, filters, limit | `list[dict]` | Slice data by dimensions |
@@ -1298,31 +1404,40 @@ for d in expl["top_drivers"]:
 
 ---
 
-## 16. Semiconductor Yield Dataset & Models
+## 16. Semiconductor Datasets & Models
 
-The second reference dataset in Anistroph — a wafer-level yield regression
-problem from synthetic semiconductor manufacturing data.
+The semiconductor reference data is a wafer-level manufacturing dataset with
+**three regression targets**, each with its own dataset config and model:
+
+| Dataset ID | Target | Type | What it predicts |
+|------------|--------|------|-----------------|
+| `semiconductor_yield` | `wafer_yield` | regression | Overall wafer yield (0.0–1.0) |
+| `semiconductor_cd` | `critical_dimension_nm` | regression | Measured CD after lithography/etch (~38 nm) |
+| `semiconductor_film_thickness` | `film_thickness_nm` | regression | Measured deposited film thickness (~510 nm) |
+
+All three configs point to the same source Parquet file but define different
+targets. This demonstrates Anistroph's multi-target architecture: same data,
+same features, different prediction goals.
 
 ### Overview
 
 | Property | Value |
 |----------|-------|
-| Dataset ID | `semiconductor_yield` |
-| Dataset name | Semiconductor Wafer Yield |
+| Source data | `data/semiconductor_yield/data.parquet` |
+| Dataset configs | `datasets/semiconductor_yield/`, `datasets/semiconductor_cd/`, `datasets/semiconductor_film_thickness/` |
 | Entity key | `wafer_id` |
 | Time key | `timestamp` (used for chronological splitting) |
-| Row count | 30,000 wafers |
-| Columns | 29 |
-| Target | `wafer_yield` (regression, 0.0-1.0) |
-| Split | Chronological - 70% train / 15% validation / 15% test |
+| Row count | 50,000 wafers |
+| Columns | 31 (28 features + 3 targets) |
+| Split | Chronological — 70% train / 15% validation / 15% test |
 
 ### Data generation
 
 ```bash
-python scripts/generate_semiconductor_yield_data.py --wafers 30000
+python scripts/generate_semiconductor_yield_data.py --wafers 50000
 ```
 
-Output: `data/semiconductor_yield/data.parquet`
+Output: `data/semiconductor_yield/data.parquet` (shared by all three dataset configs)
 
 Each row represents one completed wafer with:
 - **Hierarchy:** lot_id -> wafer_id
@@ -1331,11 +1446,14 @@ Each row represents one completed wafer with:
 - **Deposition process:** deposition_tool, deposition_chamber, deposition_recipe + 5 numeric measurements
 - **Lithography:** exposure_dose, focus_offset
 - **Maintenance:** maintenance_age_etch, maintenance_age_deposition
-- **Target:** wafer_yield (good_dies / tested_dies)
+- **Targets:** wafer_yield, critical_dimension_nm, film_thickness_nm
 
-### Injected yield relationships
+### Injected relationships
 
-The synthetic generator injects learnable but imperfect relationships:
+The synthetic generator injects learnable but imperfect relationships for each
+target:
+
+**Wafer yield:**
 
 | Condition | Yield Effect |
 |-----------|-------------|
@@ -1350,50 +1468,42 @@ The synthetic generator injects learnable but imperfect relationships:
 | ETCH_02 + old maintenance (>350h) | Small reduction |
 | ROUTE_3 + high temp_std | Small reduction |
 
-No single feature perfectly determines yield - the model must learn
+**Critical dimension (CD):**
+
+| Condition | CD Effect |
+|-----------|----------|
+| Nominal | ~38.0 nm |
+| Higher exposure_dose | Smaller CD (-0.8 nm per unit dose) |
+| Larger |focus_offset| | Wider CD |
+| ETCH_02 | Over-etch → smaller CD (-0.5 nm) |
+| RECIPE_C | Aggressive etch → smaller CD (-0.4 nm) |
+| ETCH_02 + RECIPE_C | Interaction → significantly smaller CD |
+| Higher etch_temperature | Faster etch → smaller CD |
+
+**Film thickness:**
+
+| Condition | Film Thickness Effect |
+|-----------|----------------------|
+| Nominal | ~510.0 nm |
+| Longer deposition_process_time | Thicker (+0.8 nm per minute) |
+| DEP_02 | Thinner (-8.0 nm) |
+| DEP_03 | Thicker (+6.0 nm) |
+| DEP_RECIPE_B | Thicker (+5.0 nm) |
+| Higher deposition_pressure | Slightly thicker |
+| DEP_02 + DEP_RECIPE_A | Interaction → significantly thinner |
+
+No single feature perfectly determines any target — the model must learn
 combinations and interactions.
 
 ### Trained models
 
-Two regression models are trained on this dataset:
+Three XGBoost regression models, one per target:
 
-#### wafer-yield-xgb-v001 (primary)
-
-| Property | Value |
-|----------|-------|
-| Model ID | `wafer-yield-xgb-v001` |
-| Model type | XGBoost Regressor |
-| Features | 39 (23 one-hot categorical + 16 numeric) |
-
-**Evaluation metrics (test set):**
-
-| Metric | Value | Interpretation |
-|--------|-------|----------------|
-| MAE | 0.0065 | Average error ~0.65 percentage points |
-| RMSE | 0.0082 | Root mean square error ~0.82 pp |
-| R2 | 0.816 | Explains ~82% of yield variance |
-| Median abs error | 0.0054 | Half of predictions are within 0.54 pp |
-| 95th pct abs error | 0.016 | 95% of predictions within 1.6 pp |
-| Baseline MAE | 0.0139 | Mean-predictor MAE (model beats this 2x) |
-| Baseline R2 | ~0.0 | Mean predictor explains nothing |
-
-#### wafer-yield-linear-v001 (baseline)
-
-| Property | Value |
-|----------|-------|
-| Model ID | `wafer-yield-linear-v001` |
-| Model type | Linear Regression (Ridge) |
-
-**Evaluation metrics (test set):**
-
-| Metric | Value | Interpretation |
-|--------|-------|----------------|
-| MAE | 0.0090 | Average error ~0.90 pp |
-| RMSE | 0.0119 | Root mean square error ~1.19 pp |
-| R2 | 0.610 | Explains ~61% of yield variance |
-
-XGBoost significantly outperforms the linear baseline (R2 0.82 vs 0.61),
-confirming the injected nonlinear interactions are learnable.
+| Model ID | Target | R² | MAE | MAPE |
+|----------|--------|-----|-----|------|
+| `wafer-yield-xgboost` | wafer_yield | 0.81 | 0.0065 | 0.68% |
+| `critical-dimension-xgboost` | critical_dimension_nm | 0.89 | 0.24 nm | 0.64% |
+| `film-thickness-xgboost` | film_thickness_nm | 0.98 | 1.63 nm | 0.32% |
 
 ### Engineered features (39 total)
 
@@ -1463,7 +1573,7 @@ combination - matching the injected hidden relationship.
 **Generate data and train (admin):**
 ```bash
 # Generate synthetic data
-python scripts/generate_semiconductor_yield_data.py --wafers 30000
+python scripts/generate_semiconductor_yield_data.py --wafers 50000
 
 # Register dataset
 python -c "
@@ -1553,7 +1663,7 @@ slicing, profiling, training, and prediction tools apply unchanged.
 | Dataset name | Bay Area Home Prices |
 | Entity key | `property_id` |
 | Time key | `timestamp` (used for chronological splitting) |
-| Row count | 20,000 listings |
+| Row count | 40,000 listings |
 | Columns | 11 |
 | Target | `price` (regression, USD) |
 | Split | Chronological — 70% train / 15% validation / 15% test |
@@ -1561,7 +1671,7 @@ slicing, profiling, training, and prediction tools apply unchanged.
 ### Data generation
 
 ```bash
-python scripts/generate_home_prices_data.py --homes 20000
+python scripts/generate_home_prices_data.py --homes 40000
 ```
 
 Output: `data/home_prices/data.parquet`
@@ -1609,7 +1719,7 @@ determines price.
 **Generate data and register (admin):**
 ```bash
 # Generate synthetic data
-python scripts/generate_home_prices_data.py --homes 20000
+python scripts/generate_home_prices_data.py --homes 40000
 
 # Register dataset (partitions into train/eval/validate automatically)
 python -c "

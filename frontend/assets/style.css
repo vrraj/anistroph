@@ -295,6 +295,18 @@ button.secondary:disabled {
     cursor: not-allowed;
 }
 
+button.btn-danger {
+    background: #c62828;
+    color: #ffffff;
+    border: 1px solid #a52727;
+    padding: 4px 12px;
+    font-size: 13px;
+}
+
+button.btn-danger:hover {
+    background: #b71c1c;
+}
+
 /* Form elements — base styles; .field provides the spacing wrapper */
 label {
     display: block;

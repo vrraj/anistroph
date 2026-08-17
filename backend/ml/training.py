@@ -40,6 +40,42 @@ MODEL_FACTORIES: dict[str, type[Predictor]] = {
     "linear_regression": LinearRegressionPredictor,
 }
 
+# Default model type for each task type. When the caller omits model_type,
+# training auto-selects from this mapping based on the dataset's target type.
+_DEFAULT_MODEL_FOR_TASK_TYPE: dict[TargetType, str] = {
+    TargetType.REGRESSION: "xgboost_regressor",
+    TargetType.CLASSIFICATION: "xgboost",
+    TargetType.BINARY: "xgboost",
+    TargetType.FUTURE_EVENT: "xgboost",
+}
+
+
+def resolve_model_type(
+    model_type: Optional[str],
+    target_spec: TargetSpec,
+) -> str:
+    """Resolve the model type to use for training.
+
+    If ``model_type`` is provided, it is validated and used directly.
+    If ``model_type`` is None, the default model for the target's task type
+    is selected from ``_DEFAULT_MODEL_FOR_TASK_TYPE``.
+    """
+    if model_type is not None:
+        if model_type not in MODEL_FACTORIES:
+            raise ValueError(
+                f"unknown model type {model_type!r}; "
+                f"available: {available_model_types()}"
+            )
+        return model_type
+
+    default = _DEFAULT_MODEL_FOR_TASK_TYPE.get(target_spec.type)
+    if default is None:
+        raise ValueError(
+            f"no default model for task type {target_spec.type.value!r}; "
+            f"specify model_type explicitly"
+        )
+    return default
+
 
 def available_model_types() -> list[str]:
     return list(MODEL_FACTORIES.keys())
@@ -77,7 +113,7 @@ def random_split(
 def train_model(
     dataset_id: str,
     target_name: str,
-    model_type: str,
+    model_type: Optional[str],
     dataset_registry: DatasetRegistry,
     model_registry: ModelRegistry,
     config: DatasetConfig,
@@ -93,7 +129,9 @@ def train_model(
     Args:
         dataset_id: registered dataset to train on.
         target_name: name of the target (must match TargetSpec.name).
-        model_type: one of available_model_types().
+        model_type: model type to use. If None, auto-selects the default
+            model for the dataset's task type (regression → xgboost_regressor,
+            classification → xgboost).
         dataset_registry: dataset registry.
         model_registry: model registry.
         config: DatasetConfig with specs.
@@ -124,8 +162,8 @@ def train_model(
         raise ValueError(f"target name mismatch: {target_name!r} != {ts.name!r}")
     pq = parquet_path or dmeta.parquet_path
 
-    if model_type not in MODEL_FACTORIES:
-        raise ValueError(f"unknown model type {model_type!r}; available: {available_model_types()}")
+    # --- Resolve model type (auto-select from task type if not specified) ---
+    model_type = resolve_model_type(model_type, ts)
 
     # --- Load data ---
     df = pl.read_parquet(pq)
@@ -208,7 +246,7 @@ def train_model(
     predictor.fit(X_train, y_train, X_val, y_val)
 
     # --- Evaluate (branch on target type) ---
-    is_regression = ts.type in (TargetType.REGRESSION,)
+    is_regression = ts.type.is_regression
 
     if is_regression:
         y_eval_pred = predictor.predict(X_eval)

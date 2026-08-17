@@ -164,3 +164,108 @@ class TestTrainingPipeline:
         assert len(expl["top_drivers"]) <= 5
         assert "feature" in expl["top_drivers"][0]
         assert "impact" in expl["top_drivers"][0]
+
+
+class TestTaskTypeAutoSelection:
+    """Verify model_type auto-selection from the dataset's task type."""
+
+    def test_resolve_model_type_regression(self):
+        from backend.ml.training import resolve_model_type
+        from backend.targets.spec import TargetSpec, TargetType
+
+        ts = TargetSpec(name="price", type=TargetType.REGRESSION, source_column="price")
+        assert resolve_model_type(None, ts) == "xgboost_regressor"
+
+    def test_resolve_model_type_classification(self):
+        from backend.ml.training import resolve_model_type
+        from backend.targets.spec import TargetSpec, TargetType
+
+        ts = TargetSpec(name="failure", type=TargetType.CLASSIFICATION, source_column="failure")
+        assert resolve_model_type(None, ts) == "xgboost"
+
+    def test_resolve_model_type_binary_alias(self):
+        from backend.ml.training import resolve_model_type
+        from backend.targets.spec import TargetSpec, TargetType
+
+        ts = TargetSpec(name="failure", type=TargetType.BINARY, source_column="failure")
+        assert resolve_model_type(None, ts) == "xgboost"
+
+    def test_resolve_model_type_future_event_alias(self):
+        from backend.ml.training import resolve_model_type
+        from backend.targets.spec import TargetSpec, TargetType
+
+        ts = TargetSpec(
+            name="failure_within_horizon", type=TargetType.FUTURE_EVENT,
+            source_column="failure", horizon="24h",
+        )
+        assert resolve_model_type(None, ts) == "xgboost"
+
+    def test_resolve_model_type_explicit_overrides(self):
+        from backend.ml.training import resolve_model_type
+        from backend.targets.spec import TargetSpec, TargetType
+
+        ts = TargetSpec(name="price", type=TargetType.REGRESSION, source_column="price")
+        # Explicit model_type should override auto-selection.
+        assert resolve_model_type("linear_regression", ts) == "linear_regression"
+
+    def test_resolve_model_type_invalid(self):
+        from backend.ml.training import resolve_model_type
+        from backend.targets.spec import TargetSpec, TargetType
+
+        ts = TargetSpec(name="price", type=TargetType.REGRESSION, source_column="price")
+        with pytest.raises(ValueError, match="unknown model type"):
+            resolve_model_type("nonexistent_model", ts)
+
+    def test_train_auto_selects_xgboost_for_classification(self, registered_dataset, config):
+        """Omitting model_type auto-selects xgboost for a classification dataset."""
+        svc, meta = registered_dataset
+        result = svc.train(
+            "predictive_maintenance", "failure_within_horizon",
+            model_id="test-auto-classification",
+        )
+        assert result["model_type"] == "xgboost"
+        assert result["metrics"]["roc_auc"] is not None
+
+    def test_train_auto_selects_xgboost_regressor_for_regression(self, tmp_artifacts):
+        """Omitting model_type auto-selects xgboost_regressor for a regression dataset."""
+        from backend.services import AnistrophServices
+        from scripts.generate_semiconductor_yield_data import generate_wafers
+
+        # Generate a small semiconductor dataset first.
+        pq = tmp_artifacts / "data" / "semiconductor_yield" / "data.parquet"
+        pq.parent.mkdir(parents=True, exist_ok=True)
+        df = generate_wafers(n_wafers=500, seed=42)
+        df.write_parquet(str(pq))
+
+        svc = AnistrophServices(
+            dataset_registry_path=tmp_artifacts / "artifacts" / "dataset_registry.json",
+            model_registry_dir=tmp_artifacts / "artifacts" / "models",
+        )
+        svc.register_dataset_from_config(
+            "datasets/semiconductor_yield/dataset.yaml",
+            str(pq),
+        )
+
+        result = svc.train(
+            "semiconductor_yield", "wafer_yield",
+            model_id="test-auto-regression",
+        )
+        assert result["model_type"] == "xgboost_regressor"
+        assert "mae" in result["metrics"]
+
+
+class TestTargetTypeProperties:
+    """Verify TargetType helper properties."""
+
+    def test_regression_is_classification_flags(self):
+        from backend.targets.spec import TargetType
+
+        assert TargetType.REGRESSION.is_regression is True
+        assert TargetType.REGRESSION.is_classification is False
+
+    def test_classification_flags(self):
+        from backend.targets.spec import TargetType
+
+        for tt in (TargetType.CLASSIFICATION, TargetType.BINARY, TargetType.FUTURE_EVENT):
+            assert tt.is_classification is True
+            assert tt.is_regression is False

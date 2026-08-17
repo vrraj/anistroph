@@ -127,9 +127,9 @@ For a concise map of the architecture and how datasets remain isolated while sha
 
 ### Reference Datasets
 
-Anistroph v0.1 ships with two reference datasets that validate the architecture across different prediction problems.
+Anistroph v0.1 ships with three reference datasets that validate the architecture across different prediction problems and multiple targets per dataset.
 
-**Tool Predictive Maintenance (classification)**
+**Tool Predictive Maintenance (classification + regression)**
 
 ```text
 Tool
@@ -142,10 +142,16 @@ Equipment history
   ↓
 Predictive model
   ↓
-Failure / maintenance risk
+Failure / maintenance risk / remaining life
 ```
 
-Equipment and sensor data used to model equipment behavior and predict maintenance or failure risk. 50 machines, 60 days, 5-minute observations. 24-hour future-failure target.
+Equipment and sensor data used to model equipment behavior. 50 machines, 60 days, 5-minute observations. Three targets:
+
+| Target | Type | What it predicts |
+|--------|------|-----------------|
+| `failure_within_horizon` | classification (future_event) | Will the tool fail within 24h? |
+| `remaining_useful_life_hours` | regression | Hours until next failure |
+| `maintenance_required` | classification | Does the tool need maintenance now? |
 
 **Semiconductor Wafer Yield (regression)**
 
@@ -162,10 +168,51 @@ Lithography Tool → Recipe → Process Conditions
    ↓
 Wafer Test
    ↓
-Wafer Yield
+Yield / CD / Film Thickness
 ```
 
-Synthetic wafer manufacturing data representing process history across tools, chambers, recipes, and operating conditions. ~30,000 wafer rows. Wafer-level regression target.
+Synthetic wafer manufacturing data representing process history across tools, chambers, recipes, and operating conditions. ~50,000 wafer rows. Three regression targets:
+
+| Target | Type | What it predicts |
+|--------|------|-----------------|
+| `wafer_yield` | regression | Overall wafer yield (0.0–1.0) |
+| `critical_dimension_nm` | regression | Measured CD after lithography/etch (~38 nm) |
+| `film_thickness_nm` | regression | Measured deposited film thickness (~510 nm) |
+
+**Bay Area Home Prices (regression)**
+
+```text
+Location (city / zip)
+   ↓
+Square footage
+   ↓
+Bedrooms / bathrooms / lot size
+   ↓
+Year built / garage
+   ↓
+Predictive model
+   ↓
+Sale price
+```
+
+Synthetic Bay Area listing data across San Jose, Saratoga, and Los Gatos. ~40,000 listings. Price driven primarily by square footage and location.
+
+| Target | Type | What it predicts |
+|--------|------|-----------------|
+| `price` | regression | Home sale price (USD) |
+
+### Multi-Target Architecture
+
+Each dataset can define multiple targets. Anistroph creates a separate dataset
+config per target (e.g. `semiconductor_yield`, `semiconductor_cd`,
+`semiconductor_film_thickness`), all pointing to the same source Parquet file
+but with different `target:` sections. This means:
+
+- Each target gets its own train/eval/validate partitions
+- Each target trains an independent model
+- Each target is evaluated independently with task-appropriate metrics
+- The same feature columns serve all targets within a dataset
+- Adding a new target = adding a new YAML config, no code changes
 
 ## AI Integration — Claude and ChatGPT
 
@@ -263,7 +310,7 @@ Model explanation (SHAP) and observed-data analysis (slicing) provide different 
 ## What you get
 
 - **Domain-agnostic predictive analytics framework** for structured datasets
-- **Two reference datasets** (predictive maintenance, semiconductor yield) proving the architecture works across classification and regression
+- **Three reference datasets** (predictive maintenance, semiconductor yield, home prices) with **seven targets** across classification and regression, proving the architecture works across domains and task types
 - **Configuration-driven dataset registration** through YAML specs
 - **Leakage-safe feature engineering** with rolling windows, slopes, categorical encoding
 - **Classification and regression models** (XGBoost, Logistic Regression, Linear Regression)
@@ -554,7 +601,7 @@ Dataset-specific concepts never enter the generic ML pipeline. Instead:
 
 - **DatasetSpec** (`backend/datasets/spec.py`) — describes columns, types, roles, entity/time keys.
 - **FeatureSpec** (`backend/features/spec.py`) — declares transforms per column (current, mean, std, slope, rolling windows, categorical encoding).
-- **TargetSpec** (`backend/targets/spec.py`) — declares target type (binary, regression, future_event) and horizon.
+- **TargetSpec** (`backend/targets/spec.py`) — declares the prediction task type and target column. Supported types: `regression` (numerical outcome), `classification` (binary class/probability), `binary` (alias), `future_event` (classification with time horizon). The task type determines the default model and evaluation metrics. Extensible for future types (forecasting, anomaly detection).
 
 Each reference dataset is a **configuration**, not an architectural dependency.
 
@@ -619,44 +666,65 @@ Model explanation and observed-data analysis provide different perspectives on t
 
 The reference dataset (`datasets/predictive_maintenance/dataset.yaml`) defines:
 
-- 50 machines, 60 days, 5-minute observations
+- 50 machines, 60 days, 5-minute observations (~864K rows)
 - Sensors: temperature, vibration, pressure, current, voltage, rpm, flow_rate
 - Maintenance age, operating hours
-- Failure event with failure type
-- 24-hour future-failure target (`failure_within_horizon`)
+- Failure event with failure mode (NONE/THERMAL/PRESSURE/VIBRATION/POWER)
+- Three targets:
+
+| Target | Type | Dataset config |
+|--------|------|---------------|
+| `failure_within_horizon` | classification | `datasets/predictive_maintenance/` |
+| `remaining_useful_life_hours` | regression | `datasets/predictive_maintenance_rul/` |
+| `maintenance_required` | classification | `datasets/predictive_maintenance_maint/` |
+
 - Learnable deterioration patterns (vibration drift, temperature drift, pressure instability, maintenance age → increased failure probability)
 
-**Trained model: `anistroph-sentinel-v1`**
+**Trained models:**
 
-| Metric | Value |
-|--------|-------|
-| ROC-AUC | 0.767 |
-| PR-AUC | 0.381 |
-| Precision | 0.394 |
-| Recall | 0.701 |
-| F1 | 0.505 |
+| Model | Target | ROC-AUC | F1 |
+|-------|--------|---------|-----|
+| `predictive-maintenance-xgboost` | failure_within_horizon | 0.85 | 0.61 |
+| `maintenance-required-xgboost` | maintenance_required | 1.00 | 0.94 |
+| `rul-xgboost` | remaining_useful_life_hours | MAE=27.9h | — |
 
 ### Semiconductor Wafer Yield
 
 The reference dataset (`datasets/semiconductor_yield/dataset.yaml`) defines:
 
-- ~30,000 wafer rows (one row = one completed wafer)
+- ~50,000 wafer rows (one row = one completed wafer)
 - Categorical context: product_id, fab_id, process_route, etch/deposition tools, chambers, recipes
 - Numeric process measurements: etch/deposition temperature, pressure, gas flow, RF power, process time
 - Lithography: exposure dose, focus offset
 - Maintenance age per tool
-- Wafer-level regression target (`wafer_yield`, 0.0–1.0)
-- Hidden yield interactions: ETCH_02 + CH_B, temperature variability, maintenance age, product/recipe combinations
+- Three regression targets:
 
-**Trained model: `wafer-yield-xgb-v001`**
+| Target | Type | Dataset config |
+|--------|------|---------------|
+| `wafer_yield` | regression | `datasets/semiconductor_yield/` |
+| `critical_dimension_nm` | regression | `datasets/semiconductor_cd/` |
+| `film_thickness_nm` | regression | `datasets/semiconductor_film_thickness/` |
 
-| Metric | Value | Baseline (mean predictor) |
-|--------|-------|--------------------------|
-| MAE | 0.0065 | 0.0139 |
-| RMSE | 0.0082 | 0.0191 |
-| R² | 0.816 | ~0.0 |
+- Hidden interactions: ETCH_02 + CH_B, temperature variability, maintenance age, product/recipe combinations
 
-XGBoost explains 82% of yield variance and beats the baseline 2x on MAE, confirming the injected nonlinear interactions are learnable.
+**Trained models:**
+
+| Model | Target | R² | MAE |
+|-------|--------|-----|-----|
+| `wafer-yield-xgboost` | wafer_yield | 0.81 | 0.0065 |
+| `critical-dimension-xgboost` | critical_dimension_nm | 0.89 | 0.24 nm |
+| `film-thickness-xgboost` | film_thickness_nm | 0.98 | 1.63 nm |
+
+### Bay Area Home Prices
+
+The reference dataset (`datasets/home_prices/dataset.yaml`) defines:
+
+- ~40,000 home listings across San Jose, Saratoga, and Los Gatos
+- Square footage, bedrooms, bathrooms, lot size, year built, garage
+- City / zip code as dominant price driver
+- Regression target: `price` (USD)
+
+**Trained model: `home-prices-xgboost`** — R²=0.97, MAE=$94K, MAPE=3.23%
 
 ## Synthetic Data Generation
 
@@ -676,14 +744,14 @@ python scripts/generate_sensor_data.py --machines 50 --days 60 --interval 5 --se
 ### Semiconductor Yield
 
 ```bash
-python scripts/generate_semiconductor_yield_data.py --wafers 30000
+python scripts/generate_semiconductor_yield_data.py --wafers 50000
 ```
 
 Generates `data/semiconductor_yield/data.parquet`.
 
 Options:
 ```bash
-python scripts/generate_semiconductor_yield_data.py --wafers 30000 --seed 42
+python scripts/generate_semiconductor_yield_data.py --wafers 50000 --seed 42
 ```
 
 ## Dataset Registration
@@ -709,18 +777,35 @@ curl -X POST http://localhost:9500/datasets \
 
 Training is an admin operation. Use the CLI or REST API.
 
+The model type is **auto-selected from the dataset's task type** when omitted:
+
+| Task type (YAML `target.type`) | Default model | Evaluation metrics |
+|-------------------------------|---------------|-------------------|
+| `regression` | `xgboost_regressor` | MAE, MSE, RMSE, R², MAPE, max error |
+| `classification` | `xgboost` | ROC-AUC, PR-AUC, precision, recall, F1 |
+| `binary` (alias) | `xgboost` | same as classification |
+| `future_event` (alias) | `xgboost` | same as classification |
+
 ```bash
-python scripts/train_model.py --dataset semiconductor_yield \
-  --model-type xgboost_regressor --model-id wafer-yield-xgb-v001
+# model_type is optional — auto-selected from task type
+python scripts/train_model.py --dataset semiconductor_yield --model-id wafer-yield-xgb-v001
 ```
 
-Available model types: `xgboost`, `logistic_regression`, `xgboost_regressor`, `linear_regression`.
+Available model types (can be specified explicitly to override): `xgboost`, `logistic_regression`, `xgboost_regressor`, `linear_regression`.
 
 ```python
+# Auto-select from task type (recommended)
 result = svc.train(
     dataset_id="predictive_maintenance",
     target_name="failure_within_horizon",
-    model_type="xgboost",
+)
+# result["model_type"] == "xgboost" (classification dataset)
+
+# Or specify explicitly
+result = svc.train(
+    dataset_id="semiconductor_yield",
+    target_name="wafer_yield",
+    model_type="linear_regression",
 )
 ```
 
@@ -989,10 +1074,10 @@ Access at `http://localhost:9500` when the server is running.
 
 ## Adding a New Dataset
 
-1. Create `datasets/<your_dataset>/dataset.yaml` with DatasetSpec, FeatureSpec, and TargetSpec.
+1. Create `datasets/<your_dataset>/dataset.yaml` with DatasetSpec, FeatureSpec, and TargetSpec. Set `target.type` to `regression` or `classification` — this determines the default model and evaluation metrics.
 2. Place your data in `data/<your_dataset>/data.parquet` (or ingest from CSV).
 3. Register via `svc.register_dataset_from_config(...)` or REST.
-4. Train via `scripts/train_model.py` or REST.
+4. Train via `scripts/train_model.py` or REST. The model type is auto-selected from `target.type` if not specified.
 5. Predict, explain, and analyze through the same shared services.
 
 No core pipeline code changes required. The generic ML pipeline reads the specs and never hard-codes domain-specific logic.

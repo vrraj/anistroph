@@ -25,7 +25,7 @@ class TargetEngine:
         target_spec: TargetSpec,
     ) -> pl.DataFrame:
         """Build the target column and return df with it added."""
-        if target_spec.type == TargetType.BINARY:
+        if target_spec.type in (TargetType.BINARY, TargetType.CLASSIFICATION):
             return build_binary_target(df, target_spec)
         elif target_spec.type == TargetType.REGRESSION:
             return build_regression_target(df, target_spec)

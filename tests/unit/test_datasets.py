@@ -71,7 +71,9 @@ class TestValidation:
             "maintenance_age_hours": [0.0, 0.5],
             "operating_hours": [100.0, 100.5],
             "failure": [0, 0],
-            "failure_type": ["", ""],
+            "failure_mode": ["NONE", "NONE"],
+            "remaining_useful_life_hours": [100.0, 99.0],
+            "maintenance_required": [0, 0],
         })
         report = validate_dataset(df, config.dataset_spec)
         assert not report.valid

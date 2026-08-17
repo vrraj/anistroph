@@ -529,22 +529,36 @@ async function listModels() {
   try {
     const r = await api('/models');
     if (Array.isArray(r) && r.length) {
-      el.innerHTML = r.map(m => `
+      el.innerHTML = r.map(m => {
+        const id = m.model_id || m.id || '?';
+        return `
         <div class="result-card" style="margin-bottom:12px;">
           <div class="result-header">
             <div>
-              <div class="result-title">${m.model_id || m.id || '?'}</div>
+              <div class="result-title">${id}</div>
               <span class="category-tag">${m.model_type || '?'}</span>
-              ${m.task_type ? `<span class="source-pill ${m.task_type}">${m.task_type}</span>` : ''}
+              ${m.target_type ? `<span class="source-pill ${m.target_type}">${m.target_type}</span>` : ''}
+              <span class="muted" style="margin-left:8px;">${m.dataset_id || ''}</span>
             </div>
+            <button class="btn-danger" onclick="deleteModel('${id}')">Delete</button>
           </div>
         </div>
-      `).join('');
+      `}).join('');
     } else {
       el.innerHTML = '<div class="muted">No models registered.</div>';
     }
   } catch (e) {
     el.innerHTML = banner('Error: ' + e.message);
+  }
+}
+
+async function deleteModel(modelId) {
+  if (!confirm(`Delete model "${modelId}"?\nThis removes the model from the registry and deletes its artifact files. This cannot be undone.`)) return;
+  try {
+    await api('/models/' + encodeURIComponent(modelId), 'DELETE');
+    await listModels();
+  } catch (e) {
+    alert('Error deleting model: ' + e.message);
   }
 }
 
