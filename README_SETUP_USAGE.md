@@ -583,20 +583,62 @@ Location: `~/Library/Application Support/Claude/claude_desktop_config.json`
 | `anistroph_profile_dataset` | Profile a dataset by ID |
 | `anistroph_slice_data` | Slice data by dimensions with aggregation |
 | `anistroph_compare_data` | Compare a metric across dimension values |
+| `anistroph_find_interesting_slices` | Discover slices with the largest deviation from baseline |
+| `anistroph_sample_rows` | Return up to N raw rows, optionally filtered by column values |
 | `anistroph_list_models` | List all trained models |
 | `anistroph_get_model_metrics` | Get evaluation metrics for a model |
 | `anistroph_predict` | Make a prediction (entity_id + timestamp) |
 | `anistroph_explain_prediction` | Explain a prediction with top drivers |
 
-### Example Claude prompts
+### Example MCP prompts
 
+These prompts work with **any stdio MCP client** — Claude Desktop, Claude CLI,
+Cursor, Cline, etc. The MCP server uses stdio transport, so the client is
+interchangeable; "Claude Desktop" appears elsewhere in this doc only as the
+example client. The LLM in the client maps the natural-language prompt to the
+appropriate `anistroph_*` tool call.
+
+**Discovery & profiling**
 - "List all Anistroph datasets"
 - "Profile the predictive_maintenance dataset"
-- "Slice the data by machine_type and show mean failure rate"
+- "Profile the semiconductor_yield dataset"
+- "What columns and types are in semiconductor_yield?"
+- "What's the time range of the semiconductor data?"
+
+**Slicing & comparison**
+- "Slice predictive_maintenance by machine_type and show mean failure rate"
+- "Slice semiconductor_yield by etch_tool and etch_chamber, metric wafer_yield, aggregation mean"
+- "Compare wafer_yield across fab_id values"
+- "Show yield by etch tool and chamber, filtered to product_id = PROD_A"
+- "Slice semiconductor_yield by process_route, metric wafer_yield, aggregation min"
+
+**Interesting slice discovery**
+- "Find the worst yield combinations in the semiconductor dataset"
+- "Find the most unusual slices in predictive_maintenance by failure_within_horizon"
+- "What combinations have the lowest wafer yield?"
+- "Show me the top 10 interesting slices for wafer_yield"
+
+**Raw row inspection**
+- "Show me 20 rows from semiconductor_yield"
+- "Show me the row for wafer_id WAFER_015000"
+- "Show me 10 semiconductor_yield rows where etch_tool is ETCH_02 and etch_chamber is CH_B"
+- "Show me the 5 lowest-yield wafers — just wafer_id, etch_tool, etch_chamber, and wafer_yield"
+- "Show me rows for etch_tool ETCH_02 or ETCH_03, sorted by wafer_yield descending, top 20"
+
+**Models & metrics**
 - "What models are available?"
 - "Show me the metrics for model pm-xgb"
+- "List models trained on semiconductor_yield"
+
+**Prediction & explanation**
 - "Predict failure probability for TOOL_000 at 2026-06-15T12:00:00 using model pm-xgb"
+- "Predict wafer yield for WAFER_015000 using model wafer-yield-xgb-v001"
 - "Explain that prediction — what are the top drivers?"
+- "Explain the prediction for WAFER_015000 with top_k=15"
+
+**Not available via MCP** (use REST, Python, or the Web UI instead):
+- Dataset registration, model training, and deletion — these are admin
+  operations exposed only through REST and Python services.
 
 ---
 
@@ -892,6 +934,8 @@ for d in expl["top_drivers"]:
 | `anistroph_get_model_metrics` | `model_id` (string) | Get the evaluation metrics for a trained model. Returns ROC-AUC, PR-AUC, precision, recall, F1, confusion matrix, and decision threshold. |
 | `anistroph_predict` | `model_id` (string), `entity_id` (string, optional), `timestamp` (string, optional), `records` (array of objects, optional) | Make a prediction using a trained model. For temporal datasets, provide `entity_id` and `timestamp` — the server retrieves historical observations and builds features. For non-temporal datasets, provide `records` (raw feature dicts). Returns probability and binary prediction. |
 | `anistroph_explain_prediction` | `model_id` (string), `entity_id` (string, optional), `timestamp` (string, optional), `records` (array of objects, optional), `top_k` (integer, default 10) | Explain a prediction by returning the top contributing features. Returns the same probability plus a list of top drivers with feature names and impact values. Explanations are deterministic and model-derived — no LLM fabrication. |
+| `anistroph_find_interesting_slices` | `dataset_id` (string), `metric` (string), `dimensions` (array of strings, optional), `min_sample_size` (integer, default 100), `max_dimensions` (integer, default 3), `aggregation` (string, default "mean"), `filters` (object, optional), `top_k` (integer, default 20) | Find slices with the largest deviation from the overall metric baseline. Searches 1, 2, and 3-dimensional combinations of categorical columns. Returns ranked slices with dimension values, row count, metric value, and difference from baseline. |
+| `anistroph_sample_rows` | `dataset_id` (string), `n` (integer, default 10), `filters` (object, optional), `columns` (array of strings, optional), `sort_by` (string, optional), `descending` (boolean, default false) | Return up to `n` raw rows (capped at 1000) from a registered dataset, optionally filtered by column values, with an optional column subset and sort. Use to inspect individual records (e.g. a specific `wafer_id`) rather than aggregations. `filters` supports equality (`{"col": "value"}`) and IN-style (`{"col": ["a", "b"]}`). Returns `dataset_id`, `row_count` (after filtering), `returned`, `columns`, and `rows` (list of dicts). |
 
 ### Python service methods
 
@@ -908,6 +952,8 @@ for d in expl["top_drivers"]:
 | `get_services().explain(model_id, entity_id?, timestamp?, records?, top_k?)` | model_id, entity_id, timestamp, records, top_k (default 10) | `dict` (probability + top_drivers) | Explain a prediction |
 | `get_services().slice(dataset_id, dimensions, metric, aggregation?, filters?, limit?)` | dataset_id, dimensions, metric, aggregation, filters, limit | `list[dict]` | Slice data by dimensions |
 | `get_services().compare(dataset_id, dimension, metric, aggregation?, filters?)` | dataset_id, dimension, metric, aggregation, filters | `list[dict]` | Compare a metric across dimension values |
+| `get_services().find_interesting_slices(dataset_id, metric, dimensions?, min_sample_size?, max_dimensions?, aggregation?, filters?, top_k?)` | dataset_id, metric, dimensions, min_sample_size (default 100), max_dimensions (default 3), aggregation, filters, top_k (default 20) | `list[dict]` | Find slices with the largest deviation from baseline |
+| `get_services().sample_rows(dataset_id, n?, filters?, columns?, sort_by?, descending?)` | dataset_id, n (default 10, max 1000), filters, columns, sort_by, descending (default False) | `dict` (dataset_id, row_count, returned, columns, rows) | Return up to N raw rows, optionally filtered |
 
 ### What's NOT exposed
 
@@ -917,7 +963,7 @@ for d in expl["top_drivers"]:
 | Register a dataset | REST, Python, Web UI | MCP (by design — registration is an admin operation) |
 | Delete a dataset | REST, Python | MCP |
 | Delete a model | REST, Python | MCP |
-| Arbitrary Python execution | *(nowhere)* | MCP (by design — only the 9 defined tools) |
+| Arbitrary Python execution | *(nowhere)* | MCP (by design — only the 10 defined tools) |
 
 ---
 
@@ -1095,7 +1141,6 @@ svc = get_services()
 svc.register_dataset_from_config(
     'datasets/semiconductor_yield/dataset.yaml',
     'data/semiconductor_yield/data.parquet',
-    'data/semiconductor_yield/data.parquet',
 )
 "
 
@@ -1108,7 +1153,7 @@ python scripts/train_model.py --dataset semiconductor_yield \
   --model-type linear_regression --model-id wafer-yield-linear-v001
 ```
 
-**Predict via Claude Desktop (MCP):**
+**Predict via MCP (Claude Desktop, Claude CLI, or any stdio MCP client):**
 > "List all Anistroph models"
 > "Predict wafer yield for WAFER_015000 using model wafer-yield-xgb-v001"
 > "Explain that prediction - what are the top drivers?"

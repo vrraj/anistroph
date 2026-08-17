@@ -70,6 +70,10 @@ class AnistrophServices:
 
         if parquet_path is None:
             parquet_path = _REPO_ROOT / "data" / "processed" / f"{dataset_id}.parquet"
+        else:
+            parquet_path = Path(parquet_path)
+            if not parquet_path.is_absolute():
+                parquet_path = _REPO_ROOT / parquet_path
 
         df, report, pq_path = ingest(source_path, spec, parquet_path)
 
@@ -134,6 +138,61 @@ class AnistrophServices:
             dataset_id, self.dataset_registry, metric, dimensions,
             min_sample_size, max_dimensions, aggregation, filters, top_k,
         )
+
+    def sample_rows(self, dataset_id: str, n: int = 10,
+                    filters: Optional[dict[str, Any]] = None,
+                    columns: Optional[list[str]] = None,
+                    sort_by: Optional[str] = None,
+                    descending: bool = False) -> dict[str, Any]:
+        """Return up to ``n`` raw rows from a registered dataset.
+
+        Args:
+            dataset_id: registered dataset to sample.
+            n: maximum number of rows to return (capped at 1000).
+            filters: optional equality filters, e.g. {"wafer_id": "WAFER_015000"}
+                or {"etch_tool": ["ETCH_02", "ETCH_03"]} for IN-style filters.
+            columns: optional column subset to return. If None, returns all.
+            sort_by: optional column to sort by before sampling.
+            descending: sort direction (only used when sort_by is set).
+
+        Returns a dict with dataset_id, row_count (after filtering), columns
+        returned, and a list of row dicts.
+        """
+        n = max(1, min(int(n), 1000))
+        meta = self.dataset_registry.get(dataset_id)
+        if meta is None:
+            raise ValueError(f"dataset {dataset_id!r} not registered")
+        df = pl.read_parquet(meta.parquet_path)
+
+        if filters:
+            for col, val in filters.items():
+                if col not in df.columns:
+                    raise ValueError(f"unknown filter column {col!r}")
+                if isinstance(val, list):
+                    df = df.filter(pl.col(col).is_in(val))
+                else:
+                    df = df.filter(pl.col(col) == val)
+
+        matched = df.height
+        if sort_by:
+            if sort_by not in df.columns:
+                raise ValueError(f"unknown sort column {sort_by!r}")
+            df = df.sort(sort_by, descending=descending)
+
+        if columns:
+            missing = [c for c in columns if c not in df.columns]
+            if missing:
+                raise ValueError(f"unknown columns: {missing}")
+            df = df.select(columns)
+
+        df = df.head(n)
+        return {
+            "dataset_id": dataset_id,
+            "row_count": matched,
+            "returned": df.height,
+            "columns": df.columns,
+            "rows": df.to_dicts(),
+        }
 
     # --- Model operations ---
 

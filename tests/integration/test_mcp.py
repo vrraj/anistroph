@@ -40,6 +40,8 @@ class TestToolDiscovery:
         assert "anistroph_get_model_metrics" in names
         assert "anistroph_predict" in names
         assert "anistroph_explain_prediction" in names
+        assert "anistroph_sample_rows" in names
+        assert "anistroph_find_interesting_slices" in names
 
     def test_tool_schemas(self):
         tools = get_tool_list()
@@ -108,6 +110,81 @@ class TestToolCalls:
         })
         data = json.loads(result[0].text)
         assert "top_drivers" in data
+
+    async def test_sample_rows_default(self, services):
+        result = await call_tool("anistroph_sample_rows", {"dataset_id": "predictive_maintenance"})
+        data = json.loads(result[0].text)
+        assert data["dataset_id"] == "predictive_maintenance"
+        assert data["row_count"] > 0
+        assert 0 < data["returned"] <= 10
+        assert isinstance(data["rows"], list)
+        assert len(data["rows"]) == data["returned"]
+        assert data["columns"]
+
+    async def test_sample_rows_n_and_columns(self, services):
+        result = await call_tool("anistroph_sample_rows", {
+            "dataset_id": "predictive_maintenance",
+            "n": 3,
+            "columns": ["machine_id", "machine_type"],
+        })
+        data = json.loads(result[0].text)
+        assert data["returned"] <= 3
+        assert data["columns"] == ["machine_id", "machine_type"]
+        for row in data["rows"]:
+            assert set(row.keys()) == {"machine_id", "machine_type"}
+
+    async def test_sample_rows_filter_equality(self, services):
+        result = await call_tool("anistroph_sample_rows", {
+            "dataset_id": "predictive_maintenance",
+            "filters": {"machine_type": "TYPE_A"},
+            "n": 5,
+        })
+        data = json.loads(result[0].text)
+        assert data["row_count"] > 0
+        for row in data["rows"]:
+            assert row["machine_type"] == "TYPE_A"
+
+    async def test_sample_rows_filter_in_list(self, services):
+        result = await call_tool("anistroph_sample_rows", {
+            "dataset_id": "predictive_maintenance",
+            "filters": {"machine_type": ["TYPE_A", "TYPE_B"]},
+            "n": 5,
+        })
+        data = json.loads(result[0].text)
+        for row in data["rows"]:
+            assert row["machine_type"] in ("TYPE_A", "TYPE_B")
+
+    async def test_sample_rows_sort(self, services):
+        result = await call_tool("anistroph_sample_rows", {
+            "dataset_id": "predictive_maintenance",
+            "sort_by": "temperature",
+            "descending": True,
+            "n": 5,
+        })
+        data = json.loads(result[0].text)
+        temps = [r["temperature"] for r in data["rows"]]
+        assert temps == sorted(temps, reverse=True)
+
+    async def test_sample_rows_n_capped(self, services):
+        result = await call_tool("anistroph_sample_rows", {
+            "dataset_id": "predictive_maintenance",
+            "n": 100000,
+        })
+        data = json.loads(result[0].text)
+        assert data["returned"] <= 1000
+
+    async def test_sample_rows_unknown_filter_column(self, services):
+        result = await call_tool("anistroph_sample_rows", {
+            "dataset_id": "predictive_maintenance",
+            "filters": {"not_a_column": "x"},
+        })
+        data = json.loads(result[0].text)
+        assert "error" in data
+
+    async def test_sample_rows_unknown_dataset(self, services):
+        result = await call_tool("anistroph_sample_rows", {"dataset_id": "nonexistent"})
+        data = json.loads(result[0].text)
+        assert "error" in data
 
     async def test_invalid_tool(self, services):
         result = await call_tool("nonexistent_tool", {})

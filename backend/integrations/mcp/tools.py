@@ -121,6 +121,22 @@ TOOL_DEFS: list[tuple[str, str, dict[str, Any]]] = [
             "required": ["model_id"],
         },
     ),
+    (
+        "anistroph_sample_rows",
+        "Return up to n raw rows from a registered dataset, optionally filtered by column values, with an optional column subset and sort. Use this to inspect individual records (e.g. a specific wafer_id) rather than aggregations. n is capped at 1000.",
+        {
+            "type": "object",
+            "properties": {
+                "dataset_id": {"type": "string"},
+                "n": {"type": "integer", "default": 10},
+                "filters": {"type": "object", "description": "Equality filters, e.g. {\"wafer_id\": \"WAFER_015000\"} or {\"etch_tool\": [\"ETCH_02\", \"ETCH_03\"]} for IN-style."},
+                "columns": {"type": "array", "items": {"type": "string"}},
+                "sort_by": {"type": "string"},
+                "descending": {"type": "boolean", "default": False},
+            },
+            "required": ["dataset_id"],
+        },
+    ),
 ]
 
 
@@ -193,6 +209,15 @@ async def call_tool(name: str, arguments: dict[str, Any]) -> list[types.TextCont
                 arguments.get("timestamp"),
                 arguments.get("records"),
                 arguments.get("top_k", 10),
+            )
+        elif name == "anistroph_sample_rows":
+            result = svc.sample_rows(
+                arguments["dataset_id"],
+                arguments.get("n", 10),
+                arguments.get("filters"),
+                arguments.get("columns"),
+                arguments.get("sort_by"),
+                arguments.get("descending", False),
             )
         else:
             return [types.TextContent(type="text", text=json.dumps({"error": f"unknown tool: {name}"}))]

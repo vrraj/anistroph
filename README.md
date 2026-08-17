@@ -1,13 +1,51 @@
 # Anistroph
 
-> **Interactive Web UI:**
-> The repository includes a FastAPI-powered **Web UI** for exploring datasets, training models, making predictions, and inspecting SHAP explanations. See **[Web UI](#web-ui)** for setup instructions.
+> **Explore through Claude:**
+> The primary interface for exploring datasets, models, predictions, and explanations is **Claude Desktop** (or the **Claude CLI**) over MCP. Ask questions in natural language — list datasets, find interesting slices, predict outcomes, and inspect SHAP explanations — without leaving the conversation. See **[Claude Desktop (MCP stdio)](#claude-desktop-mcp-stdio)** for setup instructions. A FastAPI **Web UI** is also included for interactive browser-based exploration; see **[Web UI](#web-ui)**.
 
 **Anistroph: extensible, domain-agnostic predictive analytics platform.**
 
 **Anistroph** provides a common predictive and analytical architecture across isolated reference datasets. Dataset-specific ingestion and feature preparation are supported where required, while training, evaluation, model persistence, inference, explainability, multidimensional analysis, and MCP access share one common framework.
 
+> **Anistroph** is a **reference framework** for testing the combination of prediction, model explainability, and multidimensional analysis across different datasets.
+
 Under the hood, the platform is powered by **Polars + DuckDB + Parquet** for fast columnar data processing, **scikit-learn + XGBoost** for classification and regression modeling, and **SHAP TreeExplainer** for per-prediction explainability. This gives predictive systems precise model-driven explanations and multidimensional discovery without duplicating the application for each new domain.
+
+## Anistroph at a Glance
+
+```text
+                                      ANISTROPH
+
+        ADMIN / MODEL LIFECYCLE                         RUNTIME
+
+┌──────────┐   ┌───────────┐   ┌───────────┐   ┌──────────────────────────┐   ┌──────────┐   ┌─────────────────┐
+│   DATA   │ → │  PREPARE  │ → │   TRAIN   │ → │ PREDICT • EXPLAIN •     │ → │   MCP    │ → │ CLAUDE / AGENTS │
+│          │   │           │   │           │   │ EXPLORE                  │   │          │   │                 │
+│ CSV      │   │ Python    │   │ XGBoost   │   │ Inference                │   │ MCP SDK  │   │ Natural-language│
+│ Parquet  │   │ Polars    │   │ sklearn   │   │ SHAP TreeExplainer      │   │ stdio    │   │ interaction     │
+│          │   │ Parquet   │   │ Metrics   │   │ DuckDB / Polars         │   │          │   │                 │
+└──────────┘   └───────────┘   └───────────┘   └──────────────────────────┘   └──────────┘   └─────────────────┘
+                                      │
+                                      ▼
+                              Persisted Model
+                         + features + metrics
+```
+
+### Pipeline
+
+**1. Data** — Add an isolated dataset for a prediction or analysis use case. Input can be CSV or Parquet.
+
+**2. Prepare** — Clean and transform data, define features and the prediction target, and store prepared data in Parquet.
+
+**3. Train** — Train and evaluate the model as an admin operation. Persist the model, feature metadata, preprocessing information, and metrics.
+
+**4. Predict • Explain • Explore** — Run inference, explain individual predictions with SHAP, and explore multidimensional patterns in the underlying data.
+
+**5. MCP** — Expose runtime capabilities as tools for dataset discovery, prediction, explanation, slicing, and analysis.
+
+**6. Claude / Agents** — Discover and invoke Anistroph capabilities through MCP using natural-language interaction.
+
+> Datasets and models remain isolated by use case, while Anistroph reuses common training, inference, explainability, analysis, and MCP services where the underlying operation is the same.
 
 ## Features
 
@@ -44,9 +82,23 @@ Under the hood, the platform is powered by **Polars + DuckDB + Parquet** for fas
 
 **MCP runtime access**
 - **MCP stdio server** — Anistroph exposes runtime analysis and inference through MCP stdio for use by clients such as Claude Desktop.
-- **9 MCP tools** — Dataset discovery, dataset profiling, slicing, comparison, interesting-slice discovery, model discovery, model metrics, prediction, and SHAP-based prediction explanation.
-- **Shared services** — MCP tools call the same underlying Python services as REST and the Web UI. No separate analytical or model logic lives inside MCP.
+- **10 MCP tools** — Dataset discovery, dataset profiling, slicing, comparison, interesting-slice discovery, raw row sampling, model discovery, model metrics, prediction, and SHAP-based prediction explanation.
 - **No training via MCP** — Model training is an administrative operation. MCP is for runtime analysis and inference only.
+
+| Tool | What it does |
+|------|-------------|
+| `anistroph_list_datasets` | List all registered datasets (IDs, names, row counts, time ranges) |
+| `anistroph_profile_dataset` | Profile a dataset — column types, distributions, missing values, time range |
+| `anistroph_slice_data` | Slice by 1–3 dimensions with an aggregation (mean, sum, min, max, count, std, median) |
+| `anistroph_compare_data` | Compare a metric across values of a single dimension |
+| `anistroph_find_interesting_slices` | Auto-discover slices with the largest deviation from the overall baseline |
+| `anistroph_sample_rows` | Return up to N raw rows, optionally filtered by column values (e.g. a specific `wafer_id`) |
+| `anistroph_list_models` | List all trained models (IDs, types, datasets, timestamps) |
+| `anistroph_get_model_metrics` | Get evaluation metrics for a trained model |
+| `anistroph_predict` | Make a prediction (entity_id + timestamp for temporal, records for non-temporal) |
+| `anistroph_explain_prediction` | Explain a prediction with top positive and negative SHAP contributors |
+
+See [MCP](#mcp) for server setup and [README_SETUP_USAGE.md](README_SETUP_USAGE.md#example-mcp-prompts) for example prompts.
 
 **Architecture**
 - **One shared inference path** — All models share one inference service selected by persisted model metadata. Adding a new model type does not create a new inference path.
@@ -62,11 +114,11 @@ Under the hood, the platform is powered by **Polars + DuckDB + Parquet** for fas
 | Models | XGBoost (classifier + regressor), Logistic Regression, Linear Regression | New model adapters in separate folders, registered in `MODEL_FACTORIES` |
 | Explainability | SHAP TreeExplainer for XGBoost, importance-weighted fallback for others | SHAP KernelExplainer for non-tree models, deeper visualization |
 | Analysis | Manual slicing, comparison, and automated interesting-slice discovery across 1-3 dimensions | More aggregation types, statistical significance testing |
-| Access | REST API, Web UI, MCP stdio (9 tools) | Additional MCP tools, GraphQL, batch inference |
+| Access | REST API, Web UI, MCP stdio (10 tools) | Additional MCP tools, GraphQL, batch inference |
 
 The shipped MCP server exposes runtime analysis and inference only. Model training, dataset registration, and administrative operations belong in the REST API, admin CLI, or Web UI.
 
-For a concise map of the architecture and how datasets remain isolated while sharing common services, see [Architecture](#architecture).
+For a concise map of the architecture and how datasets remain isolated while sharing common services, see [Anistroph at a Glance](#anistroph-at-a-glance) and [Architecture](#architecture).
 
 ### Reference Datasets
 
@@ -113,14 +165,13 @@ Synthetic wafer manufacturing data representing process history across tools, ch
 ## AI Integration — Claude and ChatGPT
 
 Anistroph exposes runtime analysis and inference through two AI integration
-protocols. Both call the same underlying Python services. Neither exposes
-model training.
+protocols. Neither exposes model training.
 
 | | Claude (MCP) | ChatGPT (GPT Actions) |
 |---|---|---|
 | **Protocol** | Model Context Protocol (stdio) | OpenAPI / REST |
 | **Transport** | Local subprocess (stdio) | Public HTTPS via ngrok tunnel |
-| **Scope** | 9 runtime tools | 13 runtime REST endpoints |
+| **Scope** | 10 runtime tools | 13 runtime REST endpoints |
 | **Training exposed?** | No | No |
 | **Setup** | Claude Desktop config JSON | Custom GPT → Actions → Import URL |
 
@@ -215,11 +266,11 @@ Model explanation (SHAP) and observed-data analysis (slicing) provide different 
 - **Multidimensional analysis** with manual slicing and automated interesting-slice discovery
 - **Model persistence and reload** with stable feature identities and preprocessing metadata
 - **REST API** for programmatic access to all capabilities
-- **MCP stdio server** with 9 tools for Claude Desktop and other MCP clients
+- **MCP stdio server** with 10 tools for Claude Desktop and other MCP clients
 - **Web UI** for interactive exploration
 - **Admin training CLI** for model lifecycle management
 - **Docker support** with bind-mounted code and data
-- **100 passing tests** covering data generation, features, training, inference, explanation, analysis, MCP, and end-to-end workflows
+- **110 passing tests** covering data generation, features, training, inference, explanation, analysis, MCP, and end-to-end workflows
 
 ## Usage Patterns
 
@@ -476,34 +527,7 @@ Web UI at `http://localhost:9500`, Swagger at `http://localhost:9500/docs`.
                     External AI/Agent
 ```
 
-All interfaces (REST, MCP, UI) invoke the same core Python services.
-
-```text
-┌──────────────────────┐     ┌──────────────────────┐
-│ Tool / Maintenance   │     │ Semiconductor Yield  │
-│                      │     │                      │
-│ Sensor Data          │     │ Wafer Process Data   │
-│ Failure Target       │     │ Yield Target         │
-└──────────┬───────────┘     └──────────┬───────────┘
-           │                            │
-           └────────────┬───────────────┘
-                        ↓
-                Anistroph Framework
-                        │
-          ┌─────────────┼─────────────┐
-          ↓             ↓             ↓
-      Training       Inference      Analysis
-          │             │             │
-          └─────────────┼─────────────┘
-                        ↓
-                   Explainability
-                        ↓
-                     MCP stdio
-                        ↓
-                       Claude
-```
-
-Dataset-specific ingestion and feature preparation are supported where required. Common framework components are reused for training, evaluation, model persistence, inference, explainability, multidimensional analysis, and MCP access wherever the underlying operation is the same.
+All interfaces (REST, MCP, UI) invoke the same core Python services — no separate analytical or model logic lives inside any transport. MCP exposes no arbitrary Python execution; it is runtime analysis and inference only.
 
 ### Dataset Abstraction
 
@@ -903,26 +927,14 @@ Swagger docs at `http://localhost:9500/docs`, ReDoc at `http://localhost:9500/re
 
 ## MCP
 
-Anistroph exposes deterministic capabilities through MCP stdio:
-
-```text
-anistroph_list_datasets
-anistroph_profile_dataset
-anistroph_slice_data
-anistroph_compare_data
-anistroph_find_interesting_slices
-anistroph_list_models
-anistroph_get_model_metrics
-anistroph_predict
-anistroph_explain_prediction
-```
+Anistroph exposes deterministic capabilities through MCP stdio. The 10 tools are listed in the [Features section](#mcp-runtime-access) above.
 
 Run the MCP server:
 ```bash
 python -m backend.integrations.mcp.server
 ```
 
-MCP tools call the same core services as REST and the Web UI. No arbitrary Python execution is exposed. Model training is not exposed through MCP.
+MCP, REST, and the Web UI all invoke the same core services — see [Architecture](#architecture). Model training is not exposed through MCP.
 
 ## Web UI
 
@@ -961,7 +973,7 @@ The shared training, inference, and explanation paths pick it up automatically. 
 pytest
 ```
 
-The suite includes 100 tests covering:
+The suite includes 110 tests covering:
 - **Unit tests:** DatasetSpec parsing, validation, ingestion, profiling, feature transforms (with leakage assertions), target construction (entity isolation, horizon boundaries), ML training/evaluation/persistence/reload, prediction, feature parity, SHAP explainability, interesting-slice discovery.
 - **Integration tests:** REST API (all endpoints), MCP tools (discovery, schemas, all tool calls, invalid inputs).
 - **End-to-end acceptance test:** generate → register → ingest → profile → features → target → split → train → evaluate → persist → reload → predict → explain → REST → MCP (verifying same results).
