@@ -5,8 +5,9 @@ Runs the full first-time setup pipeline:
   1. Check macOS libomp dependency (required by XGBoost)
   2. Create a virtualenv at ./.venv
   3. Install the package in editable mode (pip install -e .)
-  4. Generate + register all reference datasets (delegates to setup_datasets.py)
-  5. Print the ready-to-paste Claude Desktop MCP config with absolute paths
+  4. Create .env from .env.example (if .env does not already exist)
+  5. Generate + register all reference datasets (delegates to setup_datasets.py)
+  6. Print the ready-to-paste Claude Desktop MCP config with absolute paths
 
 After this script completes, the only remaining manual step is adding the
 printed MCP config block to Claude Desktop.
@@ -25,7 +26,6 @@ Exit codes:
 from __future__ import annotations
 
 import json
-import os
 import platform
 import shutil
 import subprocess
@@ -35,6 +35,8 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parent.parent
 VENV_DIR = REPO_ROOT / ".venv"
 VENV_PYTHON = VENV_DIR / "bin" / "python"
+ENV_EXAMPLE = REPO_ROOT / ".env.example"
+ENV_FILE = REPO_ROOT / ".env"
 
 
 # ---------------------------------------------------------------------------
@@ -112,6 +114,19 @@ def install_package() -> None:
     print("  Package installed in editable mode.")
 
 
+def create_env_file() -> None:
+    """Copy .env.example to .env if .env does not already exist."""
+    if ENV_FILE.exists():
+        print(f"  .env already exists at {ENV_FILE}")
+        return
+    if not ENV_EXAMPLE.exists():
+        print("  .env.example not found — skipping .env creation.")
+        return
+    shutil.copy2(ENV_EXAMPLE, ENV_FILE)
+    print(f"  Created .env from .env.example at {ENV_FILE}")
+    print("  (Edit it to override partition defaults or add NGROK_AUTHTOKEN.)")
+
+
 def setup_datasets(force: bool) -> None:
     cmd = [str(VENV_PYTHON), "scripts/setup_datasets.py"]
     if force:
@@ -163,7 +178,7 @@ def main() -> None:
     parser.add_argument("--force", action="store_true", help="Re-register datasets even if present")
     args = parser.parse_args()
 
-    total_steps = 5
+    total_steps = 6
     print("Anistroph one-shot setup")
     print(f"  Repo root: {REPO_ROOT}")
     print(f"  Platform:  {platform.system()} {platform.release()}")
@@ -177,10 +192,13 @@ def main() -> None:
     step(3, total_steps, "Installing Anistroph package (editable)")
     install_package()
 
-    step(4, total_steps, "Generating + registering reference datasets")
+    step(4, total_steps, "Creating .env from .env.example")
+    create_env_file()
+
+    step(5, total_steps, "Generating + registering reference datasets")
     setup_datasets(force=args.force)
 
-    step(5, total_steps, "Preparing Claude Desktop MCP config")
+    step(6, total_steps, "Preparing Claude Desktop MCP config")
     print_claude_config()
 
     print("\nDone.\n")

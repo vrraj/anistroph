@@ -89,7 +89,7 @@ UI-based verification, expanded MCP tooling, and comprehensive documentation.
 - `README.md` — updated with Inference feature section, SHAP
   normalization details, 13 MCP tools table, staged prediction, and
   records-based prediction.
-- `README_SETUP_USAGE.md` — comprehensive usage guide with Python/REST/
+- `docs/setup-usage.md` — comprehensive usage guide with Python/REST/
   MCP/UI examples for every operation, including:
   - §2a: How to author `dataset.yaml` (columns vs features, transforms)
   - §8: Dual prediction modes with verification instructions

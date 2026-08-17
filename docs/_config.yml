@@ -1,0 +1,48 @@
+# --- Site Metadata ---
+title: "Anistroph"
+tagline: "Predictive Analytics, Explainability, and Multidimensional Discovery"
+description: "A domain-agnostic reference architecture for predictive analytics, model explainability, and multidimensional discovery across structured datasets."
+url: "https://vrraj.github.io"
+baseurl: "/anistroph"
+
+defaults:
+  - scope:
+      path: "" # Applies to all files
+    values:
+      layout: "default"
+
+  - scope:
+      path: "index.md"
+    values:
+      title: "Anistroph: Predictive Analytics Reference Architecture"
+
+  - scope:
+      path: "setup-usage.md"
+    values:
+      title: "Setup & Usage Guide | Anistroph"
+      description: "Dataset configuration, operations, MCP setup, and API reference."
+
+  - scope:
+      path: "technical-architecture.md"
+    values:
+      title: "Technical Architecture | Anistroph"
+      description: "Deeper architecture details — dataset specs, feature engine, ML engine, MCP transports."
+
+# --- Theme Configuration ---
+theme: jekyll-theme-cayman
+show_downloads: true
+
+# --- Google Analytics (GA4) ---
+google_analytics: G-KBYFPBJ1MG
+
+# --- Plugins ---
+plugins:
+  - jekyll-seo-tag
+
+# --- Build Settings ---
+markdown: kramdown
+highlighter: rouge
+exclude:
+  - Gemfile
+  - Gemfile.lock
+  - vendor

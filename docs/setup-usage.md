@@ -11,7 +11,7 @@ Detailed reference for dataset configuration, operations, MCP setup, and API ref
 - **[Troubleshooting](#troubleshooting)** — Common issues and fixes
 - **[API Reference](#api-reference)** — REST endpoints, MCP tools, Python methods
 
-For installation and architecture overview, see **[README.md](README.md)**.
+For installation and architecture overview, see **[README.md](../README.md)**.
 
 ---
 

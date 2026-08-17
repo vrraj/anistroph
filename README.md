@@ -1,8 +1,24 @@
 # Anistroph
 
-**A domain-agnostic reference architecture for predictive analytics, explainability, and multidimensional discovery across structured datasets.**
+[![GitHub Release](https://img.shields.io/github/v/release/vrraj/anistroph?label=release&color=orange&logo=github)](https://github.com/vrraj/anistroph/releases)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](https://github.com/vrraj/anistroph/blob/main/LICENSE)
+[![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue?logo=python&logoColor=white)](https://www.python.org/downloads/)
+[![Tests](https://img.shields.io/badge/tests-147%20passing-brightgreen)](https://github.com/vrraj/anistroph/blob/main/README_TEST.md)
+[![MCP Tools](https://img.shields.io/badge/MCP-13%20tools-purple)](https://github.com/vrraj/anistroph#mcp-and-agent-access)
+[![GitHub Pages](https://img.shields.io/badge/docs-GitHub%20Pages-blue)](https://vrraj.github.io/anistroph/)
+
+**Anistroph (derived from anisotropy)**, reflecting how insights can shift with the **direction of analysis**, is a multi-domain predictive analytics architecture supporting structured datasets with different schemas, features, targets, preprocessing, and modeling objectives.
+
+Each dataset moves through a common predictive modeling lifecycle: **define prediction targets, select and transform source features, prepare training data, train and evaluate models, and persist models with their preprocessing contracts.**
+
+**Multiple datasets** across different **domains** use the **same shared services** for prediction, explanation, evaluation, and multidimensional analysis. Each dataset retains its own schema, features, targets, preprocessing, and models, allowing **new datasets to be added without changing the shared services**.
+
+Trained models and analytical capabilities are accessible to **Claude and other agents through MCP (stdio and Streamable HTTP)**, as well as through **REST/OpenAPI and the Anistroph Web UI**. This enables supporting agent-driven inference and analysis with cross-interface validation.
+
 
 Anistroph provides a common predictive lifecycle while allowing each dataset to retain its own schema, features, targets, preprocessing, and models.
+
+<div align="center">
 
 ```text
                   DATASETS (Multi-domain)
@@ -35,6 +51,8 @@ Anistroph provides a common predictive lifecycle while allowing each dataset to 
               Claude • MCP Agents • Applications
 ```
 
+</div>
+
 ### What the architecture supports
 
 - **Multi-domain datasets** — add datasets from different domains without changing the shared prediction, explanation, evaluation, or multidimensional slicing services. Dataset-specific schemas, features, targets, and preprocessing remain isolated behind common runtime contracts.
@@ -46,7 +64,7 @@ Anistroph provides a common predictive lifecycle while allowing each dataset to 
 - **Cross-interface validation** — Claude/agent-generated inference for a model — predictions, explanations, and summaries — can be cross-validated in the Anistroph Web UI using the same source-feature JSON and persisted model/runtime.
 
 
-Anistroph ships with a few **synthetic reference datasets** (semiconductor manufacturing, predictive maintenance, Bay Area home prices) that exercise the architecture across regression, classification, temporal, and multidimensional patterns. You can **add your own dataset** by authoring a `dataset.yaml` and registering it — see [Adding a Dataset](#adding-a-dataset) for the process summary and [README_SETUP_USAGE.md](README_SETUP_USAGE.md) for the full YAML reference and worked examples.
+Anistroph ships with a few **synthetic reference datasets** (semiconductor manufacturing, predictive maintenance, Bay Area home prices) that exercise the architecture across regression, classification, temporal, and multidimensional patterns. You can **add your own dataset** by authoring a `dataset.yaml` and registering it — see [Adding a Dataset](#adding-a-dataset) for the process summary and the [Setup & Usage Guide](docs/setup-usage.md) for the full YAML reference and worked examples.
 
 > Anistroph is a reference architecture. The included datasets and models demonstrate how the components fit together rather than claiming validation across every potential domain.
 
@@ -111,16 +129,18 @@ make install
 This runs `scripts/setup_anistroph.py`, which:
 - Checks for `libomp` on macOS (XGBoost dependency) and offers to install it via Homebrew if missing
 - Creates a virtualenv at `.venv` and installs the package in editable mode
+- Creates `.env` from `.env.example` (partition defaults — edit to override or add `NGROK_AUTHTOKEN`)
 - Generates and registers all eleven reference dataset configs (idempotent — re-runs skip what's already done)
 - Prints the **ready-to-paste Claude Desktop MCP config** with absolute paths filled in
 
 > **Without `make install`**, the equivalent manual steps are:
 > ```bash
 > python -m venv .venv && source .venv/bin/activate && pip install -e .
-> brew install libomp   # macOS only — required by XGBoost
-> make setup            # generate + register datasets
+> cp .env.example .env    # optional — defaults work without it
+> brew install libomp     # macOS only — required by XGBoost
+> make setup              # generate + register datasets
 > ```
-> Then copy the MCP config block from [README_SETUP_USAGE.md → Claude Desktop](README_SETUP_USAGE.md#claude-desktop-mcp-stdio).
+> Then copy the MCP config block from [Setup & Usage Guide → Claude Desktop](docs/setup-usage.md#claude-desktop-mcp-stdio).
 
 **3. Connect Claude Desktop via MCP (stdio — no server required):**
 
@@ -144,7 +164,7 @@ Restart Claude Desktop and ask:
 > "Find interesting slices in the semiconductor yield dataset"
 > "Predict wafer yield for WAFER_015000 and explain what pushed it up or down"
 
-> For more sample prompts check [README_SETUP_USAGE.md → Example MCP prompts](README_SETUP_USAGE.md#example-mcp-prompts).
+> For more sample prompts check [Setup & Usage Guide → Example MCP prompts](docs/setup-usage.md#example-mcp-prompts).
 
 **4. (Optional) Start the server for Web UI, REST, or MCP HTTP:**
 
@@ -178,8 +198,8 @@ data/
     └── data.parquet
 
 artifacts/models/
-├── anistroph-sentinel-v1/
-└── wafer-yield-xgb-v001/
+├── <dataset>-<model-type>-<timestamp>/
+└── ...
 ```
 
 A dataset describes its own schema and semantics through `DatasetSpec`, `FeatureSpec`, and `TargetSpec`:
@@ -745,7 +765,7 @@ The Web UI supports dataset exploration, model training, prediction, SHAP explan
 
 ### ChatGPT / GPT Actions
 
-The filtered OpenAPI spec at `/openapi-gpt.json` exposes runtime-only endpoints (prediction, explanation, evaluation, analysis) to ChatGPT and other OpenAPI-consuming agents — training and dataset administration are excluded. Use `make start-gpt` to start the server with an ngrok tunnel for cloud-based access. See [README_SETUP_USAGE.md](README_SETUP_USAGE.md) for detailed setup.
+The filtered OpenAPI spec at `/openapi-gpt.json` exposes runtime-only endpoints (prediction, explanation, evaluation, analysis) to ChatGPT and other OpenAPI-consuming agents — training and dataset administration are excluded. Use `make start-gpt` to start the server with an ngrok tunnel for cloud-based access. See the [Setup & Usage Guide](docs/setup-usage.md) for detailed setup.
 
 ### Docker
 
@@ -769,7 +789,7 @@ make start
 
    Registration does **not** train a model, apply feature transforms, or construct the target — those happen at training time. After register, the dataset is ready for `train()`.
 
-   See **[README_SETUP_USAGE.md](README_SETUP_USAGE.md#register-a-dataset)** for the Python call example, partition file table, and the full registration reference.
+   See **[Setup & Usage Guide](docs/setup-usage.md#register-a-dataset)** for the Python call example, partition file table, and the full registration reference.
 5. Train a model — model type auto-selected from target type if omitted.
 6. Evaluate on the held-out partition.
 7. Use the common inference, explanation, analysis, REST, MCP, and UI services.
@@ -808,7 +828,7 @@ split:
   eval: 0.20
 ```
 
-For the full YAML reference — column types/roles, the complete transform table, target semantics, split configuration, and worked examples (non-temporal regression, temporal classification with rolling windows, multi-target pattern) — see **[README_SETUP_USAGE.md](README_SETUP_USAGE.md)**.
+For the full YAML reference — column types/roles, the complete transform table, target semantics, split configuration, and worked examples (non-temporal regression, temporal classification with rolling windows, multi-target pattern) — see the **[Setup & Usage Guide](docs/setup-usage.md)**.
 
 ## Adding a Model
 
@@ -834,10 +854,11 @@ The current suite contains **147 tests** spanning dataset specifications, ingest
 
 ## Documentation
 
-- **[README_SETUP_USAGE.md](README_SETUP_USAGE.md)** — setup, usage, training, prediction, and MCP examples
+- **[docs/index.md](docs/index.md)** — GitHub Pages landing page (positioning, tech stack, code examples)
+- **[docs/setup-usage.md](docs/setup-usage.md)** — setup, usage, training, prediction, and MCP examples
+- **[docs/technical-architecture.md](docs/technical-architecture.md)** — deeper architecture details
 - **[README_TEST.md](README_TEST.md)** — testing and MCP testing guide
 - **[RELEASE_NOTES.md](RELEASE_NOTES.md)** — release notes
-- **[TECHNICAL_ARCHITECTURE.md](TECHNICAL_ARCHITECTURE.md)** — deeper architecture details
 
 ## License
 
