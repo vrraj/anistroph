@@ -90,7 +90,7 @@ Under the hood, the platform is powered by **Polars + DuckDB + Parquet** for fas
 - **Dataset-agnostic** — The same analysis framework operates on any registered dataset, not just semiconductor or maintenance data.
 
 **MCP runtime access**
-- **MCP stdio server** — Anistroph exposes runtime analysis and inference through MCP stdio for use by clients such as Claude Desktop.
+- **MCP server (stdio + HTTP)** — Anistroph exposes runtime analysis and inference through MCP (JSON-RPC 2.0). Two transports are supported: **stdio** for local clients (Claude Desktop, Claude CLI, Cursor, Cline) and **Streamable HTTP** at `/mcp` for remote clients and tool routers like Axiolex. Both expose the same 13 tools and call the same service layer.
 - **13 MCP tools** — Dataset discovery, dataset profiling, slicing, comparison, interesting-slice discovery, raw row sampling, model discovery, model metrics, model input schema, prediction, SHAP-based prediction explanation, held-out evaluation, and error slice discovery.
 - **No training via MCP** — Model training is an administrative operation. MCP is for runtime analysis and inference only.
 
@@ -113,8 +113,10 @@ Under the hood, the platform is powered by **Polars + DuckDB + Parquet** for fas
 See [MCP](#mcp) for server setup and [README_SETUP_USAGE.md](README_SETUP_USAGE.md#example-mcp-prompts) for example prompts.
 
 **Architecture**
+- **One shared service layer** — All three interfaces (MCP, REST, Web UI) call the same `AnistrophServices` methods underneath. No interface has its own logic — they are thin wrappers that translate their protocol into service calls.
+- **Dual interface parity** — All 13 MCP tools have corresponding REST endpoints. MCP uses JSON-RPC 2.0 (discovery via `tools/list`, execution via `tools/call`) over stdio or HTTP (`/mcp`). REST uses OpenAPI 3.1.0 (discovery via `/openapi.json` or `/openapi-gpt.json`, execution via HTTP methods). Both expose the same runtime capabilities; REST additionally exposes administrative endpoints (training, registration, deletion).
 - **One shared inference path** — All models share one inference service selected by persisted model metadata. Adding a new model type does not create a new inference path.
-- **REST API** — Full programmatic access to dataset management, analysis, training, prediction, and explanation endpoints.
+- **REST API** — Full programmatic access to dataset management, analysis, training, prediction, and explanation endpoints. OpenAPI 3.1.0 schema at `/openapi.json` (full) and `/openapi-gpt.json` (runtime subset for GPT Actions).
 - **Web UI** — Lightweight dashboard for exploring datasets, training models, making predictions (entity lookup or records-based), inspecting SHAP explanations, and evaluating models against held-out data.
 - **Docker support** — Containerized deployment with bind-mounted code and data for development.
 

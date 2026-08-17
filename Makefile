@@ -47,6 +47,8 @@ start:
 	@echo "Anistroph application started successfully."
 	@echo "  Web UI:     http://localhost:9500"
 	@echo "  API docs:   http://localhost:9500/docs"
+	@echo "  MCP (HTTP): http://localhost:9500/mcp"
+	@echo "  OpenAPI:    http://localhost:9500/openapi.json"
 	@echo "  Health:     http://localhost:9500/health"
 
 # Stop all Docker containers
@@ -174,6 +176,7 @@ start-gpt:
 	echo "========================================================"; \
 	echo ""; \
 	echo "  Public URL:        $$NGROK_URL"; \
+	echo "  MCP (HTTP):        $$NGROK_URL/mcp"; \
 	echo "  OpenAPI (GPT):     $$NGROK_URL/openapi-gpt.json"; \
 	echo "  OpenAPI (full):    $$NGROK_URL/openapi.json"; \
 	echo "  Health:            $$NGROK_URL/health"; \

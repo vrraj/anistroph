@@ -14,19 +14,162 @@ model training — training is an admin operation.
 
 ### Protocol Comparison
 
-| | Claude (MCP) | ChatGPT (GPT Actions) |
-|---|---|---|
-| **Protocol** | Model Context Protocol (stdio) | OpenAPI / REST |
-| **Transport** | Local subprocess (stdio) | Public HTTPS via ngrok tunnel |
-| **Spec URL** | N/A (tools defined in Python) | `https://<ngrok-url>/openapi-gpt.json` |
-| **Scope** | 13 runtime tools | 13 runtime REST endpoints |
-| **Training exposed?** | No | No |
-| **Setup** | Claude Desktop config JSON | Custom GPT → Actions → Import URL |
-| **Best for** | Local analysis, IDE integration | Cloud-based conversational analysis |
+| | Claude (MCP stdio) | MCP over HTTP | ChatGPT (GPT Actions) |
+|---|---|---|---|
+| **Protocol** | JSON-RPC 2.0 over stdio | JSON-RPC 2.0 over HTTP (Streamable HTTP) | OpenAPI 3.1.0 / REST |
+| **Transport** | Local subprocess (stdin/stdout) | HTTP POST to `/mcp` | Public HTTPS via ngrok tunnel |
+| **Discovery** | `tools/list` JSON-RPC method | `tools/list` JSON-RPC method | `/openapi-gpt.json` (OpenAPI schema) |
+| **Execution** | `tools/call` JSON-RPC method | `tools/call` JSON-RPC method | HTTP GET / POST / DELETE |
+| **Endpoint** | N/A (local subprocess) | `http://localhost:9500/mcp` | `https://<ngrok-url>/openapi-gpt.json` |
+| **Scope** | 13 runtime tools | 13 runtime tools | 20 runtime REST endpoints |
+| **Training exposed?** | No | No | No |
+| **Setup** | Claude Desktop config JSON | Point any MCP client at the URL | Custom GPT → Actions → Import URL |
+| **Best for** | Local analysis, IDE integration | Remote MCP clients, custom agents | Cloud-based conversational analysis |
+
+### How MCP works (JSON-RPC 2.0)
+
+MCP is not a custom protocol — it is **JSON-RPC 2.0**. Anistroph supports
+two transports for the same protocol:
+
+- **stdio** — local subprocess (stdin/stdout). Used by Claude Desktop,
+  Cursor, Cline, Claude CLI.
+- **Streamable HTTP** — HTTP POST to `/mcp`. Used by remote MCP clients
+  and custom agents that can't or don't want to launch a subprocess.
+
+Both transports expose the same 13 tools and call the same
+`AnistrophServices` layer. The MCP server does not implement its own
+logic — it is a thin JSON-RPC wrapper.
+
+**Discovery** — the client sends `tools/list`:
+
+```json
+{"jsonrpc": "2.0", "id": 1, "method": "tools/list"}
+```
+
+The server responds with all 13 tools, each with a name, description, and
+JSON schema for its arguments:
+
+```json
+{"jsonrpc": "2.0", "id": 1, "result": {"tools": [
+  {"name": "anistroph_predict",
+   "description": "Make a prediction using a trained model...",
+   "inputSchema": {"type": "object", "properties": {
+     "model_id": {"type": "string"},
+     "entity_id": {"type": "string"},
+     "records": {"type": "array", "items": {"type": "object"}}
+   }, "required": ["model_id"]}}
+]}}
+```
+
+**Execution** — the client sends `tools/call` with the tool name and
+arguments:
+
+```json
+{"jsonrpc": "2.0", "id": 2, "method": "tools/call",
+ "params": {"name": "anistroph_predict",
+            "arguments": {"model_id": "wafer-yield-xgboost",
+                          "entity_id": "WAFER_015000"}}}
+```
+
+The server executes the tool and returns the result as text content:
+
+```json
+{"jsonrpc": "2.0", "id": 2, "result": {"content": [
+  {"type": "text", "text": "{\"predicted_yield\": 0.9592, ...}"}
+]}}
+```
+
+### MCP over HTTP (/mcp endpoint)
+
+The `/mcp` endpoint exposes the same 13 MCP tools over HTTP using the
+MCP Streamable HTTP transport. This lets remote MCP clients discover
+and execute tools without launching a local subprocess.
+
+**Endpoint:** `POST http://localhost:9500/mcp`
+
+**Session flow:**
+
+1. **Initialize** — send an `initialize` request to start a session:
+
+```bash
+curl -s -D - -X POST http://localhost:9500/mcp/ \
+  -H "Content-Type: application/json" \
+  -H "Accept: application/json, text/event-stream" \
+  -d '{"jsonrpc":"2.0","id":1,"method":"initialize",
+       "params":{"protocolVersion":"2025-03-26","capabilities":{},
+                 "clientInfo":{"name":"my-agent","version":"1.0"}}}'
+```
+
+The response includes a `Mcp-Session-Id` header — save it for subsequent
+requests.
+
+2. **Notify initialized** — acknowledge the session:
+
+```bash
+curl -s -X POST http://localhost:9500/mcp/ \
+  -H "Content-Type: application/json" \
+  -H "Accept: application/json, text/event-stream" \
+  -H "Mcp-Session-Id: <session-id>" \
+  -d '{"jsonrpc":"2.0","method":"notifications/initialized"}'
+```
+
+3. **List tools** — discover available tools:
+
+```bash
+curl -s -X POST http://localhost:9500/mcp/ \
+  -H "Content-Type: application/json" \
+  -H "Accept: application/json, text/event-stream" \
+  -H "Mcp-Session-Id: <session-id>" \
+  -d '{"jsonrpc":"2.0","id":2,"method":"tools/list"}'
+```
+
+4. **Call a tool** — execute a prediction:
+
+```bash
+curl -s -X POST http://localhost:9500/mcp/ \
+  -H "Content-Type: application/json" \
+  -H "Accept: application/json, text/event-stream" \
+  -H "Mcp-Session-Id: <session-id>" \
+  -d '{"jsonrpc":"2.0","id":3,"method":"tools/call",
+       "params":{"name":"anistroph_predict",
+                 "arguments":{"model_id":"wafer-yield-xgboost",
+                              "entity_id":"WAFER_000001"}}}'
+```
+
+Responses are returned as Server-Sent Events (`text/event-stream`) with
+`event: message` and `data: <json>` lines.
+
+**When to use HTTP vs stdio:**
+
+| Use case | Transport |
+|----------|-----------|
+| Claude Desktop, Cursor, Cline (local) | stdio |
+| Custom agent on same machine | stdio or HTTP |
+| Remote agent over network | HTTP |
+| Building agents that discover tools dynamically | HTTP |
+| Multiple clients sharing one server | HTTP |
+
+### How REST discovery works (OpenAPI 3.1.0)
+
+REST clients discover endpoints via the OpenAPI schema served at
+`/openapi.json` (full API) or `/openapi-gpt.json` (runtime subset for
+GPT Actions). Any OpenAPI-compatible client (Postman, GPT Actions, code
+generators) can auto-discover and call the REST API without manual
+configuration.
+
+```bash
+# Full OpenAPI schema (all 20 endpoints)
+curl http://localhost:9500/openapi.json | jq .
+
+# Runtime subset for GPT Actions (excludes training/registration/deletion)
+curl http://localhost:9500/openapi-gpt.json | jq .
+```
 
 ### What is exposed (runtime only)
 
-Both protocols expose the same capabilities:
+Both protocols expose the same runtime capabilities. Each MCP tool has a
+corresponding REST endpoint, and both call the same `AnistrophServices`
+method underneath:
 
 | Capability | MCP Tool | REST Endpoint |
 |-----------|----------|---------------|
@@ -34,13 +177,20 @@ Both protocols expose the same capabilities:
 | Profile dataset | `anistroph_profile_dataset` | `GET /datasets/{id}/profile` |
 | Slice data | `anistroph_slice_data` | `POST /analysis/slice` |
 | Compare data | `anistroph_compare_data` | `POST /analysis/compare` |
-| Find interesting slices | `anistroph_find_interesting_slices` | *(via /analysis/slice)* |
+| Find interesting slices | `anistroph_find_interesting_slices` | `POST /analysis/interesting-slices` |
+| Sample raw rows | `anistroph_sample_rows` | `POST /datasets/{id}/rows` |
 | List models | `anistroph_list_models` | `GET /models` |
 | Get model metrics | `anistroph_get_model_metrics` | `GET /models/{id}/metrics` |
+| Get model inputs | `anistroph_get_model_inputs` | `GET /models/{id}/inputs` |
 | Predict | `anistroph_predict` | `POST /predictions` |
 | Explain (SHAP) | `anistroph_explain_prediction` | `POST /predictions/explain` |
 | Evaluate on held-out set | `anistroph_evaluate_model` | `POST /evaluations/{model_id}` |
 | Find error slices | `anistroph_find_evaluation_slices` | `POST /evaluations/{model_id}/slices` |
+
+The REST API also exposes administrative endpoints not available via MCP:
+`POST /datasets` (register), `POST /models/train` (train),
+`DELETE /models/{id}` (delete model), `DELETE /datasets/{id}` (remove
+dataset), `POST /predictions/batch` (batch predict).
 
 ### Claude Desktop (MCP stdio)
 
@@ -67,6 +217,63 @@ MCP uses a local stdio subprocess — no public URL needed.
 > "Predict wafer yield for WAFER_015000 using model wafer-yield-xgboost"
 > "Explain that prediction — what pushed the yield up or down?"
 > "Find the worst yield combinations in the semiconductor dataset"
+
+### Axiolex (MCP Streamable HTTP)
+
+Axiolex discovers and routes MCP tools from multiple providers. Anistroph
+exposes its 13 tools over MCP Streamable HTTP at `/mcp`, so Axiolex can
+discover them without launching a subprocess.
+
+1. Add Anistroph as a provider in Axiolex's
+   `source_files/mcp_providers.yaml`:
+
+```yaml
+providers:
+  - id: anistroph
+    name: Anistroph Prediction
+    transport: streamable-http
+    endpoint: http://localhost:9500/mcp
+    command: null
+    args: []
+    auth:
+      type: none
+      secret_env: null
+      key_param: api_key
+    enabled: true
+    features:
+      supports_streaming: false
+    limits:
+      max_page_size: 50
+      max_requests_per_minute: 60
+      max_results: 100
+      timeout_seconds: 10
+```
+
+2. Restart Axiolex (or reload providers from the UI).
+
+3. Go to `http://axiolex:9700/#mcp-providers`, find the Anistroph
+   provider, and click **Discover**. Axiolex connects to
+   `http://localhost:9500/mcp`, calls `tools/list`, and caches all 13
+   Anistroph tools in its searchable tool catalog.
+
+4. Once discovered, Axiolex can route natural-language requests to
+   Anistroph tools alongside tools from other providers:
+> "List all Anistroph datasets"
+> "Predict wafer yield for WAFER_000001 using the wafer-yield-xgboost model"
+> "What inputs does the stage C model need?"
+
+**How it works:** Axiolex uses the MCP SDK's `streamable_http_client` to
+connect to the `/mcp` endpoint, initializes a session, calls
+`tools/list`, and normalizes the 13 tool definitions into its unified
+tool catalog. The same `/mcp` endpoint handles `tools/call` for
+execution. No stdio subprocess is launched — Axiolex communicates with
+Anistroph purely over HTTP using JSON-RPC 2.0.
+
+### Other MCP clients (Cursor, Cline, Claude CLI)
+
+Any MCP client that supports the Streamable HTTP transport can connect
+to `http://localhost:9500/mcp`. For stdio-only clients, use the Claude
+Desktop config above with `python -m backend.integrations.mcp.server`.
 
 ### ChatGPT (GPT Actions via ngrok)
 
@@ -1989,7 +2196,7 @@ for d in expl["top_drivers"]:
 
 | Method | Endpoint | Description |
 |--------|----------|-------------|
-| GET | `/health` | Health check — returns `{"status": "ok", "version": "0.1.0"}` |
+| GET | `/health` | Health check — returns `{"status": "ok", "version": "1.0.0"}` |
 | GET | `/datasets` | List all registered datasets |
 | POST | `/datasets` | Register a new dataset from config + source file |
 | GET | `/datasets/{dataset_id}` | Get metadata for a specific dataset |
@@ -2010,6 +2217,7 @@ for d in expl["top_drivers"]:
 | POST | `/predictions/explain` | Explain a prediction with top feature drivers |
 | POST | `/analysis/slice` | Slice data by dimensions with aggregation |
 | POST | `/analysis/compare` | Compare a metric across dimension values |
+| POST | `/analysis/interesting-slices` | Find slices with the largest deviation from the overall metric baseline |
 | GET | `/` | Web UI (static HTML) |
 | GET | `/docs` | Swagger UI (interactive API docs) |
 | GET | `/redoc` | ReDoc (alternative API docs) |

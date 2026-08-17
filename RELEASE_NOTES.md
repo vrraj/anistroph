@@ -1,5 +1,120 @@
 # Anistroph Release Notes
 
+## v1.0.0 — Production-Ready Predictive Analytics Framework
+
+Anistroph v1.0.0 is the first stable release. It takes the v0.1 reference
+architecture and makes it production-ready with dual inference modes, staged
+prediction, SHAP explanation normalization, model input schema discovery,
+UI-based verification, expanded MCP tooling, and comprehensive documentation.
+
+### What's new since v0.1
+
+**Inference**
+
+- **Dual prediction modes** — Predict by entity lookup (`entity_id` +
+  optional `timestamp`; Anistroph loads the row from the dataset) or by
+  records (raw source feature values as JSON for a new or hypothetical
+  row). The caller never constructs engineered features — no one-hot
+  vectors, no rolling aggregates. Anistroph applies the same FeatureEngine
+  and persisted metadata as training. Available via REST, MCP, and Web UI.
+- **Model input schema discovery** — `anistroph_get_model_inputs` returns
+  the required source columns, their types, transforms, and the supported
+  prediction mode (`entity_lookup` vs `entity_lookup_or_records`). Use it
+  before predicting to discover what inputs a model expects. Available via
+  REST (`GET /models/{model_id}/inputs`), MCP, and Web UI.
+- **Records-based inference fix** — Datasets with a `time_key` for
+  chronological splitting no longer fail when records-based prediction
+  omits `entity_key`/`time_key` columns. The FeatureEngine adds
+  placeholder columns when they're absent.
+
+**Staged prediction**
+
+- **4 semiconductor yield stages** — Stage A (Before Etch, 7 features),
+  Stage B (After Etch, 17 features), Stage C (After Deposition, 26
+  features), Stage D (Before Test, 27 features). All share the same source
+  parquet and target (`wafer_yield`) with progressively larger feature
+  sets. R² progression: -0.001 → 0.819 → 0.824 → 0.825. The dominant
+  predictive signal is in etch actuals (Stage A → B jump).
+
+**Explainability**
+
+- **SHAP explanation normalization** — When one-hot encoding expands a
+  source feature into multiple model features (`{source}__{category}`),
+  the explanation layer aggregates SHAP contributions back to the original
+  source feature. Returns `{feature, value, impact}` in human-readable
+  form (e.g. `etch_tool = ETCH_02, impact = +0.0024`) rather than separate
+  one-hot entries. Raw per-category SHAP values retained in a `detail`
+  field for debugging.
+- **Records-based explain** — Fixed the same `entity_key`/`time_key` bug
+  in `explain_prediction` as in `predict`. SHAP explanation now works with
+  records-based input on all dataset types.
+
+**MCP**
+
+- **13 MCP tools** (was 9 in v0.1) — added `anistroph_get_model_inputs`
+  for input schema discovery.
+- **Dual MCP transport** — stdio (for local clients like Claude Desktop,
+  Cursor, Cline) and Streamable HTTP at `/mcp` (for remote clients,
+  custom agents, and tool routers like Axiolex). Both expose the same 13
+  tools and call the same service layer.
+- **Compact `anistroph_list_models`** — returns only model_id, model_type,
+  dataset_id, target_name, target_type, and created_at. Full metrics
+  remain available via `anistroph_get_model_metrics`.
+- **PR curve downsampling** — Classification PR curves downsampled to at
+  most 200 points (was ~105K) to keep MCP responses under 1 MB.
+
+**Web UI**
+
+- **Records-based prediction** — Prediction tab (now "Predict & Explain")
+  supports a mode dropdown: entity lookup or records. "Load Input Schema"
+  button fetches required columns and pre-fills a JSON template.
+- **Tooltips** — Added tooltips on prediction mode, records textarea, and
+  schema loading explaining what to send and what not to send.
+
+**Datasets**
+
+- **11 registered datasets** (was 2 in v0.1):
+  - Home prices (40K rows, regression)
+  - Predictive maintenance (864K rows, classification)
+  - Predictive maintenance RUL (864K rows, regression)
+  - Predictive maintenance maintenance (864K rows, classification)
+  - Semiconductor yield (50K rows, regression)
+  - Semiconductor yield Stage A/B/C/D (50K rows each, regression)
+  - Semiconductor CD (50K rows, regression)
+  - Semiconductor film thickness (50K rows, regression)
+- **11 trained models** across all datasets.
+
+**Documentation**
+
+- `README.md` — updated with Inference feature section, SHAP
+  normalization details, 13 MCP tools table, staged prediction, and
+  records-based prediction.
+- `README_SETUP_USAGE.md` — comprehensive usage guide with Python/REST/
+  MCP/UI examples for every operation, including:
+  - §2a: How to author `dataset.yaml` (columns vs features, transforms)
+  - §8: Dual prediction modes with verification instructions
+  - §9: SHAP explanation normalization with naming convention rules
+  - §18: Staged prediction architecture
+  - Model input schema discovery (4 interfaces)
+  - REST API endpoint table (19 endpoints)
+
+**Quality**
+
+- **147 tests passing** — unit, integration, and end-to-end tests covering
+  datasets, features, training, inference, explanation, MCP, REST API,
+  and SHAP grouping.
+
+### Migration from v0.1
+
+- Version string updated from `0.1.0` to `1.0.0` in `pyproject.toml`,
+  `backend/main.py`, and health check endpoint.
+- No breaking changes to REST API or MCP tool signatures. Existing tools
+  and endpoints work unchanged.
+- `anistroph_list_models` response format changed (compact summary instead
+  of full model dump). Use `anistroph_get_model_metrics` for full metrics.
+
+---
+
 ## v0.1 — Multi-Dataset Predictive Analysis Reference Architecture
 
 Anistroph v0.1 demonstrates a common predictive and analytical architecture across two isolated reference datasets.

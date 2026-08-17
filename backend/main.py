@@ -1,6 +1,8 @@
-"""Anistroph FastAPI application — REST APIs and static UI.
+"""Anistroph FastAPI application — REST APIs, MCP HTTP, and static UI.
 
 All routes invoke the same core Anistroph services (backend.services).
+The /mcp endpoint exposes MCP tools over Streamable HTTP transport so
+remote MCP clients can discover and execute tools without a stdio subprocess.
 """
 
 from __future__ import annotations
@@ -17,6 +19,7 @@ from backend.api.datasets import router as datasets_router
 from backend.api.evaluations import router as evaluations_router
 from backend.api.models import router as models_router
 from backend.api.predictions import router as predictions_router
+from backend.integrations.mcp.http_transport import create_mcp_http_app, lifespan as mcp_lifespan
 from backend.schemas.api import HealthResponse
 from backend.services import get_services
 
@@ -32,7 +35,8 @@ def create_app() -> FastAPI:
     app = FastAPI(
         title="Anistroph",
         description="Extensible, domain-agnostic predictive analytics platform",
-        version="0.1.0",
+        version="1.0.0",
+        lifespan=mcp_lifespan,
     )
     app.add_middleware(
         CORSMiddleware,
@@ -52,6 +56,36 @@ def create_app() -> FastAPI:
     app.include_router(models_router)
     app.include_router(predictions_router)
     app.include_router(evaluations_router)
+
+    # MCP Streamable HTTP transport — exposes the same 13 MCP tools over
+    # HTTP at /mcp so remote clients can discover (tools/list) and execute
+    # (tools/call) without a stdio subprocess. Uses JSON-RPC 2.0, same as
+    # the stdio transport. Handled via a raw ASGI middleware (not FastAPI
+    # routes) because MCP manages its own request/response cycle, including
+    # SSE streaming. Both /mcp and /mcp/ are handled to avoid 307 redirects
+    # that break MCP clients.
+    mcp_handler = create_mcp_http_app()
+
+    class MCPASGIMiddleware:
+        """Raw ASGI middleware that intercepts /mcp and /mcp/ and delegates
+        to the MCP Streamable HTTP handler. All other paths pass through."""
+        def __init__(self, app):
+            self.app = app
+
+        async def __call__(self, scope, receive, send):
+            if scope["type"] == "http":
+                path = scope.get("path", "")
+                if path == "/mcp" or path == "/mcp/":
+                    # Normalize path for the MCP session manager.
+                    scope = dict(scope)
+                    scope["path"] = "/mcp"
+                    scope["raw_path"] = b"/mcp"
+                    await mcp_handler(scope, receive, send)
+                    return
+            await self.app(scope, receive, send)
+
+    # Add the middleware so it runs before routing.
+    app.add_middleware(MCPASGIMiddleware)
 
     # Filtered OpenAPI spec for ChatGPT GPT Actions — runtime endpoints only.
     # Excludes training and dataset registration (admin operations), matching

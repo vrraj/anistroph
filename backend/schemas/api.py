@@ -35,6 +35,17 @@ class CompareRequest(BaseModel):
     filters: Optional[dict[str, Any]] = None
 
 
+class InterestingSlicesRequest(BaseModel):
+    dataset_id: str
+    metric: str
+    dimensions: Optional[list[str]] = None
+    min_sample_size: int = 100
+    max_dimensions: int = 3
+    aggregation: str = "mean"
+    filters: Optional[dict[str, Any]] = None
+    top_k: int = 20
+
+
 class TrainRequest(BaseModel):
     dataset_id: str
     target_name: str
