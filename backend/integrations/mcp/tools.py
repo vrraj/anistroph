@@ -137,6 +137,18 @@ TOOL_DEFS: list[tuple[str, str, dict[str, Any]]] = [
             "required": ["dataset_id"],
         },
     ),
+    (
+        "anistroph_evaluate_model",
+        "Evaluate a trained model against the dataset's held-out evaluation partition. Loads evaluation.parquet, runs inference using the persisted model, and compares predictions against known actual target values. Returns aggregate metrics (MAE/RMSE/R2 for regression, AUC/precision/recall/F1 for classification) and a sample of prediction-vs-actual rows. The evaluation set is never used during training.",
+        {
+            "type": "object",
+            "properties": {
+                "model_id": {"type": "string"},
+                "sample_size": {"type": "integer", "default": 50, "description": "Number of prediction-vs-actual rows to return (capped at 1000). Aggregate metrics are always over the full evaluation set."},
+            },
+            "required": ["model_id"],
+        },
+    ),
 ]
 
 
@@ -218,6 +230,11 @@ async def call_tool(name: str, arguments: dict[str, Any]) -> list[types.TextCont
                 arguments.get("columns"),
                 arguments.get("sort_by"),
                 arguments.get("descending", False),
+            )
+        elif name == "anistroph_evaluate_model":
+            result = svc.evaluate_model(
+                arguments["model_id"],
+                arguments.get("sample_size", 50),
             )
         else:
             return [types.TextContent(type="text", text=json.dumps({"error": f"unknown tool: {name}"}))]

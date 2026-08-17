@@ -22,12 +22,13 @@
 
   <section class="card">
     <div class="tabs">
-      <button class="tab-button active" data-tab-target="datasets">Datasets</button>
-      <button class="tab-button" data-tab-target="data">Data</button>
-      <button class="tab-button" data-tab-target="analysis">Analysis</button>
-      <button class="tab-button" data-tab-target="training">Training</button>
-      <button class="tab-button" data-tab-target="models">Models</button>
-      <button class="tab-button" data-tab-target="prediction">Prediction</button>
+      <a href="#datasets" class="tab-button active" data-tab-target="datasets">Datasets</a>
+      <a href="#data" class="tab-button" data-tab-target="data">Data</a>
+      <a href="#analysis" class="tab-button" data-tab-target="analysis">Analysis</a>
+      <a href="#training" class="tab-button" data-tab-target="training">Training</a>
+      <a href="#models" class="tab-button" data-tab-target="models">Models</a>
+      <a href="#prediction" class="tab-button" data-tab-target="prediction">Prediction</a>
+      <a href="#evaluation" class="tab-button" data-tab-target="evaluation">Evaluation</a>
     </div>
 
     <!-- Datasets Tab -->
@@ -93,13 +94,19 @@
       <div class="card">
         <h2>Slice Data</h2>
         <div class="form-row">
-          <div class="field"><label>Dataset ID</label><input id="sl-dataset" value="predictive_maintenance"></div>
-          <div class="field"><label>Dimensions (comma-sep)</label><input id="sl-dims" value="machine_type"></div>
+          <div class="field">
+            <label>Dataset</label>
+            <select id="sl-dataset" onchange="onAnalysisDatasetChange('sl')"><option value="">Select a dataset...</option></select>
+          </div>
+          <div class="field">
+            <label>Dimensions</label>
+            <select id="sl-dims" multiple size="4" style="height:auto;min-height:96px;"><option value="" disabled>Select a dataset first</option></select>
+          </div>
         </div>
         <div class="form-row">
-          <div class="field"><label>Metric</label><input id="sl-metric" value="failure"></div>
+          <div class="field"><label>Metric</label><select id="sl-metric"><option value="" disabled>Select a dataset first</option></select></div>
           <div class="field"><label>Aggregation</label>
-            <select id="sl-agg"><option>mean</option><option>sum</option><option>count</option><option>max</option><option>min</option><option>std</option></select>
+            <select id="sl-agg"><option>mean</option><option>sum</option><option>count</option><option>max</option><option>min</option><option>std</option><option>median</option></select>
           </div>
         </div>
         <button onclick="sliceData()">Slice</button>
@@ -108,13 +115,16 @@
       <div class="card">
         <h2>Compare Data</h2>
         <div class="form-row">
-          <div class="field"><label>Dataset ID</label><input id="cmp-dataset" value="predictive_maintenance"></div>
-          <div class="field"><label>Dimension</label><input id="cmp-dim" value="machine_type"></div>
+          <div class="field">
+            <label>Dataset</label>
+            <select id="cmp-dataset" onchange="onAnalysisDatasetChange('cmp')"><option value="">Select a dataset...</option></select>
+          </div>
+          <div class="field"><label>Dimension</label><select id="cmp-dim"><option value="" disabled>Select a dataset first</option></select></div>
         </div>
         <div class="form-row">
-          <div class="field"><label>Metric</label><input id="cmp-metric" value="failure"></div>
+          <div class="field"><label>Metric</label><select id="cmp-metric"><option value="" disabled>Select a dataset first</option></select></div>
           <div class="field"><label>Aggregation</label>
-            <select id="cmp-agg"><option>mean</option><option>sum</option><option>count</option></select>
+            <select id="cmp-agg"><option>mean</option><option>sum</option><option>count</option><option>max</option><option>min</option><option>std</option><option>median</option></select>
           </div>
         </div>
         <button onclick="compareData()">Compare</button>
@@ -189,6 +199,29 @@
         <div id="pr-explain" style="margin-top:16px;"></div>
       </div>
     </div>
+
+    <!-- Evaluation Tab -->
+    <div id="evaluation-panel" data-tab-panel="evaluation" class="panel-hidden">
+      <div class="card">
+        <h2>Evaluate Model on Held-Out Set</h2>
+        <p class="muted" style="margin-bottom:16px;">
+          Runs inference on the dataset's evaluation partition (never used during training)
+          and compares predictions against known actual target values.
+        </p>
+        <div class="form-row">
+          <div class="field">
+            <label>Model</label>
+            <select id="ev-model"><option value="">Loading models...</option></select>
+          </div>
+          <div class="field field-narrow">
+            <label>Sample rows</label>
+            <input id="ev-sample" type="number" value="50" min="1" max="1000">
+          </div>
+        </div>
+        <button onclick="evaluateModel()">Evaluate</button>
+        <div id="ev-result" style="margin-top:16px;"><div class="muted">Evaluation results will appear here.</div></div>
+      </div>
+    </div>
   </section>
 </main>
 </div>
@@ -224,16 +257,40 @@ function banner(text, type='error') {
   return `<div class="${type}-banner">${text}</div>`;
 }
 
-// Tabs
-document.querySelectorAll('.tab-button').forEach(btn => {
-  btn.onclick = () => {
-    document.querySelectorAll('.tab-button').forEach(b => b.classList.remove('active'));
-    document.querySelectorAll('[data-tab-panel]').forEach(p => p.classList.add('panel-hidden'));
+// Tabs — hash-based routing (e.g. /#analysis, /#prediction)
+function switchTab(target) {
+  document.querySelectorAll('.tab-button').forEach(b => b.classList.remove('active'));
+  document.querySelectorAll('[data-tab-panel]').forEach(p => p.classList.add('panel-hidden'));
+  const btn = document.querySelector(`.tab-button[data-tab-target="${target}"]`);
+  const panel = document.getElementById(target + '-panel');
+  if (btn && panel) {
     btn.classList.add('active');
+    panel.classList.remove('panel-hidden');
+  }
+}
+
+document.querySelectorAll('.tab-button').forEach(btn => {
+  btn.onclick = (e) => {
+    e.preventDefault();
     const target = btn.dataset.tabTarget;
-    document.getElementById(target + '-panel').classList.remove('panel-hidden');
+    if (location.hash !== '#' + target) {
+      location.hash = target;  // triggers hashchange → switchTab
+    } else {
+      switchTab(target);
+    }
   };
 });
+
+window.addEventListener('hashchange', () => {
+  const target = location.hash.slice(1) || 'datasets';
+  switchTab(target);
+});
+
+// Activate the tab from the URL hash on initial load
+(function() {
+  const target = location.hash.slice(1) || 'datasets';
+  switchTab(target);
+})();
 
 // Health check
 api('/health').then(() => {
@@ -294,11 +351,16 @@ async function profileDataset() {
 // Analysis
 async function sliceData() {
   const el = document.getElementById('sl-result');
+  const dsId = document.getElementById('sl-dataset').value;
+  if (!dsId) { el.innerHTML = banner('Select a dataset first.'); return; }
+  const dimSel = document.getElementById('sl-dims');
+  const dims = Array.from(dimSel.selectedOptions).map(o => o.value).filter(Boolean);
+  if (!dims.length) { el.innerHTML = banner('Select at least one dimension.'); return; }
   el.innerHTML = '<div class="muted">Slicing...</div>';
   try {
     const r = await api('/analysis/slice', 'POST', {
-      dataset_id: document.getElementById('sl-dataset').value,
-      dimensions: document.getElementById('sl-dims').value.split(',').map(s => s.trim()),
+      dataset_id: dsId,
+      dimensions: dims,
       metric: document.getElementById('sl-metric').value,
       aggregation: document.getElementById('sl-agg').value
     });
@@ -310,10 +372,12 @@ async function sliceData() {
 
 async function compareData() {
   const el = document.getElementById('cmp-result');
+  const dsId = document.getElementById('cmp-dataset').value;
+  if (!dsId) { el.innerHTML = banner('Select a dataset first.'); return; }
   el.innerHTML = '<div class="muted">Comparing...</div>';
   try {
     const r = await api('/analysis/compare', 'POST', {
-      dataset_id: document.getElementById('cmp-dataset').value,
+      dataset_id: dsId,
       dimension: document.getElementById('cmp-dim').value,
       metric: document.getElementById('cmp-metric').value,
       aggregation: document.getElementById('cmp-agg').value
@@ -504,8 +568,175 @@ async function loadModelDropdown() {
   }
 }
 
+// Populate the model dropdown on the evaluation tab
+async function loadEvalModelDropdown() {
+  const sel = document.getElementById('ev-model');
+  if (!sel) return;
+  try {
+    const r = await api('/models');
+    if (Array.isArray(r) && r.length) {
+      sel.innerHTML = '<option value="">Select a model...</option>' +
+        r.map(m => {
+          const id = m.model_id || m.id || '?';
+          const type = m.model_type || '';
+          const label = `${id} (${type})`;
+          return `<option value="${id}">${label}</option>`;
+        }).join('');
+    } else {
+      sel.innerHTML = '<option value="">No models available — train one first</option>';
+    }
+  } catch (e) {
+    sel.innerHTML = '<option value="">Error loading models</option>';
+  }
+}
+
+// Evaluation
+async function evaluateModel() {
+  const el = document.getElementById('ev-result');
+  const modelId = document.getElementById('ev-model').value;
+  if (!modelId) {
+    el.innerHTML = banner('Please select a model.');
+    return;
+  }
+  const sampleSize = parseInt(document.getElementById('ev-sample').value) || 50;
+  el.innerHTML = '<div class="muted">Evaluating on held-out set...</div>';
+  try {
+    const r = await api('/evaluations/' + encodeURIComponent(modelId), 'POST', { sample_size: sampleSize });
+    let h = '<div class="result-card">';
+    h += `<div class="result-title">Evaluation: ${r.model_id}</div>`;
+    h += `<div class="muted" style="margin-bottom:12px;">Dataset: ${r.dataset_id} · Target: ${r.target_name} (${r.target_type}) · Eval rows: ${r.eval_row_count.toLocaleString()}</div>`;
+
+    // Aggregate metrics
+    h += '<h3 style="margin:12px 0 8px;">Aggregate Metrics</h3>';
+    h += '<div class="result-metrics">';
+    const metrics = r.metrics || {};
+    for (const [k, v] of Object.entries(metrics)) {
+      if (v === null || typeof v === 'object') continue;
+      const formatted = typeof v === 'number' ? (Math.abs(v) < 1 ? v.toFixed(4) : v.toFixed(2)) : v;
+      h += `<div class="result-metric"><span class="result-metric-label">${k}</span><span class="result-metric-value">${formatted}</span></div>`;
+    }
+    h += '</div>';
+
+    // Confusion matrix for classification
+    if (metrics.confusion_matrix) {
+      const cm = metrics.confusion_matrix;
+      h += '<h3 style="margin:16px 0 8px;">Confusion Matrix</h3>';
+      h += '<div class="result-metrics">';
+      h += `<div class="result-metric"><span class="result-metric-label">TN</span><span class="result-metric-value">${cm.tn}</span></div>`;
+      h += `<div class="result-metric"><span class="result-metric-label">FP</span><span class="result-metric-value">${cm.fp}</span></div>`;
+      h += `<div class="result-metric"><span class="result-metric-label">FN</span><span class="result-metric-value">${cm.fn}</span></div>`;
+      h += `<div class="result-metric"><span class="result-metric-label">TP</span><span class="result-metric-value">${cm.tp}</span></div>`;
+      h += '</div>';
+    }
+
+    // Baseline comparison for regression
+    if (metrics.baseline) {
+      const b = metrics.baseline;
+      h += '<h3 style="margin:16px 0 8px;">Baseline (constant predictor)</h3>';
+      h += '<div class="result-metrics">';
+      h += `<div class="result-metric"><span class="result-metric-label">baseline MAE</span><span class="result-metric-value">${b.mae.toFixed(4)}</span></div>`;
+      h += `<div class="result-metric"><span class="result-metric-label">baseline RMSE</span><span class="result-metric-value">${b.rmse.toFixed(4)}</span></div>`;
+      h += `<div class="result-metric"><span class="result-metric-label">baseline R²</span><span class="result-metric-value">${b.r2.toFixed(4)}</span></div>`;
+      h += '</div>';
+    }
+
+    // Prediction-vs-actual sample table
+    const sample = r.predictions_sample || [];
+    h += `<h3 style="margin:16px 0 8px;">Prediction vs Actual (sample of ${sample.length})</h3>`;
+    if (sample.length) {
+      const cols = Object.keys(sample[0]);
+      h += '<div class="data-table-wrap"><table class="data-table"><thead><tr>';
+      h += cols.map(c => `<th>${c}</th>`).join('');
+      h += '</tr></thead><tbody>';
+      h += sample.map(row =>
+        '<tr>' + cols.map(c => {
+          let v = row[c];
+          if (typeof v === 'number') v = v.toFixed(4);
+          return `<td>${v !== null && v !== undefined ? v : ''}</td>`;
+        }).join('') + '</tr>'
+      ).join('');
+      h += '</tbody></table></div>';
+    } else {
+      h += '<div class="muted">No sample rows.</div>';
+    }
+
+    h += '</div>';
+    el.innerHTML = h;
+  } catch (e) {
+    el.innerHTML = banner('Error: ' + e.message);
+  }
+}
+
 // --- Data tab ---
 let _dataProfile = null;  // cached profile for the selected dataset
+
+// --- Analysis tab — dataset-driven dropdowns ---
+let _analysisProfiles = {};  // cache profiles per dataset
+
+async function loadAnalysisDatasetDropdowns() {
+  const ids = ['sl-dataset', 'cmp-dataset'];
+  try {
+    const r = await api('/datasets');
+    const opts = '<option value="">Select a dataset...</option>' +
+      r.map(d => {
+        const id = d.dataset_id || d.id || '?';
+        const name = d.name || '';
+        return `<option value="${id}">${id}${name ? ' — ' + name : ''}</option>`;
+      }).join('');
+    ids.forEach(id => { document.getElementById(id).innerHTML = opts; });
+  } catch (e) {
+    ids.forEach(id => { document.getElementById(id).innerHTML = '<option value="">Error loading datasets</option>'; });
+  }
+}
+
+async function onAnalysisDatasetChange(prefix) {
+  const dsId = document.getElementById(prefix + '-dataset').value;
+  const dimSel = document.getElementById(prefix + '-dims') || document.getElementById(prefix + '-dim');
+  const metricSel = document.getElementById(prefix + '-metric');
+
+  if (!dsId) {
+    dimSel.innerHTML = '<option value="" disabled>Select a dataset first</option>';
+    metricSel.innerHTML = '<option value="" disabled>Select a dataset first</option>';
+    return;
+  }
+
+  // Use cached profile if available
+  let profile = _analysisProfiles[dsId];
+  if (!profile) {
+    try {
+      profile = await api('/datasets/' + dsId + '/profile');
+      _analysisProfiles[dsId] = profile;
+    } catch (e) {
+      dimSel.innerHTML = '<option value="" disabled>Error loading profile</option>';
+      metricSel.innerHTML = '<option value="" disabled>Error loading profile</option>';
+      return;
+    }
+  }
+
+  const cols = profile.columns || {};
+  const catCols = [];
+  const numCols = [];
+  for (const [name, info] of Object.entries(cols)) {
+    if (info.type === 'categorical') catCols.push(name);
+    if (info.type === 'numeric' && info.role !== 'identifier') numCols.push(name);
+  }
+
+  // Dimensions — categorical columns (multi-select for slice, single for compare)
+  if (prefix === 'sl') {
+    dimSel.innerHTML = catCols.length
+      ? catCols.map(c => `<option value="${c}">${c}</option>`).join('')
+      : '<option value="" disabled>No categorical columns</option>';
+  } else {
+    dimSel.innerHTML = catCols.length
+      ? '<option value="">Select a dimension...</option>' + catCols.map(c => `<option value="${c}">${c}</option>`).join('')
+      : '<option value="" disabled>No categorical columns</option>';
+  }
+
+  // Metric — numeric columns
+  metricSel.innerHTML = numCols.length
+    ? '<option value="">Select a metric...</option>' + numCols.map(c => `<option value="${c}">${c}</option>`).join('')
+    : '<option value="" disabled>No numeric columns</option>';
+}
 
 async function loadDataDatasetDropdown() {
   const sel = document.getElementById('dt-dataset');
@@ -639,7 +870,9 @@ async function loadDataRows() {
 listDatasets();
 listModels();
 loadModelDropdown();
+loadEvalModelDropdown();
 loadDataDatasetDropdown();
+loadAnalysisDatasetDropdowns();
 </script>
 </body>
 </html>

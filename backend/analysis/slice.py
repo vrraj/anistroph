@@ -57,7 +57,10 @@ def slice_data(
     if aggregation not in agg_map:
         raise ValueError(f"unsupported aggregation: {aggregation!r}")
 
-    result = df.group_by(dimensions).agg(agg_map[aggregation]().alias(f"{metric}_{aggregation}"))
+    result = df.group_by(dimensions).agg(
+        agg_map[aggregation]().alias(f"{metric}_{aggregation}"),
+        pl.len().alias("row_count"),
+    )
 
     if order_by:
         result = result.sort(order_by, descending=True)
@@ -142,7 +145,10 @@ def compare_data(
     if aggregation not in agg_map:
         raise ValueError(f"unsupported aggregation: {aggregation!r}")
 
-    result = df.group_by(dimension).agg(agg_map[aggregation]().alias(f"{metric}_{aggregation}"))
+    result = df.group_by(dimension).agg(
+        agg_map[aggregation]().alias(f"{metric}_{aggregation}"),
+        pl.len().alias("row_count"),
+    )
     overall = df.select(agg_map[aggregation]().alias("overall"))[0, 0]
     result = result.with_columns(
         ((pl.col(f"{metric}_{aggregation}") - overall) / (abs(overall) + 1e-12)).alias("relative_diff")

@@ -85,6 +85,8 @@ def train_model(
     model_parameters: Optional[dict[str, Any]] = None,
     model_id: Optional[str] = None,
     parquet_path: Optional[str] = None,
+    is_train_partition: bool = False,
+    validate_parquet_path: Optional[str] = None,
 ) -> dict[str, Any]:
     """Train a model and persist it.
 
@@ -99,6 +101,13 @@ def train_model(
         model_parameters: hyperparameters for the model.
         model_id: explicit model ID (auto-generated if None).
         parquet_path: override parquet path (defaults to registry's).
+        is_train_partition: when True, parquet_path is a pre-partitioned
+            train file. The function uses validate_parquet_path for validation
+            (if provided) or carves a validation set from train. No test set
+            is carved — the held-out evaluation partition is used separately
+            via the evaluation endpoint.
+        validate_parquet_path: path to a pre-partitioned validation file
+            (used when is_train_partition is True).
 
     Returns a dict with model_id, metrics, and metadata.
     """
@@ -129,37 +138,68 @@ def train_model(
     feature_engine = FeatureEngine()
 
     # Split first, then fit features on train only (categorical categories).
-    if spec.is_temporal():
-        train_df, val_df, test_df = chronological_split(df, spec.time_key, spec.split)
+    if is_train_partition and validate_parquet_path:
+        # Pre-partitioned: use separate train and validate files.
+        train_df = df
+        val_df = target_engine.build_target(
+            pl.read_parquet(validate_parquet_path), spec, ts,
+        )
+        # eval_df for training-time metrics = validation set.
+        eval_df = val_df
+    elif is_train_partition:
+        # Pre-partitioned train file without a separate validate file:
+        # carve a validation set from train (no test set).
+        train_frac = spec.split.train
+        val_frac = spec.split.validation
+        total = train_frac + val_frac
+        if total <= 0:
+            total = 1.0
+            train_frac = 1.0
+            val_frac = 0.0
+        train_only_split = SplitSpec(
+            strategy=spec.split.strategy,
+            train=train_frac / total,
+            validation=val_frac / total,
+            test=0.0,
+        )
+        if spec.is_temporal():
+            train_df, val_df, _ = chronological_split(df, spec.time_key, train_only_split)
+        else:
+            train_df, val_df, _ = random_split(df, train_only_split)
+        eval_df = val_df
     else:
-        train_df, val_df, test_df = random_split(df, spec.split)
+        if spec.is_temporal():
+            train_df, val_df, test_df = chronological_split(df, spec.time_key, spec.split)
+        else:
+            train_df, val_df, test_df = random_split(df, spec.split)
+        eval_df = test_df
 
     # Fit feature metadata on training data only.
     train_feat, metadata = feature_engine.build_features(train_df, spec, fs, fit=True)
-    # Transform val and test using the same metadata (no refit).
+    # Transform val and eval using the same metadata (no refit).
     val_feat, _ = feature_engine.build_features(val_df, spec, fs, metadata=metadata, fit=False)
-    test_feat, _ = feature_engine.build_features(test_df, spec, fs, metadata=metadata, fit=False)
+    eval_feat, _ = feature_engine.build_features(eval_df, spec, fs, metadata=metadata, fit=False)
 
     # Join features with target.
     target_col = ts.name
     keys = [spec.entity_key] + ([spec.time_key] if spec.time_key else [])
     train_full = train_feat.join(train_df.select(keys + [target_col]), on=keys, how="left")
     val_full = val_feat.join(val_df.select(keys + [target_col]), on=keys, how="left")
-    test_full = test_feat.join(test_df.select(keys + [target_col]), on=keys, how="left")
+    eval_full = eval_feat.join(eval_df.select(keys + [target_col]), on=keys, how="left")
 
     feature_cols = metadata.feature_names
     X_train = train_full.select(feature_cols).to_numpy()
     y_train = train_full[target_col].to_numpy()
     X_val = val_full.select(feature_cols).to_numpy()
     y_val = val_full[target_col].to_numpy()
-    X_test = test_full.select(feature_cols).to_numpy()
-    y_test = test_full[target_col].to_numpy()
+    X_eval = eval_full.select(feature_cols).to_numpy()
+    y_eval = eval_full[target_col].to_numpy()
 
     # --- Impute NaN values (from rolling windows at series start) ---
     imputer = SimpleImputer(strategy="median")
     X_train = imputer.fit_transform(X_train)
     X_val = imputer.transform(X_val)
-    X_test = imputer.transform(X_test)
+    X_eval = imputer.transform(X_eval)
 
     # --- Train ---
     params = model_parameters or {}
@@ -171,14 +211,14 @@ def train_model(
     is_regression = ts.type in (TargetType.REGRESSION,)
 
     if is_regression:
-        y_test_pred = predictor.predict(X_test)
+        y_eval_pred = predictor.predict(X_eval)
         baseline_pred = float(np.mean(y_train))
-        metrics = evaluate_regression(y_test, y_test_pred, baseline_pred=baseline_pred)
+        metrics = evaluate_regression(y_eval, y_eval_pred, baseline_pred=baseline_pred)
         threshold = 0.0  # not used for regression
     else:
-        y_test_proba = predictor.predict_proba(X_test)[:, 1]
+        y_eval_proba = predictor.predict_proba(X_eval)[:, 1]
         threshold = best_threshold_by_f1(y_val, predictor.predict_proba(X_val)[:, 1])
-        metrics = evaluate_binary(y_test, y_test_proba, threshold=threshold)
+        metrics = evaluate_binary(y_eval, y_eval_proba, threshold=threshold)
 
     # --- Persist model ---
     if model_id is None:
@@ -212,7 +252,7 @@ def train_model(
         decision_threshold=threshold,
         training_period=_period(train_df),
         validation_period=_period(val_df),
-        test_period=_period(test_df),
+        test_period=_period(eval_df),
         parquet_path=pq,
     )
 

@@ -39,6 +39,7 @@ Both protocols expose the same capabilities:
 | Get model metrics | `anistroph_get_model_metrics` | `GET /models/{id}/metrics` |
 | Predict | `anistroph_predict` | `POST /predictions` |
 | Explain (SHAP) | `anistroph_explain_prediction` | `POST /predictions/explain` |
+| Evaluate on held-out set | `anistroph_evaluate_model` | `POST /evaluations/{model_id}` |
 
 ### Claude Desktop (MCP stdio)
 
@@ -212,6 +213,46 @@ curl -X POST http://localhost:9500/datasets \
 2. Go to the **Datasets** tab
 3. Click **Register** (fields are pre-filled)
 4. Click **Profile** to see dataset statistics
+
+### Dataset partitioning
+
+Every registered dataset is automatically partitioned into separate Parquet
+files at registration time:
+
+| File | Purpose | Used during training? |
+|------|---------|----------------------|
+| `{dataset_id}.train.parquet` | Model fitting | Yes (training loads only this file) |
+| `{dataset_id}.evaluation.parquet` | Held-out evaluation | Never — used post-training via the Evaluation tab / `anistroph_evaluate_model` |
+| `{dataset_id}.validate.parquet` | Validation during training (optional) | Yes (early stopping, threshold tuning) — only if `VALIDATE_DATASET_PCT > 0` |
+
+The full dataset is also persisted at `{dataset_id}.parquet` for backward
+compatibility (profiling, sample rows).
+
+**Split percentages** — `.env` provides global defaults:
+
+```bash
+TRAIN_DATASET_PCT=0.80
+EVAL_DATASET_PCT=0.20
+VALIDATE_DATASET_PCT=0.0   # reserved for future validation-during-training
+```
+
+Per-dataset YAML `split:` sections override these defaults. The YAML uses
+`train` / `validation` / `test` keys, where `test` maps to the evaluation
+partition:
+
+```yaml
+split:
+  strategy: chronological   # or "random" for non-temporal datasets
+  train: 0.80
+  validation: 0.0           # future validate partition
+  test: 0.20                # evaluation partition
+```
+
+To skip partitioning entirely (single-file mode), set `train: 1.0` in the YAML.
+
+**Temporal datasets** sort chronologically — oldest rows go to train, newest
+to evaluation. **Non-temporal datasets** shuffle with a fixed seed before
+splitting.
 
 ---
 
@@ -589,6 +630,7 @@ Location: `~/Library/Application Support/Claude/claude_desktop_config.json`
 | `anistroph_get_model_metrics` | Get evaluation metrics for a model |
 | `anistroph_predict` | Make a prediction (entity_id + timestamp) |
 | `anistroph_explain_prediction` | Explain a prediction with top drivers |
+| `anistroph_evaluate_model` | Evaluate a model against the held-out evaluation partition |
 
 ### Example MCP prompts
 
@@ -635,6 +677,12 @@ appropriate `anistroph_*` tool call.
 - "Predict wafer yield for WAFER_015000 using model wafer-yield-xgb-v001"
 - "Explain that prediction — what are the top drivers?"
 - "Explain the prediction for WAFER_015000 with top_k=15"
+
+**Held-out evaluation**
+- "Evaluate model pm-xgb against the held-out evaluation set"
+- "Run evaluation on wafer-yield-xgb-v001 and show me 20 prediction-vs-actual rows"
+- "What's the MAE and R² for model wafer-yield-xgb-v001 on the evaluation partition?"
+- "Evaluate model pm-xgb — how does it compare to the baseline?"
 
 **Not available via MCP** (use REST, Python, or the Web UI instead):
 - Dataset registration, model training, and deletion — these are admin
@@ -936,6 +984,7 @@ for d in expl["top_drivers"]:
 | `anistroph_explain_prediction` | `model_id` (string), `entity_id` (string, optional), `timestamp` (string, optional), `records` (array of objects, optional), `top_k` (integer, default 10) | Explain a prediction by returning the top contributing features. Returns the same probability plus a list of top drivers with feature names and impact values. Explanations are deterministic and model-derived — no LLM fabrication. |
 | `anistroph_find_interesting_slices` | `dataset_id` (string), `metric` (string), `dimensions` (array of strings, optional), `min_sample_size` (integer, default 100), `max_dimensions` (integer, default 3), `aggregation` (string, default "mean"), `filters` (object, optional), `top_k` (integer, default 20) | Find slices with the largest deviation from the overall metric baseline. Searches 1, 2, and 3-dimensional combinations of categorical columns. Returns ranked slices with dimension values, row count, metric value, and difference from baseline. |
 | `anistroph_sample_rows` | `dataset_id` (string), `n` (integer, default 10), `filters` (object, optional), `columns` (array of strings, optional), `sort_by` (string, optional), `descending` (boolean, default false) | Return up to `n` raw rows (capped at 1000) from a registered dataset, optionally filtered by column values, with an optional column subset and sort. Use to inspect individual records (e.g. a specific `wafer_id`) rather than aggregations. `filters` supports equality (`{"col": "value"}`) and IN-style (`{"col": ["a", "b"]}`). Returns `dataset_id`, `row_count` (after filtering), `returned`, `columns`, and `rows` (list of dicts). |
+| `anistroph_evaluate_model` | `model_id` (string), `sample_size` (integer, default 50) | Evaluate a trained model against the dataset's held-out evaluation partition. Loads `evaluation.parquet`, runs inference using the persisted model, and compares predictions against known actual target values. Returns aggregate metrics (MAE/RMSE/R² for regression, AUC/precision/recall/F1 for classification) and a `predictions_sample` list of `{entity_id, actual, predicted, error}` rows. The evaluation set is never used during training. |
 
 ### Python service methods
 
@@ -954,6 +1003,7 @@ for d in expl["top_drivers"]:
 | `get_services().compare(dataset_id, dimension, metric, aggregation?, filters?)` | dataset_id, dimension, metric, aggregation, filters | `list[dict]` | Compare a metric across dimension values |
 | `get_services().find_interesting_slices(dataset_id, metric, dimensions?, min_sample_size?, max_dimensions?, aggregation?, filters?, top_k?)` | dataset_id, metric, dimensions, min_sample_size (default 100), max_dimensions (default 3), aggregation, filters, top_k (default 20) | `list[dict]` | Find slices with the largest deviation from baseline |
 | `get_services().sample_rows(dataset_id, n?, filters?, columns?, sort_by?, descending?)` | dataset_id, n (default 10, max 1000), filters, columns, sort_by, descending (default False) | `dict` (dataset_id, row_count, returned, columns, rows) | Return up to N raw rows, optionally filtered |
+| `get_services().evaluate_model(model_id, sample_size?)` | model_id, sample_size (default 50, max 1000) | `dict` (model_id, dataset_id, eval_row_count, metrics, predictions_sample) | Evaluate a model against the held-out evaluation partition |
 
 ### What's NOT exposed
 

@@ -14,6 +14,7 @@ from fastapi.staticfiles import StaticFiles
 
 from backend.api.analysis import router as analysis_router
 from backend.api.datasets import router as datasets_router
+from backend.api.evaluations import router as evaluations_router
 from backend.api.models import router as models_router
 from backend.api.predictions import router as predictions_router
 from backend.schemas.api import HealthResponse
@@ -50,6 +51,7 @@ def create_app() -> FastAPI:
     app.include_router(analysis_router)
     app.include_router(models_router)
     app.include_router(predictions_router)
+    app.include_router(evaluations_router)
 
     # Filtered OpenAPI spec for ChatGPT GPT Actions — runtime endpoints only.
     # Excludes training and dataset registration (admin operations), matching

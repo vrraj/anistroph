@@ -42,6 +42,7 @@ class TestToolDiscovery:
         assert "anistroph_explain_prediction" in names
         assert "anistroph_sample_rows" in names
         assert "anistroph_find_interesting_slices" in names
+        assert "anistroph_evaluate_model" in names
 
     def test_tool_schemas(self):
         tools = get_tool_list()
@@ -193,5 +194,24 @@ class TestToolCalls:
 
     async def test_invalid_input(self, services):
         result = await call_tool("anistroph_profile_dataset", {"dataset_id": "nonexistent"})
+        data = json.loads(result[0].text)
+        assert "error" in data
+
+    async def test_evaluate_model(self, services):
+        result = await call_tool("anistroph_evaluate_model", {
+            "model_id": "mcp-test-xgb",
+            "sample_size": 10,
+        })
+        data = json.loads(result[0].text)
+        assert data["model_id"] == "mcp-test-xgb"
+        assert data["dataset_id"] == "predictive_maintenance"
+        assert data["eval_row_count"] > 0
+        assert "metrics" in data
+        assert "roc_auc" in data["metrics"]
+        assert isinstance(data["predictions_sample"], list)
+        assert len(data["predictions_sample"]) <= 10
+
+    async def test_evaluate_model_not_found(self, services):
+        result = await call_tool("anistroph_evaluate_model", {"model_id": "nonexistent"})
         data = json.loads(result[0].text)
         assert "error" in data

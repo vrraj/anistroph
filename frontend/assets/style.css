@@ -154,6 +154,26 @@ body {
     flex: 1;
 }
 
+/* Multi-select (e.g. dimensions in Analysis) */
+.field select[multiple] {
+    height: auto;
+    min-height: 96px;
+    padding: 8px 12px;
+    background-image: none;
+    cursor: default;
+}
+
+.field select[multiple] option {
+    padding: 6px 10px;
+    border-radius: 4px;
+}
+
+.field select[multiple] option:checked {
+    background: #e3f2fd linear-gradient(0deg, #e3f2fd 0%, #e3f2fd 100%);
+    color: #1976d2;
+    font-weight: 500;
+}
+
 /* Buttons */
 button {
     background: #111111;
@@ -232,11 +252,14 @@ textarea {
     color: #333;
     font-size: 16px;
     font-weight: 400;
+    text-decoration: none;
+    display: inline-block;
 }
 
 .tab-button:hover {
     background: none;
     color: #111;
+    text-decoration: none;
 }
 
 .tab-button.active {

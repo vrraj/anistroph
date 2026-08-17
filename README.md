@@ -54,6 +54,7 @@ Under the hood, the platform is powered by **Polars + DuckDB + Parquet** for fas
 - **Dataset isolation** — Reference datasets and their model artifacts remain fully isolated. Predictive maintenance data never touches semiconductor data. Adding a new domain does not require modifying existing datasets.
 - **Configuration-driven registration** — Datasets are declared through YAML configs (`dataset.yaml`) specifying columns, types, roles, entity/time keys, feature transforms, split strategy, and target semantics.
 - **CSV and Parquet ingestion** — Ingest from CSV or Parquet sources. All data is persisted as Parquet for efficient columnar access.
+- **Dataset partitioning at registration** — Every registered dataset is partitioned into separate `train.parquet`, `evaluation.parquet`, and (optionally) `validate.parquet` files. Training loads only `train.parquet`; the held-out evaluation file is never used during model fitting. Split percentages default to `TRAIN_DATASET_PCT=0.80` / `EVAL_DATASET_PCT=0.20` / `VALIDATE_DATASET_PCT=0.0` from `.env` and can be overridden per-dataset via the YAML `split:` section. Temporal datasets sort chronologically (oldest → train, newest → evaluation); non-temporal datasets shuffle with a fixed seed.
 
 **Feature engineering**
 - **Leakage-safe transforms** — Rolling windows, slopes, deltas, and temporal features only use observations up to and including the current time. No future data leaks into training or inference.
@@ -64,7 +65,8 @@ Under the hood, the platform is powered by **Polars + DuckDB + Parquet** for fas
 **Modeling**
 - **Classification** — Logistic Regression and XGBoost classifiers for binary and future-event targets. ROC-AUC, PR-AUC, precision, recall, F1, and confusion matrix evaluation.
 - **Regression** — XGBoost Regressor and Linear Regression (Ridge) for continuous targets. MAE, RMSE, R², median absolute error, 95th percentile absolute error, and baseline comparison.
-- **Chronological splitting** — Time-ordered train/validation/test splits (70/15/15 by default) prevent temporal leakage.
+- **Chronological splitting** — Time-ordered train/validation/test splits prevent temporal leakage. Registration partitions into train/eval files (80/20 by default); training further splits train into train/validation for early stopping and threshold tuning.
+- **Held-out evaluation** — Post-training, run inference on the persisted `evaluation.parquet` and compare predictions against known actuals. Available via REST (`POST /evaluations/{model_id}`), MCP (`anistroph_evaluate_model`), and the Web UI Evaluation tab.
 - **Model persistence and reload** — Trained models, preprocessing metadata, feature identities, feature order, and evaluation metrics are persisted together as artifacts. Runtime inference loads the persisted model and never retrains.
 - **Easy model additions** — New model types live in separate adapter modules under `backend/models/`. Register them in `MODEL_FACTORIES` and the shared training, inference, and explanation paths pick them up automatically.
 
@@ -82,7 +84,7 @@ Under the hood, the platform is powered by **Polars + DuckDB + Parquet** for fas
 
 **MCP runtime access**
 - **MCP stdio server** — Anistroph exposes runtime analysis and inference through MCP stdio for use by clients such as Claude Desktop.
-- **10 MCP tools** — Dataset discovery, dataset profiling, slicing, comparison, interesting-slice discovery, raw row sampling, model discovery, model metrics, prediction, and SHAP-based prediction explanation.
+- **11 MCP tools** — Dataset discovery, dataset profiling, slicing, comparison, interesting-slice discovery, raw row sampling, model discovery, model metrics, prediction, SHAP-based prediction explanation, and held-out evaluation.
 - **No training via MCP** — Model training is an administrative operation. MCP is for runtime analysis and inference only.
 
 | Tool | What it does |
@@ -97,6 +99,7 @@ Under the hood, the platform is powered by **Polars + DuckDB + Parquet** for fas
 | `anistroph_get_model_metrics` | Get evaluation metrics for a trained model |
 | `anistroph_predict` | Make a prediction (entity_id + timestamp for temporal, records for non-temporal) |
 | `anistroph_explain_prediction` | Explain a prediction with top positive and negative SHAP contributors |
+| `anistroph_evaluate_model` | Evaluate a trained model against the held-out evaluation partition (aggregate metrics + prediction-vs-actual sample) |
 
 See [MCP](#mcp) for server setup and [README_SETUP_USAGE.md](README_SETUP_USAGE.md#example-mcp-prompts) for example prompts.
 
@@ -114,7 +117,7 @@ See [MCP](#mcp) for server setup and [README_SETUP_USAGE.md](README_SETUP_USAGE.
 | Models | XGBoost (classifier + regressor), Logistic Regression, Linear Regression | New model adapters in separate folders, registered in `MODEL_FACTORIES` |
 | Explainability | SHAP TreeExplainer for XGBoost, importance-weighted fallback for others | SHAP KernelExplainer for non-tree models, deeper visualization |
 | Analysis | Manual slicing, comparison, and automated interesting-slice discovery across 1-3 dimensions | More aggregation types, statistical significance testing |
-| Access | REST API, Web UI, MCP stdio (10 tools) | Additional MCP tools, GraphQL, batch inference |
+| Access | REST API, Web UI, MCP stdio (11 tools) | Additional MCP tools, GraphQL, batch inference |
 
 The shipped MCP server exposes runtime analysis and inference only. Model training, dataset registration, and administrative operations belong in the REST API, admin CLI, or Web UI.
 
@@ -171,7 +174,7 @@ protocols. Neither exposes model training.
 |---|---|---|
 | **Protocol** | Model Context Protocol (stdio) | OpenAPI / REST |
 | **Transport** | Local subprocess (stdio) | Public HTTPS via ngrok tunnel |
-| **Scope** | 10 runtime tools | 13 runtime REST endpoints |
+| **Scope** | 11 runtime tools | 14 runtime REST endpoints |
 | **Training exposed?** | No | No |
 | **Setup** | Claude Desktop config JSON | Custom GPT → Actions → Import URL |
 
@@ -973,7 +976,7 @@ The shared training, inference, and explanation paths pick it up automatically. 
 pytest
 ```
 
-The suite includes 110 tests covering:
+The suite includes 127 tests covering:
 - **Unit tests:** DatasetSpec parsing, validation, ingestion, profiling, feature transforms (with leakage assertions), target construction (entity isolation, horizon boundaries), ML training/evaluation/persistence/reload, prediction, feature parity, SHAP explainability, interesting-slice discovery.
 - **Integration tests:** REST API (all endpoints), MCP tools (discovery, schemas, all tool calls, invalid inputs).
 - **End-to-end acceptance test:** generate → register → ingest → profile → features → target → split → train → evaluate → persist → reload → predict → explain → REST → MCP (verifying same results).

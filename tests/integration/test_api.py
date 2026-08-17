@@ -144,3 +144,56 @@ class TestPredictionAPI:
         })
         assert r.status_code == 200
         assert "top_drivers" in r.json()
+
+
+class TestEvaluationAPI:
+    def test_evaluate_model(self, client):
+        # Train a model first.
+        client.post("/models/train", json={
+            "dataset_id": "predictive_maintenance",
+            "target_name": "failure_within_horizon",
+            "model_type": "xgboost",
+            "model_id": "api-eval-test",
+        })
+        r = client.post("/evaluations/api-eval-test", json={"sample_size": 10})
+        assert r.status_code == 200
+        data = r.json()
+        assert data["model_id"] == "api-eval-test"
+        assert data["dataset_id"] == "predictive_maintenance"
+        assert data["eval_row_count"] > 0
+        assert "metrics" in data
+        assert "roc_auc" in data["metrics"]
+        assert isinstance(data["predictions_sample"], list)
+        assert len(data["predictions_sample"]) <= 10
+        # Each sample row has actual + predicted.
+        row = data["predictions_sample"][0]
+        assert "entity_id" in row
+        assert "actual" in row
+        assert "predicted" in row
+
+    def test_evaluate_model_not_found(self, client):
+        r = client.post("/evaluations/nonexistent", json={"sample_size": 10})
+        assert r.status_code == 400
+
+    def test_evaluate_regression_model(self, client):
+        # Train a regression model on the semiconductor dataset.
+        client.post("/datasets", json={
+            "config_path": "datasets/semiconductor_yield/dataset.yaml",
+            "source_path": "data/semiconductor_yield/data.parquet",
+        })
+        client.post("/models/train", json={
+            "dataset_id": "semiconductor_yield",
+            "target_name": "wafer_yield",
+            "model_type": "xgboost_regressor",
+            "model_id": "api-eval-reg",
+        })
+        r = client.post("/evaluations/api-eval-reg", json={"sample_size": 5})
+        assert r.status_code == 200
+        data = r.json()
+        assert data["target_type"] == "regression"
+        assert "mae" in data["metrics"]
+        assert "rmse" in data["metrics"]
+        assert "r2" in data["metrics"]
+        row = data["predictions_sample"][0]
+        assert "error" in row
+        assert "abs_error" in row

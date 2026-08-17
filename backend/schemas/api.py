@@ -64,3 +64,7 @@ class SampleRowsRequest(BaseModel):
     columns: Optional[list[str]] = None
     sort_by: Optional[str] = None
     descending: bool = False
+
+
+class EvaluateRequest(BaseModel):
+    sample_size: int = 50

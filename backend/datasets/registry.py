@@ -38,6 +38,13 @@ class DatasetMeta(BaseModel):
     data_end: Optional[str] = None
     parquet_path: str = ""
     spec_path: Optional[str] = None
+    # Partitioned parquet paths (set when the dataset is partitioned at
+    # registration time). Training uses train_parquet_path; evaluation uses
+    # eval_parquet_path. None when no partition exists.
+    partitioned: bool = False
+    train_parquet_path: Optional[str] = None
+    eval_parquet_path: Optional[str] = None
+    validate_parquet_path: Optional[str] = None
 
 
 class DatasetRegistry:
@@ -75,6 +82,10 @@ class DatasetRegistry:
         feature_spec: Optional[FeatureSpec] = None,
         target_spec: Optional[TargetSpec] = None,
         spec_path: Optional[str] = None,
+        partitioned: bool = False,
+        train_parquet_path: Optional[str] = None,
+        eval_parquet_path: Optional[str] = None,
+        validate_parquet_path: Optional[str] = None,
     ) -> DatasetMeta:
         meta = DatasetMeta(
             dataset_id=spec.dataset_id,
@@ -92,6 +103,10 @@ class DatasetRegistry:
             data_end=data_end,
             parquet_path=parquet_path,
             spec_path=spec_path,
+            partitioned=partitioned,
+            train_parquet_path=train_parquet_path,
+            eval_parquet_path=eval_parquet_path,
+            validate_parquet_path=validate_parquet_path,
         )
         self._datasets[spec.dataset_id] = meta
         self._save()

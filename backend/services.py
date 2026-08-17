@@ -12,14 +12,23 @@ import polars as pl
 
 from backend.analysis.slice import compare_data, slice_data
 from backend.analysis.interesting import find_interesting_slices
+from backend.config import get_settings
 from backend.datasets.config import DatasetConfig, load_dataset_config
 from backend.datasets.loader import ingest
+from backend.datasets.partitioning import (
+    PARTITION_NAMES,
+    partition_dataframe,
+    partition_summary,
+    persist_partitions,
+    resolve_split_percentages,
+)
 from backend.datasets.profiling import profile_dataset
 from backend.datasets.registry import DatasetMeta, DatasetRegistry
 from backend.datasets.spec import DatasetSpec
 from backend.datasets.validation import validate_dataset
 from backend.features.spec import FeatureSpec
 from backend.ml.evaluation import evaluate_binary
+from backend.ml.evaluation_runner import evaluate_on_eval_set
 from backend.ml.explain import explain_prediction
 from backend.ml.inference import predict
 from backend.ml.registry import ModelRegistry
@@ -60,7 +69,17 @@ class AnistrophServices:
         source_path: str | Path,
         parquet_path: Optional[str | Path] = None,
     ) -> DatasetMeta:
-        """Register a dataset from a config YAML + source data file."""
+        """Register a dataset from a config YAML + source data file.
+
+        Always partitions the ingested data into train / evaluation / validate
+        Parquet files. Split percentages are resolved with YAML-overrides-.env
+        precedence: the YAML ``split:`` section wins if customised, otherwise
+        the ``.env`` defaults (TRAIN_DATASET_PCT, EVAL_DATASET_PCT,
+        VALIDATE_DATASET_PCT) are used.
+
+        The full dataset is also persisted at ``parquet_path`` for backward
+        compatibility (e.g. profiling, sample_rows).
+        """
         config_path = Path(config_path)
         if not config_path.is_absolute():
             config_path = _REPO_ROOT / config_path
@@ -77,11 +96,29 @@ class AnistrophServices:
 
         df, report, pq_path = ingest(source_path, spec, parquet_path)
 
-        # Profile.
+        # Profile (on the full dataset).
         profile = profile_dataset(df, spec)
 
         data_start = profile.get("time_range", {}).get("start") if spec.is_temporal() else None
         data_end = profile.get("time_range", {}).get("end") if spec.is_temporal() else None
+
+        # --- Partition into train / evaluation / validate ---
+        settings = get_settings()
+        train_pct, eval_pct, validate_pct = resolve_split_percentages(
+            spec,
+            env_train=settings.TRAIN_DATASET_PCT,
+            env_eval=settings.EVAL_DATASET_PCT,
+            env_validate=settings.VALIDATE_DATASET_PCT,
+        )
+
+        partitions = partition_dataframe(
+            df, spec, train_pct, eval_pct, validate_pct,
+        )
+
+        partition_dir = pq_path.parent
+        partition_paths = persist_partitions(partitions, partition_dir, dataset_id)
+
+        summary = partition_summary(partitions)
 
         meta = self.dataset_registry.register(
             spec=spec,
@@ -93,6 +130,10 @@ class AnistrophServices:
             feature_spec=config.feature_spec,
             target_spec=config.target_spec,
             spec_path=str(config_path),
+            partitioned=True,
+            train_parquet_path=partition_paths.get("train"),
+            eval_parquet_path=partition_paths.get("evaluation"),
+            validate_parquet_path=partition_paths.get("validate"),
         )
         self._config_cache[dataset_id] = config
         return meta
@@ -215,6 +256,16 @@ class AnistrophServices:
               model_parameters: Optional[dict[str, Any]] = None,
               model_id: Optional[str] = None) -> dict[str, Any]:
         config = self.get_config(dataset_id)
+        # When the dataset is partitioned, train only on train.parquet.
+        # The held-out evaluation file is never used during model fitting.
+        dmeta = self.dataset_registry.get(dataset_id)
+        train_parquet = None
+        validate_parquet = None
+        is_partitioned = False
+        if dmeta is not None and dmeta.partitioned and dmeta.train_parquet_path:
+            train_parquet = dmeta.train_parquet_path
+            validate_parquet = dmeta.validate_parquet_path
+            is_partitioned = True
         return train_model(
             dataset_id=dataset_id,
             target_name=target_name,
@@ -224,6 +275,9 @@ class AnistrophServices:
             config=config,
             model_parameters=model_parameters,
             model_id=model_id,
+            parquet_path=train_parquet,
+            is_train_partition=is_partitioned,
+            validate_parquet_path=validate_parquet,
         )
 
     # --- Prediction operations ---
@@ -260,6 +314,44 @@ class AnistrophServices:
             timestamp=timestamp,
             records=records,
             top_k=top_k,
+        )
+
+    # --- Evaluation operations ---
+
+    def evaluate_model(self, model_id: str, sample_size: int = 50) -> dict[str, Any]:
+        """Evaluate a trained model against the held-out evaluation partition.
+
+        Loads ``evaluation.parquet`` for the model's dataset, runs inference
+        using the persisted model, and compares predictions against the known
+        actual target values.
+
+        Args:
+            model_id: registered model to evaluate.
+            sample_size: number of prediction-vs-actual rows to include in the
+                response (capped at 1000). Aggregate metrics are always over
+                the full evaluation set.
+
+        Returns a dict with model_id, dataset_id, evaluation row count,
+        aggregate metrics, and a sample of prediction-vs-actual rows.
+        """
+        mmeta = self.model_registry.get(model_id)
+        if mmeta is None:
+            raise ValueError(f"model {model_id!r} not found")
+        dmeta = self.dataset_registry.get(mmeta.dataset_id)
+        if dmeta is None:
+            raise ValueError(f"dataset {mmeta.dataset_id!r} not registered")
+        if not dmeta.partitioned or not dmeta.eval_parquet_path:
+            raise ValueError(
+                f"dataset {mmeta.dataset_id!r} has no evaluation partition; "
+                "re-register to create train/eval splits"
+            )
+        config = self.get_config(mmeta.dataset_id)
+        return evaluate_on_eval_set(
+            model_id=model_id,
+            model_registry=self.model_registry,
+            config=config,
+            eval_parquet_path=dmeta.eval_parquet_path,
+            sample_size=sample_size,
         )
 
 
