@@ -197,11 +197,36 @@
         <div class="form-row">
           <div class="field">
             <label>Model <i class="tooltip-icon" data-tooltip="The trained model to use for prediction. Train one first on the Training tab if none are available.">i</i></label>
-            <select id="pr-model"><option value="">Loading models...</option></select>
+            <select id="pr-model" onchange="onPredictModelChange()"><option value="">Loading models...</option></select>
           </div>
-          <div class="field"><label>Entity ID <i class="tooltip-icon" data-tooltip="The entity to predict for (e.g. a machine_id like TOOL_000, or a wafer_id like WAFER_015000). For temporal datasets, Anistroph retrieves historical observations for this entity up to the given timestamp.">i</i></label><input id="pr-entity" value="TOOL_000"></div>
         </div>
-        <div class="field"><label>Timestamp (optional) <i class="tooltip-icon" data-tooltip="For temporal datasets, the point in time to predict at. Anistroph loads all observations for the entity up to and including this timestamp. Leave blank for non-temporal datasets.">i</i></label><input id="pr-timestamp" placeholder="2026-07-15T12:00:00"></div>
+        <div class="form-row">
+          <div class="field">
+            <label>Prediction mode <i class="tooltip-icon" data-tooltip="Entity lookup: predict for an existing row by its ID (e.g. WAFER_015000). Anistroph loads the row from the dataset. Records: predict for a new or hypothetical row by supplying raw feature values as JSON. Use this for new wafers not yet in the dataset. Click 'Load Input Schema' to see required columns.">i</i></label>
+            <select id="pr-mode" onchange="onPredictModeChange()">
+              <option value="entity">Entity lookup (existing row)</option>
+              <option value="records">Records (raw feature values)</option>
+            </select>
+          </div>
+        </div>
+        <!-- Entity lookup mode -->
+        <div id="pr-entity-section">
+          <div class="form-row">
+            <div class="field"><label>Entity ID <i class="tooltip-icon" data-tooltip="The entity to predict for (e.g. a machine_id like TOOL_000, or a wafer_id like WAFER_015000). For temporal datasets, Anistroph retrieves historical observations for this entity up to the given timestamp.">i</i></label><input id="pr-entity" value="TOOL_000"></div>
+            <div class="field"><label>Timestamp (optional) <i class="tooltip-icon" data-tooltip="For temporal datasets, the point in time to predict at. Anistroph loads all observations for the entity up to and including this timestamp. Leave blank for non-temporal datasets.">i</i></label><input id="pr-timestamp" placeholder="2026-07-15T12:00:00"></div>
+          </div>
+        </div>
+        <!-- Records mode -->
+        <div id="pr-records-section" style="display:none;">
+          <p class="muted" style="margin-bottom:12px;">
+            Enter raw feature values as JSON. Use <a href="#" onclick="loadModelInputSchema(); return false;" style="color:#3b82f6;">Load Input Schema</a> to fetch the required columns for this model.
+          </p>
+          <div class="field">
+            <label>Records (JSON array) <i class="tooltip-icon" data-tooltip='A JSON array of objects, each with the required source columns as keys. Only include columns listed by "Load Input Schema" — do NOT send one-hot encoded columns or rolling aggregates (Anistroph builds those internally). Column order does not matter. Categorical values should be strings (e.g. "PROD_A"); numeric values should be numbers (e.g. 24.9). Example: [{"product_id":"PROD_A","fab_id":"FAB_01","exposure_dose":24.9}]'>i</i></label>
+            <textarea id="pr-records" rows="8" style="font-family:monospace; width:100%;" placeholder='[{"product_id":"PROD_A","fab_id":"FAB_01","exposure_dose":24.9}]'></textarea>
+          </div>
+          <div id="pr-schema-result" style="margin-bottom:12px;"></div>
+        </div>
         <button onclick="predict()">Predict</button>
         <div id="pr-result" style="margin-top:16px;"></div>
       </div>
@@ -596,15 +621,23 @@ async function predict() {
   const el = document.getElementById('pr-result');
   el.innerHTML = '<div class="muted">Predicting...</div>';
   try {
+    const mode = document.getElementById('pr-mode').value;
     const body = {
       model_id: document.getElementById('pr-model').value,
-      entity_id: document.getElementById('pr-entity').value
     };
-    const ts = document.getElementById('pr-timestamp').value;
-    if (ts) body.timestamp = ts;
+    if (mode === 'records') {
+      const recordsText = document.getElementById('pr-records').value.trim();
+      if (!recordsText) { el.innerHTML = banner('Enter records JSON first'); return; }
+      body.records = JSON.parse(recordsText);
+    } else {
+      body.entity_id = document.getElementById('pr-entity').value;
+      const ts = document.getElementById('pr-timestamp').value;
+      if (ts) body.timestamp = ts;
+    }
     const r = await api('/predictions', 'POST', body);
     let h = '<div class="result-card">';
-    h += `<div class="result-title">Prediction for ${r.entity_id || document.getElementById('pr-entity').value}</div>`;
+    const label = mode === 'records' ? 'Records prediction' : `Prediction for ${r.entity_id || document.getElementById('pr-entity').value}`;
+    h += `<div class="result-title">${label}</div>`;
     h += '<div class="result-metrics">';
     if (r.prediction !== undefined) h += `<div class="result-metric"><span class="result-metric-label">Prediction</span><span class="result-metric-value">${r.prediction}</span></div>`;
     if (r.probability !== undefined) h += `<div class="result-metric"><span class="result-metric-label">Probability</span><span class="result-metric-value">${(r.probability * 100).toFixed(1)}%</span></div>`;
@@ -624,13 +657,20 @@ async function explain() {
   const el = document.getElementById('pr-explain');
   el.innerHTML = '<div class="muted">Explaining with SHAP...</div>';
   try {
+    const mode = document.getElementById('pr-mode').value;
     const body = {
       model_id: document.getElementById('pr-model').value,
-      entity_id: document.getElementById('pr-entity').value,
       top_k: parseInt(document.getElementById('pr-topk').value) || 10
     };
-    const ts = document.getElementById('pr-timestamp').value;
-    if (ts) body.timestamp = ts;
+    if (mode === 'records') {
+      const recordsText = document.getElementById('pr-records').value.trim();
+      if (!recordsText) { el.innerHTML = banner('Enter records JSON first'); return; }
+      body.records = JSON.parse(recordsText);
+    } else {
+      body.entity_id = document.getElementById('pr-entity').value;
+      const ts = document.getElementById('pr-timestamp').value;
+      if (ts) body.timestamp = ts;
+    }
     const r = await api('/predictions/explain', 'POST', body);
     let h = '<div class="result-card">';
     h += `<div class="result-title">SHAP Explanation</div>`;
@@ -669,6 +709,51 @@ async function explain() {
     }
 
     h += '</div>';
+    el.innerHTML = h;
+  } catch (e) {
+    el.innerHTML = banner('Error: ' + e.message);
+  }
+}
+
+// --- Prediction mode switching ---
+function onPredictModeChange() {
+  const mode = document.getElementById('pr-mode').value;
+  document.getElementById('pr-entity-section').style.display = mode === 'entity' ? '' : 'none';
+  document.getElementById('pr-records-section').style.display = mode === 'records' ? '' : 'none';
+}
+
+function onPredictModelChange() {
+  // When model changes in records mode, clear old schema
+  document.getElementById('pr-schema-result').innerHTML = '';
+}
+
+async function loadModelInputSchema() {
+  const el = document.getElementById('pr-schema-result');
+  const modelId = document.getElementById('pr-model').value;
+  if (!modelId) { el.innerHTML = banner('Select a model first'); return; }
+  el.innerHTML = '<div class="muted">Loading schema...</div>';
+  try {
+    const r = await api(`/models/${encodeURIComponent(modelId)}/inputs`, 'GET');
+    let h = `<div class="result-card" style="margin-bottom:8px;">`;
+    h += `<div class="result-title">Input schema for ${modelId}</div>`;
+    h += `<div class="result-metrics">`;
+    h += `<div class="result-metric"><span class="result-metric-label">Mode</span><span class="result-metric-value">${r.prediction_mode}</span></div>`;
+    h += `<div class="result-metric"><span class="result-metric-label">Entity key</span><span class="result-metric-value">${r.entity_key || 'N/A'}</span></div>`;
+    h += `<div class="result-metric"><span class="result-metric-label">Timestamp</span><span class="result-metric-value">${r.requires_timestamp ? 'Required' : 'Not required'}</span></div>`;
+    h += `</div>`;
+    h += `<table style="width:100%; margin-top:12px; border-collapse:collapse;"><thead><tr><th style="text-align:left; padding:4px 8px; border-bottom:1px solid #e2e8f0;">Column</th><th style="text-align:left; padding:4px 8px; border-bottom:1px solid #e2e8f0;">Type</th><th style="text-align:left; padding:4px 8px; border-bottom:1px solid #e2e8f0;">Transforms</th></tr></thead><tbody>`;
+    r.required_columns.forEach(c => {
+      h += `<tr><td style="padding:4px 8px; border-bottom:1px solid #f1f5f9;"><code>${c.column}</code></td><td style="padding:4px 8px; border-bottom:1px solid #f1f5f9;">${c.type}</td><td style="padding:4px 8px; border-bottom:1px solid #f1f5f9;">${c.transforms.join(', ')}</td></tr>`;
+    });
+    h += `</tbody></table>`;
+    // Pre-fill the records textarea with a template
+    const template = {};
+    r.required_columns.forEach(c => {
+      template[c.column] = c.type === 'numeric' ? 0 : 'VALUE';
+    });
+    const ta = document.getElementById('pr-records');
+    if (!ta.value.trim()) ta.value = JSON.stringify([template], null, 2);
+    h += `</div>`;
     el.innerHTML = h;
   } catch (e) {
     el.innerHTML = banner('Error: ' + e.message);

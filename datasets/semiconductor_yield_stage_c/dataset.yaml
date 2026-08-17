@@ -1,0 +1,243 @@
+# Anistroph — Semiconductor Wafer Yield, Stage C (After Deposition).
+#
+# Same source data and same target as semiconductor_yield, but restricted to
+# information available AFTER deposition is complete:
+#   - All Stage B features (pre-etch + etch actuals)
+#   + deposition actuals (tool, chamber, temperature, pressure, process time)
+#   + film_thickness_nm (measured after deposition)
+#   + maintenance_age_deposition (now known)
+#
+# Only critical_dimension_nm (measured after lithography, available at Stage D)
+# is excluded.
+#
+# One row = one completed wafer. Non-temporal (no rolling windows), but has
+# a timestamp for chronological splitting. Shares the same source parquet as
+# semiconductor_yield and the other stage configs.
+
+dataset:
+  dataset_id: semiconductor_yield_stage_c
+  name: Semiconductor Yield — Stage C (After Deposition)
+  entity_key: wafer_id
+  time_key: timestamp
+
+  columns:
+    timestamp:
+      type: timestamp
+      role: identifier
+    lot_id:
+      type: categorical
+      role: identifier
+    wafer_id:
+      type: categorical
+      role: identifier
+    # --- Pre-etch information ---
+    product_id:
+      type: categorical
+      role: feature
+    fab_id:
+      type: categorical
+      role: feature
+    process_route:
+      type: categorical
+      role: feature
+    etch_recipe:
+      type: categorical
+      role: feature
+    deposition_recipe:
+      type: categorical
+      role: feature
+    exposure_dose:
+      type: numeric
+      role: feature
+    focus_offset:
+      type: numeric
+      role: feature
+    # --- Etch actuals ---
+    etch_tool:
+      type: categorical
+      role: feature
+    etch_chamber:
+      type: categorical
+      role: feature
+    etch_temperature_mean:
+      type: numeric
+      role: feature
+    etch_temperature_std:
+      type: numeric
+      role: feature
+    etch_pressure_mean:
+      type: numeric
+      role: feature
+    etch_pressure_std:
+      type: numeric
+      role: feature
+    etch_gas_flow_mean:
+      type: numeric
+      role: feature
+    etch_rf_power_mean:
+      type: numeric
+      role: feature
+    etch_process_time:
+      type: numeric
+      role: feature
+    # --- Deposition actuals (NEW for Stage C) ---
+    deposition_tool:
+      type: categorical
+      role: feature
+    deposition_chamber:
+      type: categorical
+      role: feature
+    deposition_temperature_mean:
+      type: numeric
+      role: feature
+    deposition_temperature_std:
+      type: numeric
+      role: feature
+    deposition_pressure_mean:
+      type: numeric
+      role: feature
+    deposition_pressure_std:
+      type: numeric
+      role: feature
+    deposition_process_time:
+      type: numeric
+      role: feature
+    # --- Post-deposition measurement (NEW for Stage C) ---
+    film_thickness_nm:
+      type: numeric
+      role: feature
+    # --- Post-litho measurement (NOT available at Stage C) ---
+    critical_dimension_nm:
+      type: numeric
+      role: metadata
+    # --- Maintenance ages (both known at Stage C) ---
+    maintenance_age_etch:
+      type: numeric
+      role: feature
+    maintenance_age_deposition:
+      type: numeric
+      role: feature
+    # --- Target ---
+    wafer_yield:
+      type: numeric
+      role: target
+
+  split:
+    strategy: chronological
+    train: 0.70
+    validation: 0.15
+    test: 0.15
+
+features:
+  # Stage A features
+  product_id:
+    column: product_id
+    transforms:
+      - categorical
+  fab_id:
+    column: fab_id
+    transforms:
+      - categorical
+  process_route:
+    column: process_route
+    transforms:
+      - categorical
+  etch_recipe:
+    column: etch_recipe
+    transforms:
+      - categorical
+  deposition_recipe:
+    column: deposition_recipe
+    transforms:
+      - categorical
+  exposure_dose:
+    column: exposure_dose
+    transforms:
+      - current
+  focus_offset:
+    column: focus_offset
+    transforms:
+      - current
+  # Etch actuals (Stage B)
+  etch_tool:
+    column: etch_tool
+    transforms:
+      - categorical
+  etch_chamber:
+    column: etch_chamber
+    transforms:
+      - categorical
+  etch_temperature_mean:
+    column: etch_temperature_mean
+    transforms:
+      - current
+  etch_temperature_std:
+    column: etch_temperature_std
+    transforms:
+      - current
+  etch_pressure_mean:
+    column: etch_pressure_mean
+    transforms:
+      - current
+  etch_pressure_std:
+    column: etch_pressure_std
+    transforms:
+      - current
+  etch_gas_flow_mean:
+    column: etch_gas_flow_mean
+    transforms:
+      - current
+  etch_rf_power_mean:
+    column: etch_rf_power_mean
+    transforms:
+      - current
+  etch_process_time:
+    column: etch_process_time
+    transforms:
+      - current
+  maintenance_age_etch:
+    column: maintenance_age_etch
+    transforms:
+      - current
+  # Deposition actuals (NEW for Stage C)
+  deposition_tool:
+    column: deposition_tool
+    transforms:
+      - categorical
+  deposition_chamber:
+    column: deposition_chamber
+    transforms:
+      - categorical
+  deposition_temperature_mean:
+    column: deposition_temperature_mean
+    transforms:
+      - current
+  deposition_temperature_std:
+    column: deposition_temperature_std
+    transforms:
+      - current
+  deposition_pressure_mean:
+    column: deposition_pressure_mean
+    transforms:
+      - current
+  deposition_pressure_std:
+    column: deposition_pressure_std
+    transforms:
+      - current
+  deposition_process_time:
+    column: deposition_process_time
+    transforms:
+      - current
+  film_thickness_nm:
+    column: film_thickness_nm
+    transforms:
+      - current
+  maintenance_age_deposition:
+    column: maintenance_age_deposition
+    transforms:
+      - current
+
+target:
+  name: wafer_yield
+  type: regression
+  source_column: wafer_yield

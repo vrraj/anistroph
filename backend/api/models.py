@@ -57,6 +57,16 @@ async def get_model_metrics(model_id: str):
         raise HTTPException(status_code=404, detail=str(e))
 
 
+@router.get("/{model_id}/inputs")
+async def get_model_inputs(model_id: str):
+    """Get the prediction input schema for a model."""
+    svc = get_services()
+    try:
+        return svc.get_model_inputs(model_id)
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+
+
 @router.delete("/{model_id}")
 async def delete_model(model_id: str):
     """Delete a model from the registry and remove its artifacts."""

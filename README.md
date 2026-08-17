@@ -72,6 +72,11 @@ Under the hood, the platform is powered by **Polars + DuckDB + Parquet** for fas
 - **Model persistence and reload** — Trained models, preprocessing metadata, feature identities, feature order, and evaluation metrics are persisted together as artifacts. Runtime inference loads the persisted model and never retrains.
 - **Easy model additions** — New model types live in separate adapter modules under `backend/models/`. Register them in `MODEL_FACTORIES` and the shared training, inference, and explanation paths pick them up automatically.
 
+**Inference**
+- **Dual prediction modes** — Predict by entity lookup (send `entity_id` + optional `timestamp`; Anistroph loads the row from the dataset) or by records (send raw source feature values as JSON for a new or hypothetical row). The caller never constructs engineered features — no one-hot vectors, no rolling aggregates. Anistroph applies the same FeatureEngine and persisted metadata as training. Available via REST, MCP, and the Web UI.
+- **Model input schema discovery** — `anistroph_get_model_inputs` returns the required source columns, their types, transforms, and the supported prediction mode for any trained model. Use it before predicting to discover what inputs a model expects. Available via REST (`GET /models/{model_id}/inputs`), MCP, and the Web UI ("Load Input Schema" button on the Prediction tab).
+- **Staged prediction** — Multiple configs can share the same source data and target but define progressively larger feature sets, representing process checkpoints (e.g. before etch, after etch, after deposition, before test). Each stage has its own dataset ID, model, and persisted feature metadata.
+
 **Explainability**
 - **SHAP TreeExplainer** — Per-prediction explainability for all XGBoost models using TreeSHAP. Returns signed contributions: positive = increases prediction, negative = decreases prediction.
 - **Top positive and negative contributors** — Explanations return separate `top_positive` and `top_negative` lists, each sorted by contribution magnitude.
@@ -99,8 +104,9 @@ Under the hood, the platform is powered by **Polars + DuckDB + Parquet** for fas
 | `anistroph_sample_rows` | Return up to N raw rows, optionally filtered by column values (e.g. a specific `wafer_id`) |
 | `anistroph_list_models` | List all trained models (IDs, types, datasets, timestamps) |
 | `anistroph_get_model_metrics` | Get evaluation metrics for a trained model |
-| `anistroph_predict` | Make a prediction (entity_id + timestamp for temporal, records for non-temporal) |
-| `anistroph_explain_prediction` | Explain a prediction with top positive and negative SHAP contributors |
+| `anistroph_get_model_inputs` | Get the prediction input schema for a model — required columns, types, transforms, and prediction mode (entity lookup vs records) |
+| `anistroph_predict` | Make a prediction by entity_id + timestamp (existing row) or records (raw feature values for a new row) |
+| `anistroph_explain_prediction` | Explain a prediction with top positive and negative SHAP contributors (grouped by source feature, not raw one-hot) |
 | `anistroph_evaluate_model` | Evaluate a trained model against the held-out evaluation partition (aggregate metrics + prediction-vs-actual sample) |
 | `anistroph_find_evaluation_slices` | Find populations where model prediction error deviates most from the overall average (multidimensional search across categorical columns) |
 
@@ -109,7 +115,7 @@ See [MCP](#mcp) for server setup and [README_SETUP_USAGE.md](README_SETUP_USAGE.
 **Architecture**
 - **One shared inference path** — All models share one inference service selected by persisted model metadata. Adding a new model type does not create a new inference path.
 - **REST API** — Full programmatic access to dataset management, analysis, training, prediction, and explanation endpoints.
-- **Web UI** — Lightweight dashboard for exploring datasets, training models, making predictions, and inspecting explanations.
+- **Web UI** — Lightweight dashboard for exploring datasets, training models, making predictions (entity lookup or records-based), inspecting SHAP explanations, and evaluating models against held-out data.
 - **Docker support** — Containerized deployment with bind-mounted code and data for development.
 
 **Current Implementation And Extension Path**

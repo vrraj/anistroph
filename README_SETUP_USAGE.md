@@ -1244,9 +1244,90 @@ curl -X POST http://localhost:9500/predictions/batch \
 > "What models are available for semiconductor yield prediction?"
 
 Claude will call `anistroph_list_models` and show you the model IDs,
-their datasets, and target names. Each model's `features:` block (in its
-dataset YAML) defines exactly which source columns you must supply when
-using `records` — see §2a for how to author the YAML.
+their datasets, and target names.
+
+> "What inputs does the wafer-yield-xgboost model need for prediction?"
+
+Claude will call `anistroph_get_model_inputs` and return the required
+source columns, their types, transforms, and the supported prediction
+mode. Use this before predicting to discover exactly what to supply.
+
+Each model's `features:` block (in its dataset YAML) defines exactly
+which source columns you must supply when using `records` — see §2a
+for how to author the YAML.
+
+### Via Web UI
+
+The Prediction tab supports both prediction modes:
+
+**Entity lookup:**
+1. Select a model from the dropdown
+2. Keep mode as "Entity lookup (existing row)"
+3. Enter the entity ID (e.g. `WAFER_015000`)
+4. Enter a timestamp if the dataset is temporal
+5. Click **Predict** — the prediction appears below
+6. Click **Explain** — SHAP drivers appear below that
+
+**Records (new or hypothetical row):**
+1. Select a model from the dropdown
+2. Switch mode to "Records (raw feature values)"
+3. Click **Load Input Schema** — fetches the required columns, types, and
+   transforms for the selected model (same as `anistroph_get_model_inputs`)
+   and pre-fills a JSON template in the textarea
+4. Replace the placeholder values with your actual feature values
+   (categoricals as strings, numerics as numbers — do NOT send one-hot
+   columns or rolling aggregates; Anistroph builds those internally)
+5. Click **Predict** — the prediction appears below
+6. Click **Explain** — SHAP drivers appear below that
+
+**Verifying Claude's predictions from the UI:**
+
+The UI is the independent verification path for Claude's output. If Claude
+predicts for an existing wafer, enter the same `wafer_id` in entity lookup
+mode and compare. If Claude predicts for a new wafer using `records`,
+switch to records mode, enter the same values, and compare. The SHAP
+explanation can be verified the same way — click Explain with the same
+inputs and compare the feature impacts.
+
+### Discovering model inputs
+
+Before predicting with `records`, you need to know which source columns
+the model expects. Three ways to discover this:
+
+**Via MCP:**
+
+> "What inputs does the stage C model need for prediction?"
+
+Returns `prediction_mode`, `entity_key`, `requires_timestamp`, and
+`required_columns` (each with `column`, `type`, and `transforms`).
+
+**Via REST:**
+
+```bash
+curl http://localhost:9500/models/wafer-yield-xgboost/inputs | jq .
+```
+
+**Via Python:**
+
+```python
+from backend.services import get_services
+schema = get_services().get_model_inputs("wafer-yield-xgboost")
+print(f"Mode: {schema['prediction_mode']}")
+print(f"Entity key: {schema['entity_key']}")
+print(f"Requires timestamp: {schema['requires_timestamp']}")
+for c in schema["required_columns"]:
+    print(f"  {c['column']:30s} type={c['type']:12s} transforms={c['transforms']}")
+```
+
+**Via Web UI:**
+
+On the Prediction tab, switch to "Records" mode and click "Load Input Schema".
+
+The `prediction_mode` field tells you which modes work:
+- `entity_lookup_or_records` — both modes work (model uses only `current`
+  and `categorical` transforms)
+- `entity_lookup` — only entity lookup works (model uses rolling-window
+  transforms that require historical observations)
 
 ---
 
@@ -1920,6 +2001,7 @@ for d in expl["top_drivers"]:
 | POST | `/models/train` | Train a new model |
 | GET | `/models/{model_id}` | Get metadata for a specific model |
 | GET | `/models/{model_id}/metrics` | Get training-time metrics (stored in model registry) |
+| GET | `/models/{model_id}/inputs` | Get the prediction input schema (required columns, types, transforms, prediction mode) |
 | POST | `/evaluations/{model_id}` | Evaluate a model on the held-out eval partition (recomputed each call) |
 | POST | `/evaluations/{model_id}/slices` | Find populations where model error deviates from overall baseline |
 | DELETE | `/models/{model_id}` | Remove a model from the registry |
