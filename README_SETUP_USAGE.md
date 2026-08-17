@@ -40,6 +40,7 @@ Both protocols expose the same capabilities:
 | Predict | `anistroph_predict` | `POST /predictions` |
 | Explain (SHAP) | `anistroph_explain_prediction` | `POST /predictions/explain` |
 | Evaluate on held-out set | `anistroph_evaluate_model` | `POST /evaluations/{model_id}` |
+| Find error slices | `anistroph_find_evaluation_slices` | `POST /evaluations/{model_id}/slices` |
 
 ### Claude Desktop (MCP stdio)
 
@@ -393,6 +394,272 @@ curl http://localhost:9500/models/pm-xgb/metrics
 
 ---
 
+## 7b. Evaluate a Model on the Held-Out Set
+
+Evaluation runs a trained model against the **held-out evaluation partition**
+(`evaluation.parquet`) — the slice reserved at dataset registration time that
+is never seen during training. This gives an unbiased estimate of model
+performance on unseen data.
+
+**How it works:**
+1. Loads the persisted model artifact from disk (`.joblib`).
+2. Loads `evaluation.parquet` for the model's dataset.
+3. Builds features using the persisted FeatureMetadata (`fit=False` — no refit).
+4. Runs inference (`predict` / `predict_proba`) on the full eval set.
+5. Computes aggregate metrics and returns a sample of prediction-vs-actual rows.
+
+**Important:** Evaluation is a runtime operation — it does **not** retrain the
+model. Training uses only `train.parquet`; evaluation uses only
+`evaluation.parquet`. There is no overlap. Results are computed fresh each
+time (not cached), so they always reflect the current model artifact and eval
+partition. Safe to re-run; produces the same numbers as long as neither has
+changed.
+
+### Metrics by target type
+
+**Classification:**
+
+| Metric | Description |
+|--------|-------------|
+| `roc_auc` | Area under the ROC curve |
+| `pr_auc` | Area under the precision-recall curve |
+| `precision` | Precision at the decision threshold |
+| `recall` | Recall at the decision threshold |
+| `f1` | F1 score at the decision threshold |
+| `confusion_matrix` | TN / FP / FN / TP counts |
+| `threshold` | Decision threshold used (optimized for F1 on validation set) |
+
+**Regression:**
+
+| Metric | Description |
+|--------|-------------|
+| `mae` | Mean Absolute Error (same units as target) |
+| `mse` | Mean Squared Error (squared units) |
+| `rmse` | Root Mean Squared Error (same units as target) |
+| `r2` | Coefficient of determination (0–1, higher is better) |
+| `mape` | Mean Absolute Percentage Error (% — error relative to actual value) |
+| `max_error` | Worst single prediction in the eval set |
+| `median_abs_error` | Median of absolute errors (robust to outliers) |
+| `p95_abs_error` | 95th percentile of absolute errors |
+| `mean_prediction_error` | Mean of (predicted − actual) — bias direction |
+| `baseline` | Same metrics for a constant mean predictor (for comparison) |
+
+**MAPE** is particularly useful for price forecasting: a $50K error means
+different things for a $600K home vs a $4M home. MAPE normalizes by the actual
+value, giving the average error as a percentage.
+
+### Slice-level evaluation (filtered metrics)
+
+Aggregate metrics can hide important performance gaps across segments. For
+example, a home-price model might have 3.25% overall MAPE but 1.2% in Saratoga
+and 5.5% in San Jose — the aggregate hides the San Jose weakness.
+
+Pass ``filters`` to evaluate on a subset of the evaluation partition. The
+response includes **both** overall metrics (all eval rows) and
+``filtered_metrics`` (matching rows only), so you can compare side by side.
+Filters support equality (``{"city": "Saratoga"}``) and IN-style lists
+(``{"lot_id": ["LOT_001", "LOT_002"]}``), same as ``sample_rows``.
+
+When filters are applied, the ``predictions_sample`` is drawn from the filtered
+subset (not the full set).
+
+### Via Python
+
+```python
+from backend.services import get_services
+
+# Overall evaluation (all eval rows)
+result = get_services().evaluate_model("wafer-yield-xgb-v001", sample_size=50)
+metrics = result["metrics"]
+print(f"R²: {metrics['r2']:.4f}")
+print(f"MAE: {metrics['mae']:.4f}")
+print(f"MAPE: {metrics['mape']:.2f}%")
+print(f"Eval rows: {result['eval_row_count']}")
+print(f"Sample: {result['predictions_sample'][:3]}")
+
+# Slice-level evaluation (filtered to a single city)
+result = get_services().evaluate_model(
+    "home_prices-xgb-v001",
+    sample_size=50,
+    filters={"city": "Saratoga"},
+)
+print(f"Overall MAPE: {result['metrics']['mape']:.2f}%")
+print(f"Saratoga MAPE: {result['filtered_metrics']['mape']:.2f}%  (n={result['filtered_row_count']})")
+```
+
+### Via REST API
+
+```bash
+# Overall evaluation
+curl -X POST http://localhost:9500/evaluations/wafer-yield-xgb-v001 \
+  -H "Content-Type: application/json" \
+  -d '{"sample_size": 50}'
+
+# Slice-level evaluation (filtered to Saratoga)
+curl -X POST http://localhost:9500/evaluations/home_prices-xgb-v001 \
+  -H "Content-Type: application/json" \
+  -d '{"sample_size": 50, "filters": {"city": "Saratoga"}}'
+```
+
+Response includes `model_id`, `dataset_id`, `target_name`, `target_type`,
+`eval_row_count`, `metrics`, and `predictions_sample` (list of
+`{entity_id, actual, predicted, error, abs_error}` rows for regression, or
+`{entity_id, actual, predicted, predicted_label}` for classification).
+
+When `filters` is provided, the response also includes:
+- `filtered_metrics`: aggregate metrics for the matching rows only
+- `filtered_row_count`: number of rows matching the filters
+- `filters`: echo of the filters applied
+
+### Via MCP (Claude Desktop)
+
+> "Evaluate model wafer-yield-xgb-v001 on the held-out set"
+> "What's the MAPE for the home price model?"
+> "Show me the worst predictions in the evaluation set"
+> "Evaluate the home price model filtered to San Jose only"
+> "Compare MAPE for Saratoga vs Los Gatos vs San Jose"
+
+### Via web UI
+
+Open the **Evaluation** tab (`http://localhost:9500/#evaluation`):
+1. Select a trained model from the dropdown. Categorical filter dropdowns
+   (e.g. city, zip_code, lot_id) are populated automatically from the model's
+   dataset profile.
+2. Set the sample size (number of prediction-vs-actual rows to display, capped at 1000).
+3. Optionally select values from the filter dropdowns to evaluate on a subset.
+   Leave all filters on "All" to evaluate on the full eval set.
+4. Click **Evaluate**.
+5. The results show **Overall Metrics** (all eval rows) and, if filters are
+   applied, **Filtered Metrics** (matching rows only) side by side, followed by
+   a prediction-vs-actual sample table from the filtered subset.
+
+### Evaluation vs. Get Model Metrics
+
+| | Get Model Metrics (§7) | Evaluate Model (§7b) |
+|---|---|---|
+| **Data used** | Validation set (carved during training) | Held-out evaluation partition |
+| **When computed** | At training time, stored in model registry | On demand, each call |
+| **Cached?** | Yes — stored in model metadata | No — recomputed every time |
+| **Endpoint** | `GET /models/{id}/metrics` | `POST /evaluations/{id}` |
+| **Purpose** | Training-time performance snapshot | Unbiased post-training performance |
+
+### Error Slice Discovery (§7c)
+
+Aggregate evaluation metrics can hide populations where the model performs
+materially better or worse than average. **Error slice discovery** runs
+inference on the held-out evaluation partition, computes per-row error, and
+searches 1/2/3-dimensional combinations of categorical columns for slices
+where the error metric deviates most from the overall baseline.
+
+This is the model-evaluation analogue of `find_interesting_slices`:
+- `find_interesting_slices` finds populations where the **target** deviates
+  (e.g. "which wafer combinations have unusually low yield?")
+- `find_evaluation_slices` finds populations where the **prediction error**
+  deviates (e.g. "which wafer combinations does the model predict worst?")
+
+Both apply minimum sample-size thresholds when ranking slices, and both work
+across any registered dataset — the dimensions are auto-detected from the
+dataset spec's categorical feature columns.
+
+**Supported error metrics:**
+
+| Metric | Target type | Description |
+|--------|-------------|-------------|
+| `abs_error` | Regression | Absolute error (default) — identifies populations with highest absolute prediction error |
+| `error` | Regression | Signed error — shows bias direction (positive = over-predicting, negative = under-predicting) |
+| `pct_error` | Regression | Percentage error — relative to actual value, useful when target ranges vary widely (e.g. home prices) |
+| `log_loss` | Classification | Per-row log loss — identifies populations where predicted probabilities are most wrong |
+
+**Example output (home_prices model, abs_error):**
+
+```
+Overall baseline MAE: $94,912
+
+Top error slices:
+  zip_code=95071:                    n=177, MAE=$126,022, diff=+$31,110  (1.33x — worst)
+  city=Saratoga + zip_code=95071:    n=177, MAE=$126,022, diff=+$31,110  (1.33x)
+  zip_code=95122:                    n=180, MAE=$65,337,  diff=-$29,575  (0.69x — best)
+  city=San Jose + zip_code=95122:    n=180, MAE=$65,337,  diff=-$29,575  (0.69x)
+  city=Saratoga:                     n=366, MAE=$122,513, diff=+$27,602  (1.29x)
+```
+
+This tells you the model struggles most with Saratoga 95071 (expensive homes,
+wide price range) and does best with San Jose 95122 (affordable, tight band).
+Pair with filtered evaluation (§7b) to drill into the full metrics for any
+slice.
+
+### Via Python
+
+```python
+from backend.services import get_services
+
+# Find populations where absolute error is worst
+slices = get_services().find_evaluation_slices(
+    "home_prices-xgb-v001",
+    metric="abs_error",
+    min_sample_size=50,
+    top_k=20,
+)
+for s in slices:
+    vals = " + ".join(f"{k}={v}" for k, v in s["values"].items())
+    print(f"  {vals}: n={s['row_count']}, MAE={s['metric_value']:.0f}, diff={s['difference']:+.0f}")
+
+# Use percentage error for price datasets (relative, not absolute)
+slices = get_services().find_evaluation_slices(
+    "home_prices-xgb-v001",
+    metric="pct_error",
+    top_k=10,
+)
+
+# Then drill into a specific slice with filtered evaluation
+result = get_services().evaluate_model(
+    "home_prices-xgb-v001",
+    filters={"zip_code": "95071"},
+)
+print(f"Overall MAPE: {result['metrics']['mape']:.2f}%")
+print(f"95071 MAPE:   {result['filtered_metrics']['mape']:.2f}%  (n={result['filtered_row_count']})")
+```
+
+### Via REST API
+
+```bash
+curl -X POST http://localhost:9500/evaluations/home_prices-xgb-v001/slices \
+  -H "Content-Type: application/json" \
+  -d '{"metric": "abs_error", "min_sample_size": 50, "top_k": 20}'
+```
+
+Response is a list of slices sorted by `abs_difference` descending, each with:
+`dimensions`, `values`, `row_count`, `metric_value`, `metric_median`,
+`metric_std`, `overall_baseline`, `difference`, `abs_difference`.
+
+### Via MCP (Claude Desktop)
+
+> "Find the populations where the home price model has the worst prediction error"
+> "Which wafer combinations does the semiconductor model struggle with most?"
+> "Show me error slices by percentage error for the home price model"
+> "Where is the model over-predicting vs under-predicting?" *(uses `error` metric)*
+> "Find slices where the model's log loss is highest" *(classification)*
+
+### Via web UI
+
+On the **Evaluation** tab, click **Find Error Slices** (next to Evaluate).
+The results show a table of ranked slices with dimensions, values, row count,
+error metric, difference from baseline, and ratio (e.g. 1.33x = 33% worse
+than average). Red = worse than average, green = better.
+
+### find_interesting_slices vs find_evaluation_slices
+
+| | `find_interesting_slices` | `find_evaluation_slices` |
+|---|---|---|
+| **What it finds** | Slices where the *target* deviates | Slices where the *prediction error* deviates |
+| **Input** | Dataset ID + metric column | Model ID (runs inference first) |
+| **Question answered** | "Which populations have unusual outcomes?" | "Which populations does the model predict worst?" |
+| **MCP tool** | `anistroph_find_interesting_slices` | `anistroph_find_evaluation_slices` |
+| **REST endpoint** | `POST /analysis/slice` (manual) | `POST /evaluations/{model_id}/slices` |
+| **Requires trained model** | No | Yes |
+
+---
+
 ## 8. Predict
 
 The caller provides a model ID, entity ID, and timestamp. Anistroph
@@ -683,6 +950,15 @@ appropriate `anistroph_*` tool call.
 - "Run evaluation on wafer-yield-xgb-v001 and show me 20 prediction-vs-actual rows"
 - "What's the MAE and R² for model wafer-yield-xgb-v001 on the evaluation partition?"
 - "Evaluate model pm-xgb — how does it compare to the baseline?"
+- "Evaluate the home price model filtered to San Jose only"
+- "Compare MAPE for Saratoga vs Los Gatos vs San Jose in the home price model"
+
+**Error slice discovery**
+- "Find the populations where the home price model has the worst prediction error"
+- "Which wafer combinations does the semiconductor model struggle with most?"
+- "Show me error slices by percentage error for the home price model"
+- "Where is the model over-predicting vs under-predicting?"
+- "Find slices where the model's log loss is highest"
 
 **Not available via MCP** (use REST, Python, or the Web UI instead):
 - Dataset registration, model training, and deletion — these are admin
@@ -954,12 +1230,15 @@ for d in expl["top_drivers"]:
 | POST | `/datasets` | Register a new dataset from config + source file |
 | GET | `/datasets/{dataset_id}` | Get metadata for a specific dataset |
 | GET | `/datasets/{dataset_id}/profile` | Profile a dataset (row count, distributions, time range) |
+| POST | `/datasets/{dataset_id}/rows` | Sample raw rows (optional filters, columns, sort; capped at 1000) |
 | DELETE | `/datasets/{dataset_id}` | Remove a dataset from the registry |
 | GET | `/models` | List all trained models |
 | GET | `/models/types` | List available model types (`xgboost`, `logistic_regression`) |
 | POST | `/models/train` | Train a new model |
 | GET | `/models/{model_id}` | Get metadata for a specific model |
-| GET | `/models/{model_id}/metrics` | Get evaluation metrics (ROC-AUC, PR-AUC, precision, recall, F1, confusion matrix) |
+| GET | `/models/{model_id}/metrics` | Get training-time metrics (stored in model registry) |
+| POST | `/evaluations/{model_id}` | Evaluate a model on the held-out eval partition (recomputed each call) |
+| POST | `/evaluations/{model_id}/slices` | Find populations where model error deviates from overall baseline |
 | DELETE | `/models/{model_id}` | Remove a model from the registry |
 | POST | `/predictions` | Make a single prediction (entity_id + timestamp or records) |
 | POST | `/predictions/batch` | Make multiple predictions in one request |
@@ -984,7 +1263,8 @@ for d in expl["top_drivers"]:
 | `anistroph_explain_prediction` | `model_id` (string), `entity_id` (string, optional), `timestamp` (string, optional), `records` (array of objects, optional), `top_k` (integer, default 10) | Explain a prediction by returning the top contributing features. Returns the same probability plus a list of top drivers with feature names and impact values. Explanations are deterministic and model-derived — no LLM fabrication. |
 | `anistroph_find_interesting_slices` | `dataset_id` (string), `metric` (string), `dimensions` (array of strings, optional), `min_sample_size` (integer, default 100), `max_dimensions` (integer, default 3), `aggregation` (string, default "mean"), `filters` (object, optional), `top_k` (integer, default 20) | Find slices with the largest deviation from the overall metric baseline. Searches 1, 2, and 3-dimensional combinations of categorical columns. Returns ranked slices with dimension values, row count, metric value, and difference from baseline. |
 | `anistroph_sample_rows` | `dataset_id` (string), `n` (integer, default 10), `filters` (object, optional), `columns` (array of strings, optional), `sort_by` (string, optional), `descending` (boolean, default false) | Return up to `n` raw rows (capped at 1000) from a registered dataset, optionally filtered by column values, with an optional column subset and sort. Use to inspect individual records (e.g. a specific `wafer_id`) rather than aggregations. `filters` supports equality (`{"col": "value"}`) and IN-style (`{"col": ["a", "b"]}`). Returns `dataset_id`, `row_count` (after filtering), `returned`, `columns`, and `rows` (list of dicts). |
-| `anistroph_evaluate_model` | `model_id` (string), `sample_size` (integer, default 50) | Evaluate a trained model against the dataset's held-out evaluation partition. Loads `evaluation.parquet`, runs inference using the persisted model, and compares predictions against known actual target values. Returns aggregate metrics (MAE/RMSE/R² for regression, AUC/precision/recall/F1 for classification) and a `predictions_sample` list of `{entity_id, actual, predicted, error}` rows. The evaluation set is never used during training. |
+| `anistroph_evaluate_model` | `model_id` (string), `sample_size` (integer, default 50), `filters` (object, optional) | Evaluate a trained model against the dataset's held-out evaluation partition. Loads `evaluation.parquet`, runs inference using the persisted model, and compares predictions against known actual target values. Returns aggregate metrics (MAE/MSE/RMSE/R²/MAPE/max_error for regression, AUC/precision/recall/F1 for classification) and a `predictions_sample` list of `{entity_id, actual, predicted, error}` rows. Optional `filters` enable slice-level evaluation (returns both overall and filtered metrics). The evaluation set is never used during training. |
+| `anistroph_find_evaluation_slices` | `model_id` (string), `metric` (string, default "abs_error"), `min_sample_size` (integer, default 50), `max_dimensions` (integer, default 3), `top_k` (integer, default 20) | Find populations where model prediction error deviates most from the overall average. Runs inference on the held-out evaluation partition, computes per-row error, and searches 1/2/3-dimensional combinations of categorical columns for slices where the error metric differs materially from the overall baseline. Regression metrics: `abs_error`, `error` (signed), `pct_error`. Classification: `log_loss`. Returns ranked slices with dimension values, row count, error value, overall baseline, and difference. |
 
 ### Python service methods
 
@@ -1003,7 +1283,8 @@ for d in expl["top_drivers"]:
 | `get_services().compare(dataset_id, dimension, metric, aggregation?, filters?)` | dataset_id, dimension, metric, aggregation, filters | `list[dict]` | Compare a metric across dimension values |
 | `get_services().find_interesting_slices(dataset_id, metric, dimensions?, min_sample_size?, max_dimensions?, aggregation?, filters?, top_k?)` | dataset_id, metric, dimensions, min_sample_size (default 100), max_dimensions (default 3), aggregation, filters, top_k (default 20) | `list[dict]` | Find slices with the largest deviation from baseline |
 | `get_services().sample_rows(dataset_id, n?, filters?, columns?, sort_by?, descending?)` | dataset_id, n (default 10, max 1000), filters, columns, sort_by, descending (default False) | `dict` (dataset_id, row_count, returned, columns, rows) | Return up to N raw rows, optionally filtered |
-| `get_services().evaluate_model(model_id, sample_size?)` | model_id, sample_size (default 50, max 1000) | `dict` (model_id, dataset_id, eval_row_count, metrics, predictions_sample) | Evaluate a model against the held-out evaluation partition |
+| `get_services().evaluate_model(model_id, sample_size?, filters?)` | model_id, sample_size (default 50, max 1000), filters (optional dict) | `dict` (model_id, dataset_id, eval_row_count, metrics, filtered_metrics?, predictions_sample) | Evaluate a model against the held-out evaluation partition. Optional filters return both overall and filtered metrics. |
+| `get_services().find_evaluation_slices(model_id, metric?, dimensions?, min_sample_size?, max_dimensions?, top_k?)` | model_id, metric (default "abs_error"), dimensions (auto-detected if None), min_sample_size (default 50), max_dimensions (default 3), top_k (default 20) | `list[dict]` (dimensions, values, row_count, metric_value, overall_baseline, difference) | Find populations where model error deviates most from the overall average |
 
 ### What's NOT exposed
 
@@ -1013,7 +1294,7 @@ for d in expl["top_drivers"]:
 | Register a dataset | REST, Python, Web UI | MCP (by design — registration is an admin operation) |
 | Delete a dataset | REST, Python | MCP |
 | Delete a model | REST, Python | MCP |
-| Arbitrary Python execution | *(nowhere)* | MCP (by design — only the 10 defined tools) |
+| Arbitrary Python execution | *(nowhere)* | MCP (by design — only the 12 defined tools) |
 
 ---
 
@@ -1256,3 +1537,147 @@ for s in slices:
   not SHAP values (SHAP can be added later).
 - Predictions are model estimates - actual yield depends on many factors
   not captured in the synthetic features.
+
+## 17. Bay Area Home Prices Dataset
+
+The third reference dataset in Anistroph — a home-price regression problem
+from synthetic Bay Area listing data. Price is driven primarily by square
+footage, with city / zip code as the dominant price driver. The same
+slicing, profiling, training, and prediction tools apply unchanged.
+
+### Overview
+
+| Property | Value |
+|----------|-------|
+| Dataset ID | `home_prices` |
+| Dataset name | Bay Area Home Prices |
+| Entity key | `property_id` |
+| Time key | `timestamp` (used for chronological splitting) |
+| Row count | 20,000 listings |
+| Columns | 11 |
+| Target | `price` (regression, USD) |
+| Split | Chronological — 70% train / 15% validation / 15% test |
+
+### Data generation
+
+```bash
+python scripts/generate_home_prices_data.py --homes 20000
+```
+
+Output: `data/home_prices/data.parquet`
+
+Each row represents one home listing with:
+- **Identifiers:** timestamp, property_id
+- **Location:** city (San Jose / Los Gatos / Saratoga), zip_code (15 zips total)
+- **Property:** sqft (1500–3800), bedrooms (2–6), bathrooms (1.0–5.0 in half-baths)
+- **Land:** lot_size_sqft
+- **Age:** year_built (1950–2024)
+- **Parking:** garage (0–3 stalls)
+- **Target:** price (USD)
+
+### Pricing hierarchy
+
+The generator injects a clear city-level price hierarchy, calibrated so
+San Jose ~1600 sqft homes median ~$1.8MM:
+
+| City | Median $/sqft | Median Price | Share of Rows |
+|------|---------------|--------------|---------------|
+| Saratoga | ~$1,600 | ~$4.08M | 12% |
+| Los Gatos | ~$1,320 | ~$3.34M | 18% |
+| San Jose | ~$1,030 | ~$2.62M | 70% |
+
+Within San Jose, 11 zip codes span ~$980–$1,250/sqft (95122 lowest,
+95129 highest). Per-zip variation means no single categorical perfectly
+determines price.
+
+### Injected price relationships
+
+| Driver | Effect |
+|--------|--------|
+| City / zip_code | Dominant — sets base $/sqft |
+| sqft | Primary continuous driver, with diminishing $/sqft at larger sizes |
+| Bedrooms (>3) | ~1.5% premium per extra bedroom |
+| Bathrooms (>2) | ~1% premium per extra full bath |
+| year_built (≥2000) | Up to ~6% premium for newer homes |
+| year_built (<1960) | Up to ~3% discount for older homes |
+| lot_size_sqft (>6000) | ~0.4% premium per extra 1,000 sqft of lot |
+| garage (2–3 stalls) | ~1–2.5% premium over 1-stall |
+| Zip-level noise | ±4% so the relationship is learnable but imperfect |
+
+### How to use
+
+**Generate data and register (admin):**
+```bash
+# Generate synthetic data
+python scripts/generate_home_prices_data.py --homes 20000
+
+# Register dataset (partitions into train/eval/validate automatically)
+python -c "
+from backend.services import get_services
+svc = get_services()
+svc.register_dataset_from_config(
+    'datasets/home_prices/dataset.yaml',
+    'data/home_prices/data.parquet',
+)
+"
+
+# Train XGBoost regressor
+python scripts/train_model.py --dataset home_prices \
+  --model-type xgboost_regressor --model-id home-price-xgb-v001
+```
+
+**Analyze via MCP (Claude Desktop, Claude CLI, or any stdio MCP client):**
+> "List all Anistroph datasets"
+> "Show median price by city in the home_prices dataset"
+> "Find the most expensive zip codes in home_prices"
+> "Slice home_prices by city and bedrooms, median price"
+> "Find interesting slices in home_prices for price"
+
+**Analyze via REST:**
+```bash
+# Slice by city
+curl -X POST http://localhost:9500/analysis/slice \
+  -H "Content-Type: application/json" \
+  -d '{"dataset_id": "home_prices", "dimensions": ["city"], "metric": "price", "agg": "median"}'
+
+# Sample rows
+curl -X POST http://localhost:9500/datasets/home_prices/rows \
+  -H "Content-Type: application/json" \
+  -d '{"n": 5, "filters": {"city": "Saratoga"}, "sort_by": "price", "descending": true}'
+```
+
+**Analyze via Python:**
+```python
+from backend.services import get_services
+svc = get_services()
+
+# Slice by city
+slices = svc.slice_data("home_prices", dimensions=["city"], metric="price", agg="median")
+for s in slices:
+    print(f"  {s['city']}: median=${s['price_median']:,.0f} (n={s['row_count']})")
+
+# Find interesting slices
+slices = svc.find_interesting_slices("home_prices", "price", top_k=10)
+for s in slices:
+    print(f"  {s['values']} rows={s['row_count']} price=${s['metric_value']:,.0f} diff=${s['difference']:,.0f}")
+```
+
+### Insights
+
+- **City is the dominant driver** — Saratoga commands ~55% higher $/sqft
+  than San Jose, with Los Gatos in between.
+- **Sqft has diminishing returns** — larger homes have slightly lower
+  $/sqft, reflecting real-world market behavior.
+- **Zip-level variation** within San Jose (95122 vs 95129) gives the
+  interesting-slice finder categorical signal to discover.
+- **No single feature perfectly determines price** — the zip-level noise
+  and interaction of bedrooms/baths/lot/year_built make this a realistic
+  regression problem.
+
+### Limitations
+
+- Synthetic data — real Bay Area prices depend on schools, views, lot
+  shape, condition, market timing, and many other factors not captured.
+- No macroeconomic dynamics — listing timestamps span ~18 months but
+  prices are not modeled as a time series.
+- Zip code boundaries are illustrative, not authoritative.

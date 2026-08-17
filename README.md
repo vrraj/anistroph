@@ -64,9 +64,10 @@ Under the hood, the platform is powered by **Polars + DuckDB + Parquet** for fas
 
 **Modeling**
 - **Classification** — Logistic Regression and XGBoost classifiers for binary and future-event targets. ROC-AUC, PR-AUC, precision, recall, F1, and confusion matrix evaluation.
-- **Regression** — XGBoost Regressor and Linear Regression (Ridge) for continuous targets. MAE, RMSE, R², median absolute error, 95th percentile absolute error, and baseline comparison.
+- **Regression** — XGBoost Regressor and Linear Regression (Ridge) for continuous targets. MAE, MSE, RMSE, R², MAPE (mean absolute % error), max error, median absolute error, 95th percentile absolute error, and baseline comparison.
 - **Chronological splitting** — Time-ordered train/validation/test splits prevent temporal leakage. Registration partitions into train/eval files (80/20 by default); training further splits train into train/validation for early stopping and threshold tuning.
-- **Held-out evaluation** — Post-training, run inference on the persisted `evaluation.parquet` and compare predictions against known actuals. Available via REST (`POST /evaluations/{model_id}`), MCP (`anistroph_evaluate_model`), and the Web UI Evaluation tab.
+- **Held-out evaluation** — Post-training, run inference on the persisted `evaluation.parquet` and compare predictions against known actuals. Supports slice-level evaluation via filters (e.g. metrics for a single city, lot, or zip code) — returns both overall and filtered metrics for comparison. Available via REST (`POST /evaluations/{model_id}`), MCP (`anistroph_evaluate_model`), and the Web UI Evaluation tab.
+- **Error slice discovery** — While `find_interesting_slices` finds populations where the *target* deviates, `find_evaluation_slices` finds populations where the *prediction error* deviates — identifying segments where the model performs better or worse than average. Searches 1/2/3-dimensional combinations of categorical columns (e.g. product + tool + chamber) and ranks by deviation from the overall error baseline with minimum sample-size thresholds. Available via REST (`POST /evaluations/{model_id}/slices`), MCP (`anistroph_find_evaluation_slices`), and the Web UI Evaluation tab.
 - **Model persistence and reload** — Trained models, preprocessing metadata, feature identities, feature order, and evaluation metrics are persisted together as artifacts. Runtime inference loads the persisted model and never retrains.
 - **Easy model additions** — New model types live in separate adapter modules under `backend/models/`. Register them in `MODEL_FACTORIES` and the shared training, inference, and explanation paths pick them up automatically.
 
@@ -84,7 +85,7 @@ Under the hood, the platform is powered by **Polars + DuckDB + Parquet** for fas
 
 **MCP runtime access**
 - **MCP stdio server** — Anistroph exposes runtime analysis and inference through MCP stdio for use by clients such as Claude Desktop.
-- **11 MCP tools** — Dataset discovery, dataset profiling, slicing, comparison, interesting-slice discovery, raw row sampling, model discovery, model metrics, prediction, SHAP-based prediction explanation, and held-out evaluation.
+- **12 MCP tools** — Dataset discovery, dataset profiling, slicing, comparison, interesting-slice discovery, raw row sampling, model discovery, model metrics, prediction, SHAP-based prediction explanation, held-out evaluation, and error slice discovery.
 - **No training via MCP** — Model training is an administrative operation. MCP is for runtime analysis and inference only.
 
 | Tool | What it does |
@@ -100,6 +101,7 @@ Under the hood, the platform is powered by **Polars + DuckDB + Parquet** for fas
 | `anistroph_predict` | Make a prediction (entity_id + timestamp for temporal, records for non-temporal) |
 | `anistroph_explain_prediction` | Explain a prediction with top positive and negative SHAP contributors |
 | `anistroph_evaluate_model` | Evaluate a trained model against the held-out evaluation partition (aggregate metrics + prediction-vs-actual sample) |
+| `anistroph_find_evaluation_slices` | Find populations where model prediction error deviates most from the overall average (multidimensional search across categorical columns) |
 
 See [MCP](#mcp) for server setup and [README_SETUP_USAGE.md](README_SETUP_USAGE.md#example-mcp-prompts) for example prompts.
 
@@ -724,11 +726,45 @@ result = svc.train(
 
 ## Evaluation
 
-**Classification:** ROC-AUC, PR-AUC, precision, recall, F1, confusion matrix. Decision thresholds optimized for F1 on the validation set.
+Evaluation runs a trained model against the **held-out evaluation partition** (`evaluation.parquet`) — the 15% slice reserved at dataset registration time that is never seen during training. This gives an unbiased estimate of model performance on unseen data.
 
-**Regression:** MAE, RMSE, R², median absolute error, 95th percentile absolute error, mean prediction error, and baseline comparison against a constant mean predictor.
+**Key points:**
+- Training uses only `train.parquet`; evaluation uses only `evaluation.parquet` — no overlap.
+- Evaluation is a runtime operation: it loads the persisted model, runs inference (`predict`, not `fit`), and computes metrics from scratch each time. No retraining occurs.
+- Results are not cached — each call recomputes. Safe to re-run; produces the same numbers as long as the model artifact and eval partition are unchanged.
+
+**Classification metrics:** ROC-AUC, PR-AUC, precision, recall, F1, confusion matrix. Decision thresholds optimized for F1 on the validation set.
+
+**Regression metrics:** MAE, MSE, RMSE, R², MAPE (mean absolute % error), max error, median absolute error, 95th percentile absolute error, mean prediction error, and baseline comparison against a constant mean predictor.
+
+**Slice-level evaluation:** Pass `filters` to evaluate on a subset of the eval partition (e.g. `{"city": "Saratoga"}` or `{"lot_id": ["LOT_001"]}`). The response includes both overall metrics and `filtered_metrics` for the matching rows, so you can compare performance across segments — e.g. MAPE for San Jose vs Saratoga, or error for ETCH_02 vs ETCH_01 wafers.
+
+**Error slice discovery:** `find_evaluation_slices` searches multidimensional combinations of categorical columns to find populations where the *prediction error* deviates most from the overall average — identifying segments where the model performs better or worse than expected. This complements `find_interesting_slices` (which finds where the *target* deviates) by answering "where does the *model* struggle?"
+
+Available via REST API, Python, MCP, and the Web UI Evaluation tab.
 
 ```python
+# Evaluate against the held-out eval partition
+result = svc.evaluate_model("wafer-yield-xgb-v001", sample_size=50)
+print(result["metrics"]["r2"])  # 0.82
+print(result["metrics"]["mape"])  # 3.25 (% error)
+
+# Slice-level evaluation (filtered to a single city)
+result = svc.evaluate_model("home_prices-xgb-v001", filters={"city": "Saratoga"})
+print(result["metrics"]["mape"])        # overall MAPE
+print(result["filtered_metrics"]["mape"])  # Saratoga-only MAPE
+print(result["filtered_row_count"])     # n rows matching
+
+# Find populations where model error is worst
+slices = svc.find_evaluation_slices("home_prices-xgb-v001", top_k=10)
+for s in slices:
+    vals = " + ".join(f"{k}={v}" for k, v in s["values"].items())
+    print(f"  {vals}: n={s['row_count']}, MAE={s['metric_value']:.0f}, diff={s['difference']:+.0f}")
+# Example output:
+#   zip_code=95071: n=177, MAE=126022, diff=+31110  (Saratoga 95071 — worst)
+#   zip_code=95122: n=180, MAE=65337, diff=-29575   (San Jose 95122 — best)
+
+# Training-time metrics (stored in model registry, no recompute)
 metrics = svc.get_model_metrics("wafer-yield-xgb-v001")
 ```
 

@@ -157,6 +157,7 @@
               <option value="xgboost_regressor">xgboost_regressor (regression)</option>
               <option value="linear_regression">linear_regression (regression)</option>
             </select>
+            <div id="tr-type-hint" class="muted" style="font-size:12px;margin-top:4px;"></div>
           </div>
           <div class="field">
             <label>Model ID (optional) <i class="tooltip-icon" data-tooltip="A custom name for this model. If left blank, an ID is auto-generated from the dataset ID, model type, and timestamp.">i</i></label>
@@ -183,7 +184,7 @@
       </div>
       <div class="card">
         <h2>Model Metrics</h2>
-        <div class="field"><label>Model ID <i class="tooltip-icon" data-tooltip="The ID of a trained model to get evaluation metrics for. Classification: ROC-AUC, PR-AUC, precision, recall, F1, confusion matrix. Regression: MAE, RMSE, R², baseline comparison.">i</i></label><input id="md-metrics-id" placeholder="model-id"></div>
+        <div class="field"><label>Model ID <i class="tooltip-icon" data-tooltip="The ID of a trained model to get evaluation metrics for. Classification: ROC-AUC, PR-AUC, precision, recall, F1, confusion matrix. Regression: MAE, MSE, RMSE, R², MAPE, max error, median/p95 abs error, baseline comparison.">i</i></label><input id="md-metrics-id" placeholder="model-id"></div>
         <button onclick="getModelMetrics()">Get Metrics</button>
         <div id="md-metrics-result" style="margin-top:16px;"></div>
       </div>
@@ -219,19 +220,26 @@
         <p class="muted" style="margin-bottom:16px;">
           Runs inference on the dataset's evaluation partition (never used during training)
           and compares predictions against known actual target values.
+          Optional filters enable slice-level evaluation (e.g. metrics for a single city or lot).
         </p>
         <div class="form-row">
           <div class="field">
             <label>Model <i class="tooltip-icon" data-tooltip="The trained model to evaluate. The model's dataset must have been registered with partitioning (train/eval) enabled.">i</i></label>
-            <select id="ev-model"><option value="">Loading models...</option></select>
+            <select id="ev-model" onchange="onEvalModelChange()"><option value="">Loading models...</option></select>
           </div>
           <div class="field field-narrow">
-            <label>Sample rows <i class="tooltip-icon" data-tooltip="Number of prediction-vs-actual rows to display in the results table (capped at 1000). Aggregate metrics are always computed over the full evaluation set.">i</i></label>
+            <label>Sample rows <i class="tooltip-icon" data-tooltip="Number of prediction-vs-actual rows to display in the results table (capped at 1000). Aggregate metrics are always computed over the full evaluation set (or the filtered subset when filters are applied).">i</i></label>
             <input id="ev-sample" type="number" value="50" min="1" max="1000">
           </div>
         </div>
+        <div id="ev-filters" style="display:none; margin-bottom:12px;">
+          <label style="display:block; margin-bottom:6px;">Slice filters <i class="tooltip-icon" data-tooltip="Filter the evaluation set by categorical dimensions (e.g. city, lot_id). When filters are applied, the response shows both overall metrics and filtered metrics for comparison. Leave all filters on 'All' to evaluate on the full eval set.">i</i></label>
+          <div id="ev-filter-bar" class="filter-bar"></div>
+        </div>
         <button onclick="evaluateModel()">Evaluate</button>
+        <button onclick="findErrorSlices()" style="margin-left:8px;">Find Error Slices</button>
         <div id="ev-result" style="margin-top:16px;"><div class="muted">Evaluation results will appear here.</div></div>
+        <div id="ev-slices-result" style="margin-top:16px;"></div>
       </div>
     </div>
   </section>
@@ -267,6 +275,16 @@ function tbl(data) {
 
 function banner(text, type='error') {
   return `<div class="${type}-banner">${text}</div>`;
+}
+
+// Format a metric value for display.
+function fmtMetric(key, v) {
+  if (v === null || v === undefined) return '—';
+  if (typeof v !== 'number') return v;
+  if (key === 'mape') return v.toFixed(2) + '%';
+  if (Math.abs(v) < 1) return v.toFixed(4);
+  if (Math.abs(v) >= 1e6) return v.toExponential(3);
+  return v.toLocaleString('en-US', { maximumFractionDigits: 2 });
 }
 
 // Tabs — hash-based routing (e.g. /#analysis, /#prediction)
@@ -428,23 +446,62 @@ async function loadTrainDatasetDropdown() {
 async function onTrainDatasetChange() {
   const dsId = document.getElementById('tr-dataset').value;
   const targetInput = document.getElementById('tr-target');
+  const typeSelect = document.getElementById('tr-type');
   if (!dsId) {
     targetInput.value = '';
+    // Restore full model type list
+    typeSelect.innerHTML = _buildModelTypeOptions(null);
     return;
   }
   const meta = _trainDatasetMeta[dsId];
+  let targetType = meta ? meta.target_type : null;
   if (meta && meta.target_name) {
     targetInput.value = meta.target_name;
   } else {
-    // Fetch the dataset metadata to get target_name.
+    // Fetch the dataset metadata to get target_name and target_type.
     try {
       const d = await api('/datasets/' + encodeURIComponent(dsId));
       _trainDatasetMeta[dsId] = d;
       targetInput.value = d.target_name || '';
+      targetType = d.target_type;
     } catch (e) {
       targetInput.value = '';
     }
   }
+  // Filter model type dropdown based on target type.
+  typeSelect.innerHTML = _buildModelTypeOptions(targetType);
+  // Show a hint about the target type.
+  const hint = document.getElementById('tr-type-hint');
+  if (hint) {
+    if (targetType === 'regression') {
+      hint.textContent = 'Target is regression — only regressor models shown.';
+    } else if (targetType === 'binary' || targetType === 'future_event') {
+      hint.textContent = 'Target is ' + targetType + ' — only classifier models shown.';
+    } else {
+      hint.textContent = '';
+    }
+  }
+}
+
+function _buildModelTypeOptions(targetType) {
+  const classifiers = [
+    {value: 'xgboost', label: 'xgboost (classifier)'},
+    {value: 'logistic_regression', label: 'logistic_regression (classifier)'},
+  ];
+  const regressors = [
+    {value: 'xgboost_regressor', label: 'xgboost_regressor (regression)'},
+    {value: 'linear_regression', label: 'linear_regression (regression)'},
+  ];
+  let models;
+  if (targetType === 'regression') {
+    models = regressors;
+  } else if (targetType === 'binary' || targetType === 'future_event') {
+    models = classifiers;
+  } else {
+    // Unknown target type — show all.
+    models = classifiers.concat(regressors);
+  }
+  return models.map(m => `<option value="${m.value}">${m.label}</option>`).join('');
 }
 
 async function trainModel() {
@@ -627,12 +684,15 @@ async function loadModelDropdown() {
 }
 
 // Populate the model dropdown on the evaluation tab
+let _evalModels = [];
+let _evalProfileCache = {};
 async function loadEvalModelDropdown() {
   const sel = document.getElementById('ev-model');
   if (!sel) return;
   try {
     const r = await api('/models');
     if (Array.isArray(r) && r.length) {
+      _evalModels = r;
       sel.innerHTML = '<option value="">Select a model...</option>' +
         r.map(m => {
           const id = m.model_id || m.id || '?';
@@ -648,6 +708,98 @@ async function loadEvalModelDropdown() {
   }
 }
 
+// When a model is selected on the evaluation tab, load its dataset profile
+// and build filter dropdowns for categorical columns.
+async function onEvalModelChange() {
+  const modelId = document.getElementById('ev-model').value;
+  const filterSection = document.getElementById('ev-filters');
+  const filterBar = document.getElementById('ev-filter-bar');
+  if (!modelId) {
+    filterSection.style.display = 'none';
+    return;
+  }
+
+  const model = _evalModels.find(m => (m.model_id || m.id) === modelId);
+  const dsId = model ? model.dataset_id : null;
+  if (!dsId) {
+    filterSection.style.display = 'none';
+    return;
+  }
+
+  // Use cached profile if available.
+  let profile = _evalProfileCache[dsId];
+  if (!profile) {
+    try {
+      profile = await api('/datasets/' + dsId + '/profile');
+      _evalProfileCache[dsId] = profile;
+    } catch (e) {
+      filterSection.style.display = 'none';
+      return;
+    }
+  }
+
+  const cols = profile.columns || {};
+  const catCols = [];
+  for (const [name, info] of Object.entries(cols)) {
+    if (info.type === 'categorical' && info.unique_count <= 50 && info.role !== 'identifier') {
+      catCols.push({ name, info });
+    }
+  }
+
+  if (catCols.length) {
+    filterSection.style.display = 'block';
+    filterBar.innerHTML = catCols.map(c => {
+      const options = (c.info.top_values || []).map(v =>
+        `<option value="${v.value}">${v.value} (${v.count})</option>`
+      ).join('');
+      return `<div class="filter-item">
+        <label>${c.name}</label>
+        <select id="ev-filter-${c.name}" data-col="${c.name}">
+          <option value="">All</option>${options}
+        </select>
+      </div>`;
+    }).join('');
+  } else {
+    filterSection.style.display = 'none';
+  }
+}
+
+// Render a metrics block (used for both overall and filtered metrics).
+function renderMetricsBlock(title, metrics, subtitle) {
+  let h = `<h3 style="margin:12px 0 8px;">${title}</h3>`;
+  if (subtitle) h += `<div class="muted" style="margin-bottom:8px;">${subtitle}</div>`;
+  h += '<div class="result-metrics">';
+  for (const [k, v] of Object.entries(metrics)) {
+    if (v === null || typeof v === 'object') continue;
+    h += `<div class="result-metric"><span class="result-metric-label">${k}</span><span class="result-metric-value">${fmtMetric(k, v)}</span></div>`;
+  }
+  h += '</div>';
+
+  // Confusion matrix for classification
+  if (metrics.confusion_matrix) {
+    const cm = metrics.confusion_matrix;
+    h += '<div class="result-metrics" style="margin-top:8px;">';
+    h += `<div class="result-metric"><span class="result-metric-label">TN</span><span class="result-metric-value">${cm.tn}</span></div>`;
+    h += `<div class="result-metric"><span class="result-metric-label">FP</span><span class="result-metric-value">${cm.fp}</span></div>`;
+    h += `<div class="result-metric"><span class="result-metric-label">FN</span><span class="result-metric-value">${cm.fn}</span></div>`;
+    h += `<div class="result-metric"><span class="result-metric-label">TP</span><span class="result-metric-value">${cm.tp}</span></div>`;
+    h += '</div>';
+  }
+
+  // Baseline comparison for regression
+  if (metrics.baseline) {
+    const b = metrics.baseline;
+    h += '<div class="muted" style="margin:8px 0 4px;">Baseline (constant predictor)</div>';
+    h += '<div class="result-metrics">';
+    h += `<div class="result-metric"><span class="result-metric-label">baseline MAE</span><span class="result-metric-value">${fmtMetric('mae', b.mae)}</span></div>`;
+    h += `<div class="result-metric"><span class="result-metric-label">baseline RMSE</span><span class="result-metric-value">${fmtMetric('rmse', b.rmse)}</span></div>`;
+    h += `<div class="result-metric"><span class="result-metric-label">baseline R²</span><span class="result-metric-value">${fmtMetric('r2', b.r2)}</span></div>`;
+    h += '</div>';
+  }
+
+  return h;
+}
+
 // Evaluation
 async function evaluateModel() {
   const el = document.getElementById('ev-result');
@@ -657,50 +809,46 @@ async function evaluateModel() {
     return;
   }
   const sampleSize = parseInt(document.getElementById('ev-sample').value) || 50;
+
+  // Collect active filters from the evaluation tab filter dropdowns.
+  const filters = {};
+  const filterBar = document.getElementById('ev-filter-bar');
+  if (filterBar) {
+    filterBar.querySelectorAll('select[data-col]').forEach(sel => {
+      if (sel.value) filters[sel.dataset.col] = sel.value;
+    });
+  }
+  const hasFilters = Object.keys(filters).length > 0;
+
   el.innerHTML = '<div class="muted">Evaluating on held-out set...</div>';
   try {
-    const r = await api('/evaluations/' + encodeURIComponent(modelId), 'POST', { sample_size: sampleSize });
+    const body = { sample_size: sampleSize };
+    if (hasFilters) body.filters = filters;
+    const r = await api('/evaluations/' + encodeURIComponent(modelId), 'POST', body);
     let h = '<div class="result-card">';
     h += `<div class="result-title">Evaluation: ${r.model_id}</div>`;
     h += `<div class="muted" style="margin-bottom:12px;">Dataset: ${r.dataset_id} · Target: ${r.target_name} (${r.target_type}) · Eval rows: ${r.eval_row_count.toLocaleString()}</div>`;
 
-    // Aggregate metrics
-    h += '<h3 style="margin:12px 0 8px;">Aggregate Metrics</h3>';
-    h += '<div class="result-metrics">';
+    // Overall metrics
     const metrics = r.metrics || {};
-    for (const [k, v] of Object.entries(metrics)) {
-      if (v === null || typeof v === 'object') continue;
-      const formatted = typeof v === 'number' ? (Math.abs(v) < 1 ? v.toFixed(4) : v.toFixed(2)) : v;
-      h += `<div class="result-metric"><span class="result-metric-label">${k}</span><span class="result-metric-value">${formatted}</span></div>`;
-    }
-    h += '</div>';
+    h += renderMetricsBlock('Overall Metrics', metrics, `All ${r.eval_row_count.toLocaleString()} evaluation rows`);
 
-    // Confusion matrix for classification
-    if (metrics.confusion_matrix) {
-      const cm = metrics.confusion_matrix;
-      h += '<h3 style="margin:16px 0 8px;">Confusion Matrix</h3>';
-      h += '<div class="result-metrics">';
-      h += `<div class="result-metric"><span class="result-metric-label">TN</span><span class="result-metric-value">${cm.tn}</span></div>`;
-      h += `<div class="result-metric"><span class="result-metric-label">FP</span><span class="result-metric-value">${cm.fp}</span></div>`;
-      h += `<div class="result-metric"><span class="result-metric-label">FN</span><span class="result-metric-value">${cm.fn}</span></div>`;
-      h += `<div class="result-metric"><span class="result-metric-label">TP</span><span class="result-metric-value">${cm.tp}</span></div>`;
-      h += '</div>';
-    }
-
-    // Baseline comparison for regression
-    if (metrics.baseline) {
-      const b = metrics.baseline;
-      h += '<h3 style="margin:16px 0 8px;">Baseline (constant predictor)</h3>';
-      h += '<div class="result-metrics">';
-      h += `<div class="result-metric"><span class="result-metric-label">baseline MAE</span><span class="result-metric-value">${b.mae.toFixed(4)}</span></div>`;
-      h += `<div class="result-metric"><span class="result-metric-label">baseline RMSE</span><span class="result-metric-value">${b.rmse.toFixed(4)}</span></div>`;
-      h += `<div class="result-metric"><span class="result-metric-label">baseline R²</span><span class="result-metric-value">${b.r2.toFixed(4)}</span></div>`;
-      h += '</div>';
+    // Filtered metrics (if filters were applied)
+    if (r.filtered_metrics) {
+      const filterDesc = Object.entries(r.filters).map(([k, v]) =>
+        `${k}=${Array.isArray(v) ? v.join('|') : v}`
+      ).join(', ');
+      h += renderMetricsBlock(
+        'Filtered Metrics',
+        r.filtered_metrics,
+        `${r.filtered_row_count.toLocaleString()} rows matching: ${filterDesc}`
+      );
     }
 
     // Prediction-vs-actual sample table
     const sample = r.predictions_sample || [];
-    h += `<h3 style="margin:16px 0 8px;">Prediction vs Actual (sample of ${sample.length})</h3>`;
+    const sampleLabel = hasFilters ? `filtered set` : 'full set';
+    h += `<h3 style="margin:16px 0 8px;">Prediction vs Actual (sample of ${sample.length} from ${sampleLabel})</h3>`;
     if (sample.length) {
       const cols = Object.keys(sample[0]);
       h += '<div class="data-table-wrap"><table class="data-table"><thead><tr>';
@@ -718,6 +866,54 @@ async function evaluateModel() {
       h += '<div class="muted">No sample rows.</div>';
     }
 
+    h += '</div>';
+    el.innerHTML = h;
+  } catch (e) {
+    el.innerHTML = banner('Error: ' + e.message);
+  }
+}
+
+// Find error slices — multidimensional search for populations where
+// model error deviates from the overall average.
+async function findErrorSlices() {
+  const el = document.getElementById('ev-slices-result');
+  const modelId = document.getElementById('ev-model').value;
+  if (!modelId) {
+    el.innerHTML = banner('Please select a model first.');
+    return;
+  }
+  el.innerHTML = '<div class="muted">Searching for error slices...</div>';
+  try {
+    const r = await api('/evaluations/' + encodeURIComponent(modelId) + '/slices', 'POST', {
+      metric: 'abs_error',
+      min_sample_size: 50,
+      max_dimensions: 3,
+      top_k: 20,
+    });
+    if (!Array.isArray(r) || !r.length) {
+      el.innerHTML = '<div class="muted">No slices found (try lowering min sample size).</div>';
+      return;
+    }
+    const baseline = r[0].overall_baseline;
+    let h = '<div class="result-card">';
+    h += '<div class="result-title">Error Slice Discovery</div>';
+    h += `<div class="muted" style="margin-bottom:12px;">Overall ${r[0].dimensions.length > 0 ? "abs_error" : ""} baseline: ${fmtMetric('mae', baseline)} · top ${r.length} slices by deviation</div>`;
+    h += '<div class="data-table-wrap"><table class="data-table"><thead><tr>';
+    h += '<th>Dimensions</th><th>Values</th><th>Rows</th><th>Error</th><th>Diff</th><th>vs Overall</th>';
+    h += '</tr></thead><tbody>';
+    for (const s of r) {
+      const dimStr = s.dimensions.join(' + ');
+      const valStr = Object.entries(s.values).map(([k, v]) => `${k}=${v}`).join(' + ');
+      const ratio = baseline !== 0 ? (s.metric_value / baseline) : 0;
+      const ratioStr = ratio > 1 ? `${ratio.toFixed(2)}x` : `${ratio.toFixed(2)}x`;
+      const diffClass = s.difference > 0 ? 'style="color:#c62828;"' : 'style="color:#2e7d32;"';
+      h += `<tr><td>${dimStr}</td><td>${valStr}</td><td>${s.row_count}</td>`;
+      h += `<td>${fmtMetric('mae', s.metric_value)}</td>`;
+      h += `<td ${diffClass}>${s.difference > 0 ? '+' : ''}${fmtMetric('mae', s.difference)}</td>`;
+      h += `<td>${ratioStr}</td></tr>`;
+    }
+    h += '</tbody></table></div>';
+    h += '<div class="muted" style="margin-top:8px;">Positive diff (red) = worse than average. Negative diff (green) = better than average. Use with filtered evaluation to drill into specific slices.</div>';
     h += '</div>';
     el.innerHTML = h;
   } catch (e) {

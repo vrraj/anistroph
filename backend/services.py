@@ -28,7 +28,7 @@ from backend.datasets.spec import DatasetSpec
 from backend.datasets.validation import validate_dataset
 from backend.features.spec import FeatureSpec
 from backend.ml.evaluation import evaluate_binary
-from backend.ml.evaluation_runner import evaluate_on_eval_set
+from backend.ml.evaluation_runner import evaluate_on_eval_set, find_evaluation_slices
 from backend.ml.explain import explain_prediction
 from backend.ml.inference import predict
 from backend.ml.registry import ModelRegistry
@@ -318,7 +318,12 @@ class AnistrophServices:
 
     # --- Evaluation operations ---
 
-    def evaluate_model(self, model_id: str, sample_size: int = 50) -> dict[str, Any]:
+    def evaluate_model(
+        self,
+        model_id: str,
+        sample_size: int = 50,
+        filters: Optional[dict[str, Any]] = None,
+    ) -> dict[str, Any]:
         """Evaluate a trained model against the held-out evaluation partition.
 
         Loads ``evaluation.parquet`` for the model's dataset, runs inference
@@ -328,11 +333,18 @@ class AnistrophServices:
         Args:
             model_id: registered model to evaluate.
             sample_size: number of prediction-vs-actual rows to include in the
-                response (capped at 1000). Aggregate metrics are always over
-                the full evaluation set.
+                response (capped at 1000). Aggregate metrics are over the full
+                evaluation set (or the filtered subset when ``filters`` is
+                provided).
+            filters: optional equality / IN-style filters, e.g.
+                ``{"city": "Saratoga"}`` or ``{"lot_id": ["LOT_001"]}``.
+                When provided, the response includes both ``metrics`` (overall)
+                and ``filtered_metrics`` (filtered subset), plus
+                ``filtered_row_count``.
 
         Returns a dict with model_id, dataset_id, evaluation row count,
-        aggregate metrics, and a sample of prediction-vs-actual rows.
+        aggregate metrics, optionally filtered metrics, and a sample of
+        prediction-vs-actual rows.
         """
         mmeta = self.model_registry.get(model_id)
         if mmeta is None:
@@ -352,6 +364,59 @@ class AnistrophServices:
             config=config,
             eval_parquet_path=dmeta.eval_parquet_path,
             sample_size=sample_size,
+            filters=filters,
+        )
+
+    def find_evaluation_slices(
+        self,
+        model_id: str,
+        metric: str = "abs_error",
+        dimensions: Optional[list[str]] = None,
+        min_sample_size: int = 50,
+        max_dimensions: int = 3,
+        top_k: int = 20,
+    ) -> list[dict[str, Any]]:
+        """Find slices where model error deviates most from the overall baseline.
+
+        Runs inference on the held-out evaluation partition and searches
+        categorical dimension combinations for populations where the
+        prediction error differs materially from the overall average.
+
+        Args:
+            model_id: registered model to evaluate.
+            metric: error metric to aggregate (``abs_error``, ``error``,
+                ``pct_error`` for regression; ``log_loss`` for classification).
+            dimensions: categorical columns to combine. If None, auto-detect
+                from the dataset spec.
+            min_sample_size: minimum rows per slice.
+            max_dimensions: max dimensions to combine (1-3).
+            top_k: number of top slices to return.
+
+        Returns a list of slices sorted by absolute difference from the
+        overall error baseline.
+        """
+        mmeta = self.model_registry.get(model_id)
+        if mmeta is None:
+            raise ValueError(f"model {model_id!r} not found")
+        dmeta = self.dataset_registry.get(mmeta.dataset_id)
+        if dmeta is None:
+            raise ValueError(f"dataset {mmeta.dataset_id!r} not registered")
+        if not dmeta.partitioned or not dmeta.eval_parquet_path:
+            raise ValueError(
+                f"dataset {mmeta.dataset_id!r} has no evaluation partition; "
+                "re-register to create train/eval splits"
+            )
+        config = self.get_config(mmeta.dataset_id)
+        return find_evaluation_slices(
+            model_id=model_id,
+            model_registry=self.model_registry,
+            config=config,
+            eval_parquet_path=dmeta.eval_parquet_path,
+            metric=metric,
+            dimensions=dimensions,
+            min_sample_size=min_sample_size,
+            max_dimensions=max_dimensions,
+            top_k=top_k,
         )
 
 

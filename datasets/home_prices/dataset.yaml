@@ -1,0 +1,95 @@
+# Anistroph — Bay Area Home Prices reference dataset configuration.
+#
+# One row = one home listing. The model predicts price (regression) primarily
+# from square footage, with city/zip as the dominant price driver.
+# This is a non-temporal dataset (no rolling windows), but has a listing
+# timestamp for chronological splitting.
+#
+# Pricing hierarchy: Saratoga > Los Gatos > San Jose.
+# San Jose median is calibrated to ~$1.8MM for a 1600 sq ft home.
+
+dataset:
+  dataset_id: home_prices
+  name: Bay Area Home Prices
+  entity_key: property_id
+  time_key: timestamp
+
+  columns:
+    timestamp:
+      type: timestamp
+      role: identifier
+    property_id:
+      type: categorical
+      role: identifier
+    city:
+      type: categorical
+      role: feature
+    zip_code:
+      type: categorical
+      role: feature
+    sqft:
+      type: numeric
+      role: feature
+    bedrooms:
+      type: numeric
+      role: feature
+    bathrooms:
+      type: numeric
+      role: feature
+    lot_size_sqft:
+      type: numeric
+      role: feature
+    year_built:
+      type: numeric
+      role: feature
+    garage:
+      type: numeric
+      role: feature
+    price:
+      type: numeric
+      role: target
+
+  split:
+    strategy: chronological
+    train: 0.70
+    validation: 0.15
+    test: 0.15
+
+features:
+  city:
+    column: city
+    transforms:
+      - categorical
+  zip_code:
+    column: zip_code
+    transforms:
+      - categorical
+  sqft:
+    column: sqft
+    transforms:
+      - current
+  bedrooms:
+    column: bedrooms
+    transforms:
+      - current
+  bathrooms:
+    column: bathrooms
+    transforms:
+      - current
+  lot_size_sqft:
+    column: lot_size_sqft
+    transforms:
+      - current
+  year_built:
+    column: year_built
+    transforms:
+      - current
+  garage:
+    column: garage
+    transforms:
+      - current
+
+target:
+  name: price
+  type: regression
+  source_column: price

@@ -30,28 +30,37 @@ from backend.targets.engine import TargetEngine
 from backend.targets.spec import TargetType
 
 
-def evaluate_on_eval_set(
+def _apply_filters(df: pl.DataFrame, filters: dict[str, Any]) -> pl.DataFrame:
+    """Apply equality / IN-style filters to a DataFrame.
+
+    Mirrors the filter logic in ``services.sample_rows``.
+    """
+    for col, val in filters.items():
+        if col not in df.columns:
+            raise ValueError(f"unknown filter column {col!r}")
+        if isinstance(val, list):
+            df = df.filter(pl.col(col).is_in(val))
+        else:
+            df = df.filter(pl.col(col) == val)
+    return df
+
+
+def _run_inference_on_eval_set(
     model_id: str,
     model_registry: ModelRegistry,
     config: DatasetConfig,
     eval_parquet_path: str,
-    sample_size: int = 50,
-) -> dict[str, Any]:
-    """Evaluate a model against the held-out evaluation partition.
+) -> tuple[pl.DataFrame, np.ndarray, np.ndarray, bool, float]:
+    """Load the eval partition, build features, and run inference.
 
-    Args:
-        model_id: registered model to evaluate.
-        model_registry: model registry (for loading model artifacts).
-        config: DatasetConfig for the model's dataset.
-        eval_parquet_path: path to the evaluation Parquet file.
-        sample_size: number of prediction-vs-actual rows to include in the
-            response (capped at 1000). Aggregate metrics are over the full set.
-
-    Returns a dict with:
-        - model_id, dataset_id, target_name, target_type
-        - eval_row_count: number of rows in the evaluation set
-        - metrics: aggregate evaluation metrics
-        - predictions_sample: list of {entity_id, actual, predicted, ...} rows
+    Returns:
+        df: the original eval DataFrame (with target built) — has original
+            categorical columns like ``city``, ``etch_tool``, etc.
+        y_actual: ground-truth target values.
+        y_pred: model predictions (regression: predicted values;
+            classification: predicted probabilities of positive class).
+        is_regression: whether the target is a regression target.
+        threshold: decision threshold (for classification).
     """
     meta = model_registry.get(model_id)
     if meta is None:
@@ -98,20 +107,121 @@ def evaluate_on_eval_set(
         X = imputer.transform(X)
 
     is_regression = target_spec.type in (TargetType.REGRESSION,)
+    threshold = meta.decision_threshold
 
     # --- Run inference ---
     if is_regression:
         y_pred = predictor.predict(X)
+    else:
+        y_pred = predictor.predict_proba(X)[:, 1]
+
+    return df, y_actual, y_pred, is_regression, threshold
+
+
+def evaluate_on_eval_set(
+    model_id: str,
+    model_registry: ModelRegistry,
+    config: DatasetConfig,
+    eval_parquet_path: str,
+    sample_size: int = 50,
+    filters: Optional[dict[str, Any]] = None,
+) -> dict[str, Any]:
+    """Evaluate a model against the held-out evaluation partition.
+
+    Args:
+        model_id: registered model to evaluate.
+        model_registry: model registry (for loading model artifacts).
+        config: DatasetConfig for the model's dataset.
+        eval_parquet_path: path to the evaluation Parquet file.
+        sample_size: number of prediction-vs-actual rows to include in the
+            response (capped at 1000). Aggregate metrics are over the full set
+            (or the filtered set when ``filters`` is provided).
+        filters: optional equality / IN-style filters, e.g.
+            ``{"city": "Saratoga"}`` or ``{"lot_id": ["LOT_001", "LOT_002"]}``.
+            When provided, the response includes both ``metrics`` (overall,
+            all eval rows) and ``filtered_metrics`` (filtered subset only),
+            plus ``filtered_row_count`` and a prediction-vs-actual sample drawn
+            from the filtered subset.
+
+    Returns a dict with:
+        - model_id, dataset_id, target_name, target_type
+        - eval_row_count: number of rows in the full evaluation set
+        - metrics: aggregate evaluation metrics over the full eval set
+        - filtered_metrics: aggregate metrics over the filtered subset
+            (only present when ``filters`` is provided)
+        - filtered_row_count: number of rows matching the filters
+            (only present when ``filters`` is provided)
+        - filters: the filters applied (only present when provided)
+        - predictions_sample: list of {entity_id, actual, predicted, ...} rows
+          (from the filtered subset when filters are applied, otherwise from
+          the full set)
+    """
+    meta = model_registry.get(model_id)
+    if meta is None:
+        raise ValueError(f"model {model_id!r} not found")
+
+    spec = config.dataset_spec
+    target_spec = model_registry.load_target_spec(model_id)
+    target_col = target_spec.name
+
+    # --- Run inference on the eval set (reusable helper) ---
+    df, y_actual, y_pred, is_regression, threshold = _run_inference_on_eval_set(
+        model_id, model_registry, config, eval_parquet_path,
+    )
+
+    # --- Overall metrics (full eval set) ---
+    if is_regression:
         baseline = float(np.mean(y_actual))
         metrics = evaluate_regression(y_actual, y_pred, baseline_pred=baseline)
+    else:
+        metrics = evaluate_binary(y_actual, y_pred, threshold=threshold)
+
+    # --- Determine which rows to use for the sample + filtered metrics ---
+    if filters:
+        # Filters apply to the ORIGINAL columns (e.g. "city", "lot_id"),
+        # which are in `df` but not in the feature-engineered `full`.
+        # Strategy: filter `df` to get matching row indices.
+        df_indexed = df.with_row_index("_row_idx")
+        df_filtered = _apply_filters(df_indexed, filters)
+        filtered_pos = df_filtered["_row_idx"].to_list()
+
+        if not filtered_pos:
+            raise ValueError(
+                f"no evaluation rows match filters {filters!r}"
+            )
+
+        y_actual_f = y_actual[filtered_pos]
+        if is_regression:
+            y_pred_f = y_pred[filtered_pos]
+            baseline_f = float(np.mean(y_actual_f))
+            filtered_metrics = evaluate_regression(
+                y_actual_f, y_pred_f, baseline_pred=baseline_f,
+            )
+            pred_values = y_pred_f.tolist()
+            actual_values = y_actual_f.tolist()
+        else:
+            y_proba_f = y_pred[filtered_pos]
+            filtered_metrics = evaluate_binary(
+                y_actual_f, y_proba_f, threshold=threshold,
+            )
+            pred_values = y_proba_f.tolist()
+            actual_values = y_actual_f.tolist()
+
+        # Sample rows come from the filtered subset.
+        entity_col = spec.entity_key
+        time_col = spec.time_key
+        keys = [entity_col] + ([time_col] if time_col else [])
+        sample_source = df_filtered.select(keys)
+        filtered_row_count = len(filtered_pos)
+    else:
+        filtered_metrics = None
+        filtered_row_count = None
         pred_values = y_pred.tolist()
         actual_values = y_actual.tolist()
-    else:
-        y_proba = predictor.predict_proba(X)[:, 1]
-        threshold = meta.decision_threshold
-        metrics = evaluate_binary(y_actual, y_proba, threshold=threshold)
-        pred_values = y_proba.tolist()
-        actual_values = y_actual.tolist()
+        entity_col = spec.entity_key
+        time_col = spec.time_key
+        keys = [entity_col] + ([time_col] if time_col else [])
+        sample_source = df.select(keys)
 
     # --- Build prediction-vs-actual sample ---
     sample_size = max(1, min(int(sample_size), 1000))
@@ -123,7 +233,7 @@ def evaluate_on_eval_set(
     n = len(pred_values)
     for i in range(min(sample_size, n)):
         row: dict[str, Any] = {
-            "entity_id": str(full[entity_col][i]) if entity_col in full.columns else None,
+            "entity_id": str(sample_source[entity_col][i]) if entity_col in sample_source.columns else None,
             "actual": float(actual_values[i]),
             "predicted": float(pred_values[i]),
         }
@@ -132,16 +242,174 @@ def evaluate_on_eval_set(
             row["abs_error"] = abs(row["error"])
         else:
             row["predicted_label"] = int(pred_values[i] >= threshold)
-        if time_col and time_col in full.columns:
-            row["timestamp"] = str(full[time_col][i])
+        if time_col and time_col in sample_source.columns:
+            row["timestamp"] = str(sample_source[time_col][i])
         sample_rows.append(row)
 
-    return {
+    result: dict[str, Any] = {
         "model_id": model_id,
         "dataset_id": meta.dataset_id,
         "target_name": target_spec.name,
         "target_type": target_spec.type.value,
-        "eval_row_count": n,
+        "eval_row_count": df.height,
         "metrics": metrics,
         "predictions_sample": sample_rows,
     }
+
+    if filters is not None:
+        result["filtered_metrics"] = filtered_metrics
+        result["filtered_row_count"] = filtered_row_count
+        result["filters"] = filters
+
+    return result
+
+
+def find_evaluation_slices(
+    model_id: str,
+    model_registry: ModelRegistry,
+    config: DatasetConfig,
+    eval_parquet_path: str,
+    metric: str = "abs_error",
+    dimensions: Optional[list[str]] = None,
+    min_sample_size: int = 50,
+    max_dimensions: int = 3,
+    top_k: int = 20,
+) -> list[dict[str, Any]]:
+    """Find slices where model error deviates most from the overall baseline.
+
+    Runs inference on the held-out evaluation partition, computes per-row
+    error, joins it with the original categorical columns, and searches
+    1/2/3-dimensional combinations for slices where the error metric differs
+    materially from the overall average.
+
+    This is the evaluation analogue of ``find_interesting_slices``: instead
+    of finding slices where the *target* deviates, it finds slices where the
+    *prediction error* deviates — identifying populations where the model
+    performs better or worse than average.
+
+    Args:
+        model_id: registered model to evaluate.
+        model_registry: model registry (for loading model artifacts).
+        config: DatasetConfig for the model's dataset.
+        eval_parquet_path: path to the evaluation Parquet file.
+        metric: error metric to aggregate. One of:
+            - ``"abs_error"``: absolute error (default, regression)
+            - ``"error"``: signed error (regression — shows bias direction)
+            - ``"pct_error"``: percentage error (regression — relative)
+            - ``"log_loss"``: per-row log loss (classification)
+        dimensions: categorical columns to combine. If None, auto-detect
+            categorical columns from the dataset spec.
+        min_sample_size: minimum rows per slice to be considered.
+        max_dimensions: max number of dimensions to combine (1-3).
+        top_k: number of top slices to return.
+
+    Returns a list of slices sorted by absolute difference from the overall
+    error baseline, each with: dimensions, values, row_count, metric_value,
+    overall_baseline, difference, abs_difference.
+    """
+    from itertools import combinations
+
+    meta = model_registry.get(model_id)
+    if meta is None:
+        raise ValueError(f"model {model_id!r} not found")
+
+    spec = config.dataset_spec
+    target_spec = model_registry.load_target_spec(model_id)
+    target_col = target_spec.name
+
+    # --- Run inference on the eval set ---
+    df, y_actual, y_pred, is_regression, threshold = _run_inference_on_eval_set(
+        model_id, model_registry, config, eval_parquet_path,
+    )
+
+    # --- Compute per-row error metric ---
+    if is_regression:
+        abs_errors = np.abs(y_pred - y_actual)
+        signed_errors = y_pred - y_actual
+        # Percentage error (guard against zero actuals).
+        non_zero = y_actual != 0
+        pct_errors = np.zeros_like(y_actual, dtype=float)
+        if non_zero.any():
+            pct_errors[non_zero] = (
+                np.abs(y_pred[non_zero] - y_actual[non_zero])
+                / np.abs(y_actual[non_zero])
+            ) * 100.0
+
+        error_map = {
+            "abs_error": abs_errors,
+            "error": signed_errors,
+            "pct_error": pct_errors,
+        }
+    else:
+        # Classification: per-row log loss.
+        eps = 1e-15
+        y_proba_clipped = np.clip(y_pred, eps, 1 - eps)
+        log_losses = -(y_actual * np.log(y_proba_clipped)
+                       + (1 - y_actual) * np.log(1 - y_proba_clipped))
+        error_map = {"log_loss": log_losses}
+
+    if metric not in error_map:
+        raise ValueError(
+            f"unsupported metric {metric!r}; supported: {list(error_map.keys())}"
+        )
+
+    error_values = error_map[metric]
+
+    # --- Auto-detect categorical columns if not specified ---
+    if dimensions is None:
+        # Use columns declared as categorical features in the spec.
+        dimensions = [
+            c.name for c in spec.columns.values()
+            if c.type.value == "categorical" and c.role.value == "feature"
+        ]
+
+    if not dimensions:
+        return []
+
+    # Filter dimensions to those actually present in the eval DataFrame.
+    dimensions = [d for d in dimensions if d in df.columns]
+    if not dimensions:
+        return []
+
+    # --- Build a DataFrame with original categorical columns + error ---
+    # `df` has the original columns (city, etch_tool, etc.) and is in the
+    # same row order as y_actual / y_pred.
+    keys = [spec.entity_key] + ([spec.time_key] if spec.time_key else [])
+    error_df = df.select(keys + dimensions).with_columns(
+        pl.Series("_error", error_values),
+    )
+
+    # --- Compute overall error baseline ---
+    overall_error = float(np.mean(error_values))
+
+    # --- Search 1, 2, and 3-dimensional combinations ---
+    results: list[dict[str, Any]] = []
+    for n_dims in range(1, min(max_dimensions, len(dimensions)) + 1):
+        for combo in combinations(dimensions, n_dims):
+            grouped = error_df.group_by(list(combo)).agg(
+                pl.col("_error").mean().alias("metric_value"),
+                pl.col("_error").median().alias("metric_median"),
+                pl.col("_error").std().alias("metric_std"),
+                pl.len().alias("row_count"),
+            )
+
+            # Filter by min sample size.
+            grouped = grouped.filter(pl.col("row_count") >= min_sample_size)
+
+            for row in grouped.to_dicts():
+                diff = row["metric_value"] - overall_error
+                results.append({
+                    "dimensions": list(combo),
+                    "values": {d: row[d] for d in combo},
+                    "row_count": row["row_count"],
+                    "metric_value": float(row["metric_value"]),
+                    "metric_median": float(row["metric_median"]) if row["metric_median"] is not None else None,
+                    "metric_std": float(row["metric_std"]) if row["metric_std"] is not None else None,
+                    "overall_baseline": overall_error,
+                    "difference": float(diff),
+                    "abs_difference": abs(float(diff)),
+                })
+
+    # Sort by absolute difference, descending.
+    results.sort(key=lambda x: x["abs_difference"], reverse=True)
+    return results[:top_k]

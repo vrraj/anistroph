@@ -101,13 +101,25 @@ def evaluate_regression(
     95th percentile absolute error, and baseline comparison.
     """
     abs_errors = np.abs(y_true - y_pred)
+    mse = float(mean_squared_error(y_true, y_pred))
+
+    # MAPE — guard against zero actuals to avoid division-by-zero.
+    non_zero_mask = y_true != 0
+    mape = (
+        float(np.mean(np.abs((y_true[non_zero_mask] - y_pred[non_zero_mask]) / y_true[non_zero_mask])) * 100.0)
+        if non_zero_mask.any()
+        else None
+    )
 
     metrics: dict[str, Any] = {
         "mae": float(mean_absolute_error(y_true, y_pred)),
-        "rmse": float(np.sqrt(mean_squared_error(y_true, y_pred))),
+        "mse": mse,
+        "rmse": float(np.sqrt(mse)),
         "r2": float(r2_score(y_true, y_pred)),
+        "mape": mape,
         "median_abs_error": float(np.median(abs_errors)),
         "p95_abs_error": float(np.percentile(abs_errors, 95)),
+        "max_error": float(np.max(abs_errors)),
         "mean_prediction_error": float(np.mean(y_pred - y_true)),
     }
 

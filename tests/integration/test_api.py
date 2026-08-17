@@ -192,8 +192,140 @@ class TestEvaluationAPI:
         data = r.json()
         assert data["target_type"] == "regression"
         assert "mae" in data["metrics"]
+        assert "mse" in data["metrics"]
         assert "rmse" in data["metrics"]
         assert "r2" in data["metrics"]
+        assert "mape" in data["metrics"]
+        assert "max_error" in data["metrics"]
         row = data["predictions_sample"][0]
         assert "error" in row
         assert "abs_error" in row
+
+    def test_evaluate_regression_with_filters(self, client):
+        """Filtered evaluation returns both overall and filtered metrics."""
+        # Reuse the model from the previous test.
+        client.post("/datasets", json={
+            "config_path": "datasets/semiconductor_yield/dataset.yaml",
+            "source_path": "data/semiconductor_yield/data.parquet",
+        })
+        client.post("/models/train", json={
+            "dataset_id": "semiconductor_yield",
+            "target_name": "wafer_yield",
+            "model_type": "xgboost_regressor",
+            "model_id": "api-eval-filtered",
+        })
+        r = client.post("/evaluations/api-eval-filtered", json={
+            "sample_size": 5,
+            "filters": {"etch_tool": "ETCH_01"},
+        })
+        assert r.status_code == 200
+        data = r.json()
+        # Overall metrics present
+        assert "mae" in data["metrics"]
+        assert "r2" in data["metrics"]
+        # Filtered metrics present
+        assert "filtered_metrics" in data
+        assert "filtered_row_count" in data
+        assert "filters" in data
+        assert data["filters"] == {"etch_tool": "ETCH_01"}
+        assert data["filtered_row_count"] > 0
+        assert data["filtered_row_count"] < data["eval_row_count"]
+        fm = data["filtered_metrics"]
+        assert "mae" in fm
+        assert "r2" in fm
+        assert "mape" in fm
+
+    def test_evaluate_no_filters_has_no_filtered_metrics(self, client):
+        """Without filters, filtered_metrics should be absent."""
+        client.post("/datasets", json={
+            "config_path": "datasets/semiconductor_yield/dataset.yaml",
+            "source_path": "data/semiconductor_yield/data.parquet",
+        })
+        client.post("/models/train", json={
+            "dataset_id": "semiconductor_yield",
+            "target_name": "wafer_yield",
+            "model_type": "xgboost_regressor",
+            "model_id": "api-eval-nofilter",
+        })
+        r = client.post("/evaluations/api-eval-nofilter", json={"sample_size": 5})
+        assert r.status_code == 200
+        data = r.json()
+        assert "filtered_metrics" not in data
+        assert "filtered_row_count" not in data
+
+    def test_evaluate_unknown_filter_column(self, client):
+        """Unknown filter column returns 400."""
+        client.post("/datasets", json={
+            "config_path": "datasets/semiconductor_yield/dataset.yaml",
+            "source_path": "data/semiconductor_yield/data.parquet",
+        })
+        client.post("/models/train", json={
+            "dataset_id": "semiconductor_yield",
+            "target_name": "wafer_yield",
+            "model_type": "xgboost_regressor",
+            "model_id": "api-eval-badfilter",
+        })
+        r = client.post("/evaluations/api-eval-badfilter", json={
+            "sample_size": 5,
+            "filters": {"nonexistent_column": "foo"},
+        })
+        assert r.status_code == 400
+
+    def test_find_evaluation_slices(self, client):
+        """find_evaluation_slices returns ranked error slices."""
+        client.post("/datasets", json={
+            "config_path": "datasets/semiconductor_yield/dataset.yaml",
+            "source_path": "data/semiconductor_yield/data.parquet",
+        })
+        client.post("/models/train", json={
+            "dataset_id": "semiconductor_yield",
+            "target_name": "wafer_yield",
+            "model_type": "xgboost_regressor",
+            "model_id": "api-eval-slices",
+        })
+        r = client.post("/evaluations/api-eval-slices/slices", json={
+            "metric": "abs_error",
+            "min_sample_size": 50,
+            "top_k": 10,
+        })
+        assert r.status_code == 200
+        data = r.json()
+        assert isinstance(data, list)
+        assert len(data) > 0
+        # Each slice should have required fields.
+        s = data[0]
+        assert "dimensions" in s
+        assert "values" in s
+        assert "row_count" in s
+        assert "metric_value" in s
+        assert "overall_baseline" in s
+        assert "difference" in s
+        assert "abs_difference" in s
+        # Sorted by abs_difference descending.
+        assert data[0]["abs_difference"] >= data[-1]["abs_difference"]
+        # Row counts respect min_sample_size.
+        for s in data:
+            assert s["row_count"] >= 50
+
+    def test_find_evaluation_slices_pct_error(self, client):
+        """find_evaluation_slices supports pct_error metric."""
+        client.post("/datasets", json={
+            "config_path": "datasets/semiconductor_yield/dataset.yaml",
+            "source_path": "data/semiconductor_yield/data.parquet",
+        })
+        client.post("/models/train", json={
+            "dataset_id": "semiconductor_yield",
+            "target_name": "wafer_yield",
+            "model_type": "xgboost_regressor",
+            "model_id": "api-eval-pct",
+        })
+        r = client.post("/evaluations/api-eval-pct/slices", json={
+            "metric": "pct_error",
+            "min_sample_size": 50,
+            "top_k": 5,
+        })
+        assert r.status_code == 200
+        data = r.json()
+        assert len(data) > 0
+        # pct_error values should be percentages (small for yield 0-1).
+        assert all(s["metric_value"] >= 0 for s in data)

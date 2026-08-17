@@ -37,11 +37,15 @@
       "operating_hours",
       "machine_type"
     ],
-    "created_at": "2026-08-15T01:18:17.827565+00:00",
+    "created_at": "2026-08-17T02:13:59.892857+00:00",
     "data_start": "2026-06-01 00:00:00",
     "data_end": "2026-06-30 23:50:00",
     "parquet_path": "/Users/raj/Documents/Raj/anistroph/data/processed/predictive_maintenance.parquet",
-    "spec_path": "/Users/raj/Documents/Raj/anistroph/datasets/predictive_maintenance/dataset.yaml"
+    "spec_path": "/Users/raj/Documents/Raj/anistroph/datasets/predictive_maintenance/dataset.yaml",
+    "partitioned": true,
+    "train_parquet_path": "/Users/raj/Documents/Raj/anistroph/data/processed/predictive_maintenance.train.parquet",
+    "eval_parquet_path": "/Users/raj/Documents/Raj/anistroph/data/processed/predictive_maintenance.evaluation.parquet",
+    "validate_parquet_path": "/Users/raj/Documents/Raj/anistroph/data/processed/predictive_maintenance.validate.parquet"
   },
   "semiconductor_yield": {
     "dataset_id": "semiconductor_yield",
@@ -111,10 +115,57 @@
       "maintenance_age_etch",
       "maintenance_age_deposition"
     ],
-    "created_at": "2026-08-15T02:04:19.590370+00:00",
+    "created_at": "2026-08-17T02:13:54.234192+00:00",
     "data_start": "2025-01-01 00:00:00",
     "data_end": "2026-12-31 23:00:00",
-    "parquet_path": "/Users/raj/Documents/Raj/anistroph/data/semiconductor_yield/data.parquet",
-    "spec_path": "/Users/raj/Documents/Raj/anistroph/datasets/semiconductor_yield/dataset.yaml"
+    "parquet_path": "/Users/raj/Documents/Raj/anistroph/data/processed/semiconductor_yield.parquet",
+    "spec_path": "/Users/raj/Documents/Raj/anistroph/datasets/semiconductor_yield/dataset.yaml",
+    "partitioned": true,
+    "train_parquet_path": "/Users/raj/Documents/Raj/anistroph/data/processed/semiconductor_yield.train.parquet",
+    "eval_parquet_path": "/Users/raj/Documents/Raj/anistroph/data/processed/semiconductor_yield.evaluation.parquet",
+    "validate_parquet_path": "/Users/raj/Documents/Raj/anistroph/data/processed/semiconductor_yield.validate.parquet"
+  },
+  "home_prices": {
+    "dataset_id": "home_prices",
+    "name": "Bay Area Home Prices",
+    "version": "1",
+    "source": "data/home_prices/data.parquet",
+    "row_count": 20000,
+    "columns": [
+      "timestamp",
+      "property_id",
+      "city",
+      "zip_code",
+      "sqft",
+      "bedrooms",
+      "bathrooms",
+      "lot_size_sqft",
+      "year_built",
+      "garage",
+      "price"
+    ],
+    "entity_key": "property_id",
+    "time_key": "timestamp",
+    "target_name": "price",
+    "target_type": "regression",
+    "feature_names": [
+      "city",
+      "zip_code",
+      "sqft",
+      "bedrooms",
+      "bathrooms",
+      "lot_size_sqft",
+      "year_built",
+      "garage"
+    ],
+    "created_at": "2026-08-17T05:29:11.523577+00:00",
+    "data_start": "2024-06-01 00:00:00",
+    "data_end": "2025-11-30 11:00:00",
+    "parquet_path": "/Users/raj/Documents/Raj/anistroph/data/processed/home_prices.parquet",
+    "spec_path": "/Users/raj/Documents/Raj/anistroph/datasets/home_prices/dataset.yaml",
+    "partitioned": true,
+    "train_parquet_path": "/Users/raj/Documents/Raj/anistroph/data/processed/home_prices.train.parquet",
+    "eval_parquet_path": "/Users/raj/Documents/Raj/anistroph/data/processed/home_prices.evaluation.parquet",
+    "validate_parquet_path": "/Users/raj/Documents/Raj/anistroph/data/processed/home_prices.validate.parquet"
   }
 }

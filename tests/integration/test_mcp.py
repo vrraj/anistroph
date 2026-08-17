@@ -43,6 +43,7 @@ class TestToolDiscovery:
         assert "anistroph_sample_rows" in names
         assert "anistroph_find_interesting_slices" in names
         assert "anistroph_evaluate_model" in names
+        assert "anistroph_find_evaluation_slices" in names
 
     def test_tool_schemas(self):
         tools = get_tool_list()
@@ -215,3 +216,21 @@ class TestToolCalls:
         result = await call_tool("anistroph_evaluate_model", {"model_id": "nonexistent"})
         data = json.loads(result[0].text)
         assert "error" in data
+
+    async def test_find_evaluation_slices(self, services):
+        result = await call_tool("anistroph_find_evaluation_slices", {
+            "model_id": "mcp-test-xgb",
+            "metric": "log_loss",
+            "min_sample_size": 50,
+            "top_k": 5,
+        })
+        data = json.loads(result[0].text)
+        assert isinstance(data, list)
+        # Classification model — log_loss slices should be returned.
+        if len(data) > 0:
+            s = data[0]
+            assert "dimensions" in s
+            assert "values" in s
+            assert "row_count" in s
+            assert "metric_value" in s
+            assert "overall_baseline" in s

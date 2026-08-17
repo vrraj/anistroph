@@ -112,12 +112,19 @@ class TestRegressionEvaluation:
         y_pred = np.array([0.94, 0.93, 0.89, 0.96, 0.91])
         metrics = evaluate_regression(y_true, y_pred)
         assert "mae" in metrics
+        assert "mse" in metrics
         assert "rmse" in metrics
         assert "r2" in metrics
+        assert "mape" in metrics
         assert "median_abs_error" in metrics
         assert "p95_abs_error" in metrics
+        assert "max_error" in metrics
         assert metrics["mae"] >= 0
+        assert metrics["mse"] >= 0
+        assert metrics["rmse"] == pytest.approx(np.sqrt(metrics["mse"]))
         assert metrics["r2"] <= 1.0
+        assert metrics["mape"] is not None and metrics["mape"] >= 0
+        assert metrics["max_error"] >= metrics["mae"]
 
     def test_evaluate_regression_with_baseline(self):
         y_true = np.array([0.95, 0.92, 0.88, 0.97, 0.90])
@@ -298,6 +305,54 @@ class TestSemiconductorTraining:
         # Load predictor from disk.
         predictor = XGBoostRegressorPredictor.load(f"{meta.artifact_path}/model.joblib")
         assert predictor is not None
+
+    def test_filtered_evaluation_returns_both_metrics(self, small_semi_dataset):
+        """evaluate_on_eval_set with filters returns overall + filtered metrics."""
+        from backend.ml.evaluation_runner import evaluate_on_eval_set
+
+        dataset_registry, tmp_path, pq = small_semi_dataset
+        model_registry = ModelRegistry(tmp_path / "models")
+        config = load_dataset_config(_CONFIG_PATH)
+
+        train_model(
+            dataset_id="semiconductor_yield",
+            target_name="wafer_yield",
+            model_type="xgboost_regressor",
+            dataset_registry=dataset_registry,
+            model_registry=model_registry,
+            config=config,
+            model_parameters={"n_estimators": 10},
+            model_id="test-semi-filtered",
+            parquet_path=str(pq),
+        )
+
+        # The fixture doesn't create eval partitions, so use the full
+        # parquet as the eval path — this test validates the filter
+        # mechanism, not the evaluation methodology.
+        eval_path = str(pq)
+        result = evaluate_on_eval_set(
+            model_id="test-semi-filtered",
+            model_registry=model_registry,
+            config=config,
+            eval_parquet_path=eval_path,
+            sample_size=5,
+            filters={"etch_tool": "ETCH_01"},
+        )
+
+        # Overall metrics present
+        assert "metrics" in result
+        assert "mae" in result["metrics"]
+        assert "r2" in result["metrics"]
+
+        # Filtered metrics present
+        assert "filtered_metrics" in result
+        assert "filtered_row_count" in result
+        assert "filters" in result
+        assert result["filters"] == {"etch_tool": "ETCH_01"}
+        assert result["filtered_row_count"] > 0
+        assert result["filtered_row_count"] < result["eval_row_count"]
+        assert "mae" in result["filtered_metrics"]
+        assert "r2" in result["filtered_metrics"]
 
 
 class TestFindInterestingSlices:

@@ -139,12 +139,28 @@ TOOL_DEFS: list[tuple[str, str, dict[str, Any]]] = [
     ),
     (
         "anistroph_evaluate_model",
-        "Evaluate a trained model against the dataset's held-out evaluation partition. Loads evaluation.parquet, runs inference using the persisted model, and compares predictions against known actual target values. Returns aggregate metrics (MAE/RMSE/R2 for regression, AUC/precision/recall/F1 for classification) and a sample of prediction-vs-actual rows. The evaluation set is never used during training.",
+        "Evaluate a trained model against the dataset's held-out evaluation partition. Loads evaluation.parquet, runs inference using the persisted model, and compares predictions against known actual target values. Returns aggregate metrics (MAE/MSE/RMSE/R2/MAPE/max_error for regression, AUC/precision/recall/F1 for classification) and a sample of prediction-vs-actual rows. The evaluation set is never used during training. Optional filters allow slice-level evaluation (e.g. metrics for a single city, lot, or zip code) — when filters are provided, the response includes both overall metrics and filtered_metrics for comparison.",
         {
             "type": "object",
             "properties": {
                 "model_id": {"type": "string"},
-                "sample_size": {"type": "integer", "default": 50, "description": "Number of prediction-vs-actual rows to return (capped at 1000). Aggregate metrics are always over the full evaluation set."},
+                "sample_size": {"type": "integer", "default": 50, "description": "Number of prediction-vs-actual rows to return (capped at 1000). Aggregate metrics are always over the full evaluation set (or the filtered subset when filters are provided)."},
+                "filters": {"type": "object", "description": "Optional equality filters for slice-level evaluation, e.g. {\"city\": \"Saratoga\"} or {\"lot_id\": [\"LOT_001\", \"LOT_002\"]}. When provided, the response includes both overall metrics and filtered_metrics for the matching rows.", "additionalProperties": True},
+            },
+            "required": ["model_id"],
+        },
+    ),
+    (
+        "anistroph_find_evaluation_slices",
+        "Find populations where model prediction error deviates most from the overall average. Runs inference on the held-out evaluation partition, computes per-row error, and searches 1/2/3-dimensional combinations of categorical columns (e.g. city, etch_tool, product_id) for slices where the error metric differs materially from the overall baseline. This is the model-evaluation analogue of find_interesting_slices: instead of finding slices where the target deviates, it finds slices where the prediction error deviates — identifying populations where the model performs better or worse than average. Returns ranked slices with dimension values, row count, error metric value, overall baseline, and difference.",
+        {
+            "type": "object",
+            "properties": {
+                "model_id": {"type": "string"},
+                "metric": {"type": "string", "default": "abs_error", "description": "Error metric to aggregate. Regression: 'abs_error' (absolute error), 'error' (signed error — shows bias direction), 'pct_error' (percentage error — relative to actual value). Classification: 'log_loss' (per-row log loss)."},
+                "min_sample_size": {"type": "integer", "default": 50, "description": "Minimum rows per slice to be considered. Slices with fewer rows are excluded."},
+                "max_dimensions": {"type": "integer", "default": 3, "description": "Maximum number of dimensions to combine (1-3). Higher values search more combinations but take longer."},
+                "top_k": {"type": "integer", "default": 20, "description": "Number of top slices to return, ranked by absolute difference from the overall error baseline."},
             },
             "required": ["model_id"],
         },
@@ -235,6 +251,15 @@ async def call_tool(name: str, arguments: dict[str, Any]) -> list[types.TextCont
             result = svc.evaluate_model(
                 arguments["model_id"],
                 arguments.get("sample_size", 50),
+                filters=arguments.get("filters"),
+            )
+        elif name == "anistroph_find_evaluation_slices":
+            result = svc.find_evaluation_slices(
+                arguments["model_id"],
+                metric=arguments.get("metric", "abs_error"),
+                min_sample_size=arguments.get("min_sample_size", 50),
+                max_dimensions=arguments.get("max_dimensions", 3),
+                top_k=arguments.get("top_k", 20),
             )
         else:
             return [types.TextContent(type="text", text=json.dumps({"error": f"unknown tool: {name}"}))]

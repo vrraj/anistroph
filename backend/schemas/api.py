@@ -68,3 +68,12 @@ class SampleRowsRequest(BaseModel):
 
 class EvaluateRequest(BaseModel):
     sample_size: int = 50
+    filters: Optional[dict[str, Any]] = None
+
+
+class EvaluationSlicesRequest(BaseModel):
+    metric: str = "abs_error"
+    dimensions: Optional[list[str]] = None
+    min_sample_size: int = 50
+    max_dimensions: int = 3
+    top_k: int = 20
