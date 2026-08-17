@@ -62,7 +62,7 @@ body {
 /* Grid */
 .grid {
     display: grid;
-    gap: 20px;
+    gap: 24px;
 }
 
 .grid.two {
@@ -73,9 +73,81 @@ body {
     grid-template-columns: 1fr 1fr 1fr;
 }
 
+/* Form field — consistent label + input spacing */
+.field {
+    margin-bottom: 20px;
+}
+
+.field:last-child {
+    margin-bottom: 0;
+}
+
+.field label {
+    display: block;
+    margin-bottom: 6px;
+    font-weight: 500;
+    font-size: 14px;
+    color: #333;
+}
+
+.field input,
+.field select,
+.field textarea {
+    width: 100%;
+    padding: 12px 16px;
+    border: 1px solid #dddddd;
+    border-radius: 8px;
+    font-size: 15px;
+    background: #ffffff;
+    transition: border-color 0.15s, box-shadow 0.15s;
+    margin-bottom: 0;
+    height: 44px;
+    box-sizing: border-box;
+    font-family: inherit;
+}
+
+/* Normalize <select> to match <input> — strip native OS styling */
+.field select {
+    appearance: none;
+    -webkit-appearance: none;
+    -moz-appearance: none;
+    background-image: url("data:image/svg+xml;charset=UTF-8,%3csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3e%3cpath fill='%23666' d='M6 8L0 0h12z'/%3e%3c/svg%3e");
+    background-repeat: no-repeat;
+    background-position: right 16px center;
+    padding-right: 40px;
+    cursor: pointer;
+}
+
+.field input:focus,
+.field select:focus,
+.field textarea:focus {
+    outline: none;
+    border-color: #007bff;
+    box-shadow: 0 0 0 3px rgba(0,123,255,0.18);
+}
+
+/* Form row — horizontal layout with gap */
+.form-row {
+    display: flex;
+    gap: 20px;
+    margin-bottom: 20px;
+}
+
+.form-row > .field {
+    flex: 1;
+    margin-bottom: 0;
+}
+
+/* Narrow field variant (for numbers, short inputs) */
+.field-narrow {
+    max-width: 140px;
+}
+
+/* Legacy .row — kept for backward compat, maps to form-row */
 .row {
     display: flex;
-    gap: 12px;
+    gap: 20px;
+    margin-bottom: 20px;
 }
 
 .row > * {
@@ -87,11 +159,13 @@ button {
     background: #111111;
     color: white;
     border: none;
-    padding: 8px 16px;
+    padding: 10px 20px;
     border-radius: 6px;
     cursor: pointer;
     font-size: 14px;
     font-weight: 500;
+    transition: background 0.15s;
+    margin-top: 4px;
 }
 
 button:hover {
@@ -121,34 +195,13 @@ button.secondary:disabled {
     cursor: not-allowed;
 }
 
-/* Form elements */
+/* Form elements — base styles; .field provides the spacing wrapper */
 label {
     display: block;
-    margin-bottom: 4px;
+    margin-bottom: 6px;
     font-weight: 500;
+    font-size: 14px;
     color: #333;
-}
-
-input[type="text"],
-input[type="number"],
-input[type="password"],
-textarea,
-select {
-    width: 100%;
-    padding: 10px 14px;
-    border: 1px solid #dddddd;
-    border-radius: 8px;
-    font-size: 16px;
-    margin-bottom: 4px;
-    background: #ffffff;
-}
-
-input:focus,
-textarea:focus,
-select:focus {
-    outline: none;
-    border-color: #007bff;
-    box-shadow: 0 0 0 2px rgba(0,123,255,0.25);
 }
 
 textarea {
@@ -596,4 +649,97 @@ code {
     display: flex;
     gap: 10px;
     justify-content: flex-end;
+}
+
+/* Data tab — filter bar and data table */
+.filter-bar {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 16px;
+    align-items: flex-end;
+    margin-bottom: 20px;
+    padding-bottom: 20px;
+    border-bottom: 1px solid #eeeeee;
+}
+
+.filter-item {
+    display: flex;
+    flex-direction: column;
+    min-width: 160px;
+}
+
+.filter-item label {
+    font-size: 12px;
+    text-transform: uppercase;
+    color: #666;
+    letter-spacing: 0.03em;
+}
+
+.filter-item select,
+.filter-item input {
+    margin-bottom: 0;
+    padding: 10px 36px 10px 14px;
+    font-size: 14px;
+    height: 40px;
+    border: 1px solid #dddddd;
+    border-radius: 8px;
+    background-color: #ffffff;
+}
+
+.filter-item select {
+    appearance: none;
+    -webkit-appearance: none;
+    -moz-appearance: none;
+    background-image: url("data:image/svg+xml;charset=UTF-8,%3csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3e%3cpath fill='%23666' d='M6 8L0 0h12z'/%3e%3c/svg%3e");
+    background-repeat: no-repeat;
+    background-position: right 14px center;
+    cursor: pointer;
+}
+
+.data-table-wrap {
+    overflow-x: auto;
+    border: 1px solid #e5e5e5;
+    border-radius: 8px;
+}
+
+.data-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 13px;
+    white-space: nowrap;
+}
+
+.data-table th {
+    position: sticky;
+    top: 0;
+    background: #f5f3ed;
+    padding: 10px 14px;
+    border-bottom: 2px solid #ddd;
+    color: #333;
+    font-weight: 600;
+    font-size: 12px;
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+}
+
+.data-table td {
+    padding: 8px 14px;
+    border-bottom: 1px solid #f0f0f0;
+    color: #111;
+    font-family: 'SF Mono', 'Monaco', monospace;
+    font-size: 12px;
+}
+
+.data-table tr:hover td {
+    background: #fafaf8;
+}
+
+.row-count-badge {
+    display: inline-block;
+    padding: 4px 12px;
+    background: #f5f3ed;
+    border-radius: 12px;
+    font-size: 13px;
+    color: #666;
+    margin-bottom: 16px;
 }

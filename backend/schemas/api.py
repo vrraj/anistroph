@@ -56,3 +56,11 @@ class ExplainRequest(BaseModel):
     timestamp: Optional[str] = None
     records: Optional[list[dict[str, Any]]] = None
     top_k: int = 10
+
+
+class SampleRowsRequest(BaseModel):
+    n: int = 25
+    filters: Optional[dict[str, Any]] = None
+    columns: Optional[list[str]] = None
+    sort_by: Optional[str] = None
+    descending: bool = False

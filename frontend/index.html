@@ -23,6 +23,7 @@
   <section class="card">
     <div class="tabs">
       <button class="tab-button active" data-tab-target="datasets">Datasets</button>
+      <button class="tab-button" data-tab-target="data">Data</button>
       <button class="tab-button" data-tab-target="analysis">Analysis</button>
       <button class="tab-button" data-tab-target="training">Training</button>
       <button class="tab-button" data-tab-target="models">Models</button>
@@ -33,9 +34,9 @@
     <div id="datasets-panel" data-tab-panel="datasets">
       <div class="card">
         <h2>Register Dataset</h2>
-        <div class="row">
-          <div><label>Config YAML path</label><input id="ds-config" value="datasets/predictive_maintenance/dataset.yaml"></div>
-          <div><label>Source data path</label><input id="ds-source" value="data/synthetic/predictive_maintenance.csv"></div>
+        <div class="form-row">
+          <div class="field"><label>Config YAML path</label><input id="ds-config" value="datasets/predictive_maintenance/dataset.yaml"></div>
+          <div class="field"><label>Source data path</label><input id="ds-source" value="data/synthetic/predictive_maintenance.csv"></div>
         </div>
         <button onclick="registerDataset()">Register</button>
       </div>
@@ -46,23 +47,58 @@
       </div>
       <div class="card">
         <h2>Dataset Profile</h2>
-        <label>Dataset ID</label><input id="ds-profile-id" placeholder="predictive_maintenance">
+        <div class="field"><label>Dataset ID</label><input id="ds-profile-id" placeholder="predictive_maintenance"></div>
         <button onclick="profileDataset()">Profile</button>
         <div id="ds-profile-result" style="margin-top:16px;"></div>
       </div>
+    </div>
+
+    <!-- Data Tab -->
+    <div id="data-panel" data-tab-panel="data" class="panel-hidden">
+      <div class="card">
+        <h2>Browse Raw Data</h2>
+        <div class="form-row">
+          <div class="field">
+            <label>Dataset</label>
+            <select id="dt-dataset" onchange="onDataDatasetChange()"><option value="">Loading datasets...</option></select>
+          </div>
+          <div class="field field-narrow">
+            <label>Rows</label>
+            <input id="dt-n" type="number" value="25" min="1" max="1000">
+          </div>
+        </div>
+        <div class="form-row">
+          <div class="field">
+            <label>Sort by</label>
+            <select id="dt-sortby"><option value="">— none —</option></select>
+          </div>
+          <div class="field field-narrow">
+            <label>Order</label>
+            <select id="dt-order">
+              <option value="asc">Ascending</option>
+              <option value="desc">Descending</option>
+            </select>
+          </div>
+        </div>
+        <div id="dt-filters" class="filter-bar" style="display:none;">
+          <!-- categorical filter dropdowns populated dynamically -->
+        </div>
+        <button onclick="loadDataRows()">Load Rows</button>
+      </div>
+      <div id="dt-result"></div>
     </div>
 
     <!-- Analysis Tab -->
     <div id="analysis-panel" data-tab-panel="analysis" class="panel-hidden">
       <div class="card">
         <h2>Slice Data</h2>
-        <div class="row">
-          <div><label>Dataset ID</label><input id="sl-dataset" value="predictive_maintenance"></div>
-          <div><label>Dimensions (comma-sep)</label><input id="sl-dims" value="machine_type"></div>
+        <div class="form-row">
+          <div class="field"><label>Dataset ID</label><input id="sl-dataset" value="predictive_maintenance"></div>
+          <div class="field"><label>Dimensions (comma-sep)</label><input id="sl-dims" value="machine_type"></div>
         </div>
-        <div class="row">
-          <div><label>Metric</label><input id="sl-metric" value="failure"></div>
-          <div><label>Aggregation</label>
+        <div class="form-row">
+          <div class="field"><label>Metric</label><input id="sl-metric" value="failure"></div>
+          <div class="field"><label>Aggregation</label>
             <select id="sl-agg"><option>mean</option><option>sum</option><option>count</option><option>max</option><option>min</option><option>std</option></select>
           </div>
         </div>
@@ -71,13 +107,13 @@
       </div>
       <div class="card">
         <h2>Compare Data</h2>
-        <div class="row">
-          <div><label>Dataset ID</label><input id="cmp-dataset" value="predictive_maintenance"></div>
-          <div><label>Dimension</label><input id="cmp-dim" value="machine_type"></div>
+        <div class="form-row">
+          <div class="field"><label>Dataset ID</label><input id="cmp-dataset" value="predictive_maintenance"></div>
+          <div class="field"><label>Dimension</label><input id="cmp-dim" value="machine_type"></div>
         </div>
-        <div class="row">
-          <div><label>Metric</label><input id="cmp-metric" value="failure"></div>
-          <div><label>Aggregation</label>
+        <div class="form-row">
+          <div class="field"><label>Metric</label><input id="cmp-metric" value="failure"></div>
+          <div class="field"><label>Aggregation</label>
             <select id="cmp-agg"><option>mean</option><option>sum</option><option>count</option></select>
           </div>
         </div>
@@ -90,12 +126,12 @@
     <div id="training-panel" data-tab-panel="training" class="panel-hidden">
       <div class="card">
         <h2>Train Model</h2>
-        <div class="row">
-          <div><label>Dataset ID</label><input id="tr-dataset" value="predictive_maintenance"></div>
-          <div><label>Target name</label><input id="tr-target" value="failure_within_horizon"></div>
+        <div class="form-row">
+          <div class="field"><label>Dataset ID</label><input id="tr-dataset" value="predictive_maintenance"></div>
+          <div class="field"><label>Target name</label><input id="tr-target" value="failure_within_horizon"></div>
         </div>
-        <div class="row">
-          <div><label>Model type</label>
+        <div class="form-row">
+          <div class="field"><label>Model type</label>
             <select id="tr-type">
               <option>xgboost</option>
               <option>logistic_regression</option>
@@ -103,7 +139,7 @@
               <option>linear_regression</option>
             </select>
           </div>
-          <div><label>Model ID (optional)</label><input id="tr-modelid" placeholder="auto-generated"></div>
+          <div class="field"><label>Model ID (optional)</label><input id="tr-modelid" placeholder="auto-generated"></div>
         </div>
         <button onclick="trainModel()">Train</button>
         <div id="tr-result" style="margin-top:16px;"><div class="muted">Training results will appear here.</div></div>
@@ -119,13 +155,13 @@
       </div>
       <div class="card">
         <h2>Model Details</h2>
-        <label>Model ID</label><input id="md-id" placeholder="model-id">
+        <div class="field"><label>Model ID</label><input id="md-id" placeholder="model-id"></div>
         <button onclick="getModel()">Get Details</button>
         <div id="md-result" style="margin-top:16px;"></div>
       </div>
       <div class="card">
         <h2>Model Metrics</h2>
-        <label>Model ID</label><input id="md-metrics-id" placeholder="model-id">
+        <div class="field"><label>Model ID</label><input id="md-metrics-id" placeholder="model-id"></div>
         <button onclick="getModelMetrics()">Get Metrics</button>
         <div id="md-metrics-result" style="margin-top:16px;"></div>
       </div>
@@ -135,23 +171,20 @@
     <div id="prediction-panel" data-tab-panel="prediction" class="panel-hidden">
       <div class="card">
         <h2>Predict</h2>
-        <div class="row">
-          <div>
+        <div class="form-row">
+          <div class="field">
             <label>Model</label>
             <select id="pr-model"><option value="">Loading models...</option></select>
           </div>
-          <div><label>Entity ID</label><input id="pr-entity" value="TOOL_000"></div>
+          <div class="field"><label>Entity ID</label><input id="pr-entity" value="TOOL_000"></div>
         </div>
-        <div class="row">
-          <div><label>Timestamp (optional)</label><input id="pr-timestamp" placeholder="2026-07-15T12:00:00"></div>
-        </div>
+        <div class="field"><label>Timestamp (optional)</label><input id="pr-timestamp" placeholder="2026-07-15T12:00:00"></div>
         <button onclick="predict()">Predict</button>
         <div id="pr-result" style="margin-top:16px;"></div>
       </div>
       <div class="card">
         <h2>Explain Prediction (SHAP)</h2>
-        <label>Top K features</label>
-        <input id="pr-topk" type="number" value="10">
+        <div class="field field-narrow"><label>Top K features</label><input id="pr-topk" type="number" value="10"></div>
         <button onclick="explain()">Explain</button>
         <div id="pr-explain" style="margin-top:16px;"></div>
       </div>
@@ -471,10 +504,142 @@ async function loadModelDropdown() {
   }
 }
 
+// --- Data tab ---
+let _dataProfile = null;  // cached profile for the selected dataset
+
+async function loadDataDatasetDropdown() {
+  const sel = document.getElementById('dt-dataset');
+  try {
+    const r = await api('/datasets');
+    if (Array.isArray(r) && r.length) {
+      sel.innerHTML = '<option value="">Select a dataset...</option>' +
+        r.map(d => {
+          const id = d.dataset_id || d.id || '?';
+          const name = d.name || '';
+          return `<option value="${id}">${id}${name ? ' — ' + name : ''}</option>`;
+        }).join('');
+    } else {
+      sel.innerHTML = '<option value="">No datasets registered</option>';
+    }
+  } catch (e) {
+    sel.innerHTML = '<option value="">Error loading datasets</option>';
+  }
+}
+
+async function onDataDatasetChange() {
+  const dsId = document.getElementById('dt-dataset').value;
+  const filterBar = document.getElementById('dt-filters');
+  const sortSel = document.getElementById('dt-sortby');
+  filterBar.innerHTML = '';
+  sortSel.innerHTML = '<option value="">— none —</option>';
+  _dataProfile = null;
+
+  if (!dsId) {
+    filterBar.style.display = 'none';
+    return;
+  }
+
+  try {
+    const profile = await api('/datasets/' + dsId + '/profile');
+    _dataProfile = profile;
+    const cols = profile.columns || {};
+    const catCols = [];
+    const allCols = [];
+
+    for (const [name, info] of Object.entries(cols)) {
+      allCols.push(name);
+      if (info.type === 'categorical' && info.unique_count <= 50) {
+        catCols.push({ name, info });
+      }
+    }
+
+    // Populate sort dropdown with all columns
+    sortSel.innerHTML = '<option value="">— none —</option>' +
+      allCols.map(c => `<option value="${c}">${c}</option>`).join('');
+
+    // Build filter dropdowns for categorical columns
+    if (catCols.length) {
+      filterBar.style.display = 'flex';
+      filterBar.innerHTML = catCols.map(c => {
+        const options = (c.info.top_values || []).map(v =>
+          `<option value="${v.value}">${v.value} (${v.count})</option>`
+        ).join('');
+        return `<div class="filter-item">
+          <label>${c.name}</label>
+          <select id="dt-filter-${c.name}" data-col="${c.name}">
+            <option value="">All</option>${options}
+          </select>
+        </div>`;
+      }).join('');
+    } else {
+      filterBar.style.display = 'none';
+    }
+  } catch (e) {
+    filterBar.style.display = 'none';
+  }
+}
+
+async function loadDataRows() {
+  const el = document.getElementById('dt-result');
+  const dsId = document.getElementById('dt-dataset').value;
+  if (!dsId) {
+    el.innerHTML = banner('Select a dataset first.');
+    return;
+  }
+
+  el.innerHTML = '<div class="muted">Loading rows...</div>';
+
+  const n = parseInt(document.getElementById('dt-n').value) || 25;
+  const sortBy = document.getElementById('dt-sortby').value || null;
+  const order = document.getElementById('dt-order').value;
+  const descending = order === 'desc';
+
+  // Collect active filters
+  const filters = {};
+  if (_dataProfile) {
+    const cols = _dataProfile.columns || {};
+    for (const [name, info] of Object.entries(cols)) {
+      if (info.type !== 'categorical' || info.unique_count > 50) continue;
+      const sel = document.getElementById('dt-filter-' + name);
+      if (sel && sel.value) {
+        filters[name] = sel.value;
+      }
+    }
+  }
+
+  try {
+    const r = await api('/datasets/' + dsId + '/rows', 'POST', {
+      n, filters: Object.keys(filters).length ? filters : null,
+      sort_by: sortBy, descending
+    });
+    const rows = r.rows || [];
+    const cols = r.columns || [];
+    const matched = r.row_count ?? 0;
+    const returned = r.returned ?? rows.length;
+
+    let h = `<div class="row-count-badge">${matched.toLocaleString()} matched · ${returned} shown</div>`;
+    if (!rows.length) {
+      h += '<div class="muted">No rows matched the current filters.</div>';
+    } else {
+      h += '<div class="data-table-wrap"><table class="data-table"><thead><tr>';
+      h += cols.map(c => `<th>${c}</th>`).join('');
+      h += '</tr></thead><tbody>';
+      h += rows.map(row =>
+        '<tr>' + cols.map(c => `<td>${row[c] !== null && row[c] !== undefined ? row[c] : ''}</td>`).join('') + '</tr>'
+      ).join('');
+      h += '</tbody></table></div>';
+    }
+    el.innerHTML = h;
+  } catch (e) {
+    el.innerHTML = banner('Error: ' + e.message);
+  }
+}
+
 // Auto-load datasets, models, and prediction dropdown on page load
 listDatasets();
 listModels();
 loadModelDropdown();
+loadDataDatasetDropdown();
 </script>
 </body>
 </html>

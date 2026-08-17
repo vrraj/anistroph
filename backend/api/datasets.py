@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from fastapi import APIRouter, HTTPException
 
-from backend.schemas.api import RegisterDatasetRequest
+from backend.schemas.api import RegisterDatasetRequest, SampleRowsRequest
 from backend.services import get_services
 
 router = APIRouter(prefix="/datasets", tags=["datasets"])
@@ -46,5 +46,17 @@ async def profile_dataset(dataset_id: str):
     svc = get_services()
     try:
         return svc.profile(dataset_id)
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+
+
+@router.post("/{dataset_id}/rows")
+async def sample_rows(dataset_id: str, req: SampleRowsRequest):
+    """Return up to n raw rows from a dataset, optionally filtered."""
+    svc = get_services()
+    try:
+        return svc.sample_rows(
+            dataset_id, req.n, req.filters, req.columns, req.sort_by, req.descending
+        )
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e))
