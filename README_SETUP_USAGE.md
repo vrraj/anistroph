@@ -19,7 +19,7 @@ model training — training is an admin operation.
 | **Protocol** | Model Context Protocol (stdio) | OpenAPI / REST |
 | **Transport** | Local subprocess (stdio) | Public HTTPS via ngrok tunnel |
 | **Spec URL** | N/A (tools defined in Python) | `https://<ngrok-url>/openapi-gpt.json` |
-| **Scope** | 9 runtime tools | 13 runtime REST endpoints |
+| **Scope** | 13 runtime tools | 13 runtime REST endpoints |
 | **Training exposed?** | No | No |
 | **Setup** | Claude Desktop config JSON | Custom GPT → Actions → Import URL |
 | **Best for** | Local analysis, IDE integration | Cloud-based conversational analysis |
@@ -1080,15 +1080,28 @@ than average). Red = worse than average, green = better.
 
 ## 8. Predict
 
-The caller provides a model ID, entity ID, and timestamp. Anistroph
-retrieves historical observations, builds features using the same
-Feature Engine + persisted metadata, and returns the prediction.
+There are two prediction modes depending on whether the entity already
+exists in the dataset or you're predicting for a brand-new entity:
+
+**A. Entity lookup** (existing entity in the data): provide `model_id` +
+`entity_id` (+ `timestamp` for temporal datasets). Anistroph loads the
+entity's row(s) from the parquet, builds features using the persisted
+`FeatureMetadata`, and returns the prediction. The caller supplies no
+feature values — just an identifier.
+
+**B. Records** (brand-new entity, not in the data): provide `model_id` +
+`records` — a list of dicts with raw source-column values. The caller must
+include every column listed in the model's `features:` block (see §2a).
+The Feature Engine transforms them using the persisted metadata. The caller
+never constructs engineered features (no one-hot vectors, no rolling
+aggregates) — only raw source values.
 
 ### Via Python
 
 ```python
 from backend.services import get_services
 
+# A. Entity lookup (temporal dataset — entity + timestamp)
 pred = get_services().predict(
     model_id="predictive-maintenance-xgboost",
     entity_id="TOOL_000",
@@ -1096,17 +1109,100 @@ pred = get_services().predict(
 )
 print(f"Probability: {pred['probability']:.4f}")
 print(f"Prediction: {pred['prediction']}")
+
+# A. Entity lookup (non-temporal dataset — entity only)
+pred = get_services().predict(
+    model_id="wafer-yield-xgboost",
+    entity_id="WAFER_015000",
+)
+print(f"Predicted yield: {pred['predicted_yield']:.4f}")
+print(f"Actual yield:    {pred.get('actual_yield', 'N/A')}")
+
+# B. Records (new wafer — raw source values for every feature column)
+pred = get_services().predict(
+    model_id="wafer-yield-xgboost",
+    records=[{
+        "product_id": "PROD_A", "fab_id": "FAB_01", "process_route": "ROUTE_1",
+        "etch_tool": "ETCH_01", "etch_chamber": "CH_A", "etch_recipe": "RECIPE_A",
+        "deposition_tool": "DEP_01", "deposition_chamber": "DEP_CH_A",
+        "deposition_recipe": "DEP_RECIPE_A",
+        "etch_temperature_mean": 85.0, "etch_temperature_std": 1.0,
+        "etch_pressure_mean": 4.0, "etch_pressure_std": 0.1,
+        "etch_gas_flow_mean": 100.0, "etch_rf_power_mean": 500.0,
+        "etch_process_time": 60.0,
+        "deposition_temperature_mean": 300.0, "deposition_temperature_std": 2.0,
+        "deposition_pressure_mean": 2.0, "deposition_pressure_std": 0.05,
+        "deposition_process_time": 120.0,
+        "exposure_dose": 32.5, "focus_offset": 0.12,
+        "maintenance_age_etch": 100.0, "maintenance_age_deposition": 50.0,
+    }],
+)
+print(f"Predicted yields: {pred['predictions']}")
+
+# B. Records (Stage A model — only 7 pre-etch features needed)
+pred = get_services().predict(
+    model_id="semiconductor_yield_stage_a-xgboost_regressor-20260817002238",
+    records=[{
+        "product_id": "PROD_A", "fab_id": "FAB_01", "process_route": "ROUTE_1",
+        "etch_recipe": "RECIPE_A", "deposition_recipe": "DEP_RECIPE_A",
+        "exposure_dose": 32.5, "focus_offset": 0.12,
+    }],
+)
+print(f"Predicted yields: {pred['predictions']}")
 ```
 
 ### Via REST API
 
 ```bash
+# A. Entity lookup (temporal)
 curl -X POST http://localhost:9500/predictions \
   -H "Content-Type: application/json" \
   -d '{
     "model_id": "predictive-maintenance-xgboost",
     "entity_id": "TOOL_000",
     "timestamp": "2026-06-15T12:00:00"
+  }'
+
+# A. Entity lookup (non-temporal)
+curl -X POST http://localhost:9500/predictions \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model_id": "wafer-yield-xgboost",
+    "entity_id": "WAFER_015000"
+  }'
+
+# B. Records (new wafer — full feature set)
+curl -X POST http://localhost:9500/predictions \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model_id": "wafer-yield-xgboost",
+    "records": [{
+      "product_id": "PROD_A", "fab_id": "FAB_01", "process_route": "ROUTE_1",
+      "etch_tool": "ETCH_01", "etch_chamber": "CH_A", "etch_recipe": "RECIPE_A",
+      "deposition_tool": "DEP_01", "deposition_chamber": "DEP_CH_A",
+      "deposition_recipe": "DEP_RECIPE_A",
+      "etch_temperature_mean": 85.0, "etch_temperature_std": 1.0,
+      "etch_pressure_mean": 4.0, "etch_pressure_std": 0.1,
+      "etch_gas_flow_mean": 100.0, "etch_rf_power_mean": 500.0,
+      "etch_process_time": 60.0,
+      "deposition_temperature_mean": 300.0, "deposition_temperature_std": 2.0,
+      "deposition_pressure_mean": 2.0, "deposition_pressure_std": 0.05,
+      "deposition_process_time": 120.0,
+      "exposure_dose": 32.5, "focus_offset": 0.12,
+      "maintenance_age_etch": 100.0, "maintenance_age_deposition": 50.0
+    }]
+  }'
+
+# B. Records (Stage A — only 7 pre-etch features)
+curl -X POST http://localhost:9500/predictions \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model_id": "semiconductor_yield_stage_a-xgboost_regressor-20260817002238",
+    "records": [{
+      "product_id": "PROD_A", "fab_id": "FAB_01", "process_route": "ROUTE_1",
+      "etch_recipe": "RECIPE_A", "deposition_recipe": "DEP_RECIPE_A",
+      "exposure_dose": 32.5, "focus_offset": 0.12
+    }]
   }'
 ```
 
@@ -1123,49 +1219,189 @@ curl -X POST http://localhost:9500/predictions/batch \
 
 ### Via MCP (Claude Desktop)
 
-> "Predict the failure probability for TOOL_000 at 2026-06-15T12:00:00
-> using model predictive-maintenance-xgboost."
+**Entity lookup** (wafer already in the data):
+
+> "Predict wafer yield for WAFER_015000 using model wafer-yield-xgboost"
+
+**Records** (brand-new wafer — supply raw values for every feature):
+
+> "Predict wafer yield for a new wafer with: product_id=PROD_A,
+> fab_id=FAB_01, process_route=ROUTE_1, etch_tool=ETCH_01,
+> etch_chamber=CH_A, etch_recipe=RECIPE_A, deposition_tool=DEP_01,
+> deposition_chamber=DEP_CH_A, deposition_recipe=DEP_RECIPE_A,
+> etch_temperature_mean=85, etch_pressure_mean=4.0, exposure_dose=32.5,
+> focus_offset=0.1, and all other features at typical values"
+
+**Records** (Stage A model — only 7 pre-etch features):
+
+> "Predict wafer yield for a new wafer using the stage A model with:
+> product_id=PROD_A, fab_id=FAB_01, process_route=ROUTE_1,
+> etch_recipe=RECIPE_A, deposition_recipe=DEP_RECIPE_A,
+> exposure_dose=32.5, focus_offset=0.12"
+
+**Discovery** (not sure which model or features to use):
+
+> "What models are available for semiconductor yield prediction?"
+
+Claude will call `anistroph_list_models` and show you the model IDs,
+their datasets, and target names. Each model's `features:` block (in its
+dataset YAML) defines exactly which source columns you must supply when
+using `records` — see §2a for how to author the YAML.
 
 ---
 
 ## 9. Explain a Prediction
 
-Returns the top contributing features (model feature importance weighted
-by instance values). Explanations are deterministic and model-derived —
-no LLM fabrication.
+Returns the top contributing features using SHAP TreeExplainer (for XGBoost
+models) or importance-weighted contributions (fallback). Explanations are
+deterministic and model-derived — no LLM fabrication.
+
+**SHAP explanation normalization:** When one-hot encoding expands a source
+feature into multiple model features, the explanation layer aggregates SHAP
+contributions back to the original source feature before returning them.
+This means the caller sees `etch_tool = ETCH_02, impact = +0.0024` rather
+than separate `etch_tool__ETCH_01 = 0`, `etch_tool__ETCH_02 = 1` entries.
+See [SHAP explanation normalization](#shap-explanation-normalization) below
+for details.
 
 ### Via Python
 
 ```python
 from backend.services import get_services
 
+# Entity lookup (existing wafer)
 expl = get_services().explain(
-    model_id="predictive-maintenance-xgboost",
-    entity_id="TOOL_000",
-    timestamp="2026-06-15T12:00:00",
+    model_id="wafer-yield-xgboost",
+    entity_id="WAFER_015000",
     top_k=10,
 )
-print(f"Probability: {expl['probability']:.4f}")
+print(f"Predicted yield: {expl['predicted_yield']:.4f}")
 for d in expl["top_drivers"]:
-    print(f"  {d['feature']}: {d['impact']:.1%}")
+    print(f"  {d['feature']:25s} = {str(d['value']):15s} impact={d['impact']:+.6f}")
+
+# Records-based (new wafer — works for models without rolling transforms)
+expl = get_services().explain(
+    model_id="semiconductor_yield_stage_a-xgboost_regressor-20260817002238",
+    records=[{
+        "product_id": "PROD_B", "fab_id": "FAB_02", "process_route": "ROUTE_2",
+        "etch_recipe": "RECIPE_B", "deposition_recipe": "DEP_RECIPE_A",
+        "exposure_dose": 24.9, "focus_offset": 0.035,
+    }],
+    top_k=10,
+)
+for d in expl["top_drivers"]:
+    print(f"  {d['feature']:25s} = {str(d['value']):15s} impact={d['impact']:+.6f}")
 ```
 
 ### Via REST API
 
 ```bash
+# Entity lookup
 curl -X POST http://localhost:9500/predictions/explain \
   -H "Content-Type: application/json" \
   -d '{
-    "model_id": "predictive-maintenance-xgboost",
-    "entity_id": "TOOL_000",
-    "timestamp": "2026-06-15T12:00:00",
+    "model_id": "wafer-yield-xgboost",
+    "entity_id": "WAFER_015000",
+    "top_k": 10
+  }'
+
+# Records-based
+curl -X POST http://localhost:9500/predictions/explain \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model_id": "semiconductor_yield_stage_a-xgboost_regressor-20260817002238",
+    "records": [{
+      "product_id": "PROD_B", "fab_id": "FAB_02", "process_route": "ROUTE_2",
+      "etch_recipe": "RECIPE_B", "deposition_recipe": "DEP_RECIPE_A",
+      "exposure_dose": 24.9, "focus_offset": 0.035
+    }],
     "top_k": 10
   }'
 ```
 
 ### Via MCP (Claude Desktop)
 
-> "Explain why that prediction came out that way. What are the top drivers?"
+**Entity lookup:**
+
+> "Explain the wafer yield prediction for WAFER_015000 using model
+> wafer-yield-xgboost. What are the top drivers?"
+
+**Records-based:**
+
+> "Explain the yield prediction for a new wafer with: product_id=PROD_B,
+> fab_id=FAB_02, process_route=ROUTE_2, etch_recipe=RECIPE_B,
+> deposition_recipe=DEP_RECIPE_A, exposure_dose=24.9, focus_offset=0.035
+> using the stage A model"
+
+### SHAP explanation normalization
+
+When a categorical source column is one-hot encoded, the FeatureEngine
+expands it into N binary model features using the naming convention
+`{source}__{category}`. SHAP returns a separate impact value for each.
+The explanation layer groups these back to the original source feature
+so the caller sees a single human-readable entry per source column.
+
+**How the mapping works:**
+
+```
+Source column:  etch_tool
+Input value:    ETCH_02
+                    ↓ (FeatureEngine one-hot encodes)
+Model columns:  etch_tool__ETCH_01 = 0
+                etch_tool__ETCH_02 = 1    ← active (value=1)
+                etch_tool__ETCH_03 = 0
+                    ↓ (SHAP computes per-column impacts)
+SHAP values:    etch_tool__ETCH_01 → -0.0010
+                etch_tool__ETCH_02 → +0.0024
+                etch_tool__ETCH_03 → -0.0005
+                    ↓ (grouping: split on "__", sum impacts, find value=1)
+Explanation:    feature = "etch_tool"
+                value   = "ETCH_02"        ← the active category
+                impact  = +0.0009          ← sum of all three
+```
+
+**Response format:**
+
+```json
+{
+  "feature": "etch_tool",
+  "value": "ETCH_02",
+  "impact": 0.0009,
+  "detail": {
+    "active_category": "ETCH_02",
+    "categories": {
+      "ETCH_01": {"value": 0.0, "impact": -0.0010},
+      "ETCH_02": {"value": 1.0, "impact": 0.0024},
+      "ETCH_03": {"value": 0.0, "impact": -0.0005}
+    }
+  }
+}
+```
+
+The `detail` field retains the raw per-category SHAP values for debugging
+but is not needed for interpretation. The top-level `feature`, `value`,
+and `impact` are what the caller (or Claude) should use.
+
+**Naming convention rules (to avoid issues):**
+
+- One-hot columns use `{source}__{category}` with a double-underscore
+  separator (e.g. `etch_tool__ETCH_02`)
+- The grouping logic splits on `__` from the right (`rsplit("__", 1)`), so
+  category values may contain `__` but **source column names must not**
+- Passthrough (`current` transform) columns are named `{source}_current`
+  in the model and displayed as `{source}` (suffix stripped) in the
+  explanation
+- Rolling-window columns are named `{source}_{op}_{window}` (e.g.
+  `temperature_mean_6h`) and are not grouped (each is a distinct feature)
+- Source column names in the YAML `columns:` block should avoid `__` to
+  prevent ambiguity in the grouping logic
+
+**Why this matters:** Without normalization, an LLM trying to explain SHAP
+values sees separate entries for `etch_tool__ETCH_01 = 0`, `etch_tool__ETCH_02
+= 1`, `etch_tool__ETCH_03 = 0` and must interpret the statistical effect of
+each one-hot zero — leading to confusing statements like "not being ETCH_01
+pushed yield up." With normalization, it sees `etch_tool = ETCH_02,
+impact = +0.0009` — a single, unambiguous statement.
 
 ---
 
@@ -1369,6 +1605,11 @@ appropriate `anistroph_*` tool call.
 - "Predict film thickness for WAFER_015000 using model film-thickness-xgboost"
 - "Predict remaining useful life for TOOL_010 at 2026-07-15T12:00:00 using model rul-xgboost"
 - "Predict maintenance required for TOOL_010 at 2026-07-15T12:00:00 using model maintenance-required-xgboost"
+- "Predict wafer yield for a new wafer with: product_id=PROD_A, fab_id=FAB_01, process_route=ROUTE_1, etch_tool=ETCH_01, etch_chamber=CH_A, etch_recipe=RECIPE_A, deposition_tool=DEP_01, deposition_chamber=DEP_CH_A, deposition_recipe=DEP_RECIPE_A, etch_temperature_mean=85, etch_pressure_mean=4.0, exposure_dose=32.5, focus_offset=0.1, and all other features at typical values"
+- "Predict wafer yield for a new wafer using the stage A model with: product_id=PROD_A, fab_id=FAB_01, process_route=ROUTE_1, etch_recipe=RECIPE_A, deposition_recipe=DEP_RECIPE_A, exposure_dose=32.5, focus_offset=0.12"
+- "What models are available for semiconductor yield prediction?"
+- "What inputs does the wafer-yield-xgboost model need for prediction?"
+- "What inputs does the stage A model need for prediction?"
 - "Explain that prediction — what are the top drivers?"
 - "Explain the critical dimension prediction for WAFER_015000 with top_k=10"
 - "Explain the film thickness prediction for WAFER_015000 using model film-thickness-xgboost"
@@ -1701,6 +1942,7 @@ for d in expl["top_drivers"]:
 | `anistroph_compare_data` | `dataset_id` (string), `dimension` (string), `metric` (string), `aggregation` (string, default "mean"), `filters` (object, optional) | Compare a metric across values of a single dimension. Returns one row per dimension value with the aggregated metric. |
 | `anistroph_list_models` | *(none)* | List all registered trained models. Returns model IDs, types, dataset IDs, and creation timestamps. |
 | `anistroph_get_model_metrics` | `model_id` (string) | Get the evaluation metrics for a trained model. Returns ROC-AUC, PR-AUC, precision, recall, F1, confusion matrix, and decision threshold. |
+| `anistroph_get_model_inputs` | `model_id` (string) | Get the prediction input schema for a model — what the caller must supply to predict. Returns the prediction mode (`entity_lookup` vs `records_or_entity_lookup`), the `entity_key`, whether `timestamp` is required, and the list of required source columns with their types and transforms. Use this before calling `anistroph_predict` to discover what inputs a model expects. Column order does not matter — columns are matched by name. |
 | `anistroph_predict` | `model_id` (string), `entity_id` (string, optional), `timestamp` (string, optional), `records` (array of objects, optional) | Make a prediction using a trained model. For temporal datasets, provide `entity_id` and `timestamp` — the server retrieves historical observations and builds features. For non-temporal datasets, provide `records` (raw feature dicts). Returns probability and binary prediction. |
 | `anistroph_explain_prediction` | `model_id` (string), `entity_id` (string, optional), `timestamp` (string, optional), `records` (array of objects, optional), `top_k` (integer, default 10) | Explain a prediction by returning the top contributing features. Returns the same probability plus a list of top drivers with feature names and impact values. Explanations are deterministic and model-derived — no LLM fabrication. |
 | `anistroph_find_interesting_slices` | `dataset_id` (string), `metric` (string), `dimensions` (array of strings, optional), `min_sample_size` (integer, default 100), `max_dimensions` (integer, default 3), `aggregation` (string, default "mean"), `filters` (object, optional), `top_k` (integer, default 20) | Find slices with the largest deviation from the overall metric baseline. Searches 1, 2, and 3-dimensional combinations of categorical columns. Returns ranked slices with dimension values, row count, metric value, and difference from baseline. |
@@ -1720,6 +1962,7 @@ for d in expl["top_drivers"]:
 | `get_services().list_models()` | *(none)* | `list[ModelMetadata]` | List all trained models |
 | `get_services().get_model(model_id)` | model_id (str) | `ModelMetadata` | Get a model's metadata |
 | `get_services().get_model_metrics(model_id)` | model_id (str) | `dict` | Get model evaluation metrics |
+| `get_services().get_model_inputs(model_id)` | model_id (str) | `dict` (model_id, dataset_id, target_name, target_type, prediction_mode, entity_key, requires_timestamp, required_columns, note) | Get the prediction input schema for a model — what the caller must supply to predict |
 | `get_services().delete_model(model_id)` | model_id (str) | `bool` | Delete a model and its artifacts |
 | `get_services().predict(model_id, entity_id?, timestamp?, records?)` | model_id, entity_id, timestamp, records (all optional except model_id) | `dict` (probability + prediction) | Make a prediction |
 | `get_services().explain(model_id, entity_id?, timestamp?, records?, top_k?)` | model_id, entity_id, timestamp, records, top_k (default 10) | `dict` (probability + top_drivers) | Explain a prediction |

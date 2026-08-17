@@ -491,14 +491,29 @@ class TestSHAPExplainability:
             assert c["impact"] < 0, f"top_negative feature {c['feature']} has non-negative impact"
 
     def test_explain_preserves_feature_names(self, trained_semi_model):
-        """Feature names in explanations must match the engineered feature names."""
+        """Feature names in explanations must be valid source columns or engineered names.
+
+        One-hot columns are grouped by source column (e.g. etch_tool__ETCH_02
+        becomes etch_tool with value=ETCH_02). Non-one-hot features have the
+        _current suffix stripped for display. Both must trace back to a real
+        source column or engineered feature.
+        """
         svc, df = trained_semi_model
         wafer_id = df["wafer_id"][0]
         expl = svc.explain("test-shap-xgb", entity_id=wafer_id, top_k=10)
         fm = svc.model_registry.load_feature_metadata("test-shap-xgb")
-        all_features = set(fm.feature_names)
+        # Build the set of valid source column names from engineered feature names.
+        # One-hot: "source__category" -> "source"; current: "col_current" -> "col"
+        valid_sources = set()
+        for fname in fm.feature_names:
+            if "__" in fname:
+                valid_sources.add(fname.rsplit("__", 1)[0])
+            elif fname.endswith("_current"):
+                valid_sources.add(fname[:-len("_current")])
+            else:
+                valid_sources.add(fname)
         for c in expl["top_positive"] + expl["top_negative"]:
-            assert c["feature"] in all_features, f"unknown feature in explanation: {c['feature']}"
+            assert c["feature"] in valid_sources, f"unknown feature in explanation: {c['feature']}"
 
     def test_explain_etch02_chb_is_negative(self, trained_semi_model):
         """A wafer with ETCH_02 + CH_B should have those as negative contributors."""
@@ -511,10 +526,19 @@ class TestSHAPExplainability:
         wafer_id = target_df["wafer_id"][0]
         expl = svc.explain("test-shap-xgb", entity_id=wafer_id, top_k=10)
 
-        # etch_tool__ETCH_02 or etch_chamber__CH_B should appear in top_negative
-        neg_features = {c["feature"] for c in expl["top_negative"]}
-        assert "etch_tool__ETCH_02" in neg_features or "etch_chamber__CH_B" in neg_features, (
-            "ETCH_02 or CH_B not in top negative contributors for a wafer with that combination"
+        # etch_tool or etch_chamber should appear in top_negative with the
+        # active category being ETCH_02 or CH_B respectively.
+        neg_entries = {c["feature"]: c for c in expl["top_negative"]}
+        found = False
+        for feat_name, entry in neg_entries.items():
+            if feat_name == "etch_tool" and entry.get("value") == "ETCH_02":
+                found = True
+                break
+            if feat_name == "etch_chamber" and entry.get("value") == "CH_B":
+                found = True
+                break
+        assert found, (
+            "etch_tool=ETCH_02 or etch_chamber=CH_B not in top negative contributors"
         )
 
     def test_explain_top_drivers_backward_compat(self, trained_semi_model):
@@ -599,9 +623,18 @@ class TestSHAPExplainability:
 
         expl = svc.explain("test-shap-xgb", entity_id=wafer_id, top_k=10)
 
-        neg_features = {c["feature"] for c in expl["top_negative"]}
-        # At least one of ETCH_02 or CH_B should be in the negative contributors.
-        assert "etch_tool__ETCH_02" in neg_features or "etch_chamber__CH_B" in neg_features, (
+        neg_entries = {c["feature"]: c for c in expl["top_negative"]}
+        # At least one of etch_tool=ETCH_02 or etch_chamber=CH_B should be
+        # in the negative contributors (grouped one-hot format).
+        found = False
+        for feat_name, entry in neg_entries.items():
+            if feat_name == "etch_tool" and entry.get("value") == "ETCH_02":
+                found = True
+                break
+            if feat_name == "etch_chamber" and entry.get("value") == "CH_B":
+                found = True
+                break
+        assert found, (
             "For a wafer processed on ETCH_02+CH_B, the explanation should "
             "identify at least one of them as pushing yield down."
         )

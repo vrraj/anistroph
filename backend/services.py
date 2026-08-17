@@ -290,6 +290,78 @@ class AnistrophServices:
 
     # --- Prediction operations ---
 
+    def get_model_inputs(self, model_id: str) -> dict[str, Any]:
+        """Return the prediction input schema for a model.
+
+        Tells the caller what they need to supply to predict with this model:
+        - prediction_mode: 'entity_lookup' (rolling-window transforms require
+          history, so only entity_id+timestamp works) or
+          'entity_lookup_or_records' (only current/categorical transforms,
+          so records with raw values also work)
+        - entity_key: the column name used for entity_id lookups
+        - requires_timestamp: whether timestamp is needed (temporal datasets)
+        - required_columns: for records-based prediction, the source columns
+          the caller must include, with their types and transforms
+        """
+        meta = self.model_registry.get(model_id)
+        if meta is None:
+            raise ValueError(f"model {model_id!r} not found")
+        config = self.get_config(meta.dataset_id)
+        spec = config.dataset_spec
+        fs = self.model_registry.load_feature_spec(model_id)
+
+        # Transforms that require historical observations (rolling windows,
+        # time-derived features). If any are present, records-based prediction
+        # won't work — the caller must use entity_id + timestamp so Anistroph
+        # can load history and build the rolling features.
+        history_transforms = {"mean", "min", "max", "std", "median", "slope",
+                              "delta", "hour_of_day", "day_of_week", "elapsed_time"}
+
+        required_columns = []
+        has_history_transforms = False
+        for feat_name, col_spec in fs.features.items():
+            col = spec.columns.get(col_spec.column)
+            transforms = [
+                t if isinstance(t, str) else list(t.keys())[0]
+                for t in col_spec.transforms
+            ]
+            if any(t in history_transforms for t in transforms):
+                has_history_transforms = True
+            required_columns.append({
+                "column": col_spec.column,
+                "type": col.type.value if col else "unknown",
+                "transforms": transforms,
+            })
+
+        if has_history_transforms:
+            prediction_mode = "entity_lookup"
+            mode_note = (
+                "This model uses rolling-window transforms that require historical "
+                "observations. Use entity_id + timestamp — Anistroph loads the entity's "
+                "history and builds the rolling features. Records-based prediction is "
+                "not supported for this model."
+            )
+        else:
+            prediction_mode = "entity_lookup_or_records"
+            mode_note = (
+                "Both prediction modes work: (1) entity_id (+ timestamp if temporal) "
+                "to look up an existing row, or (2) records — a list of dicts with the "
+                "required_columns below. Column order does not matter — columns are "
+                "matched by name."
+            )
+
+        return {
+            "model_id": model_id,
+            "dataset_id": meta.dataset_id,
+            "target_name": meta.target_name,
+            "target_type": meta.target_type,
+            "prediction_mode": prediction_mode,
+            "entity_key": spec.entity_key,
+            "requires_timestamp": spec.is_temporal(),
+            "required_columns": required_columns,
+            "note": mode_note,
+        }
+
     def predict(self, model_id: str, entity_id: Optional[str] = None,
                 timestamp: Optional[str] = None, records: Optional[list[dict]] = None) -> dict[str, Any]:
         meta = self.model_registry.get(model_id)

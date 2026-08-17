@@ -93,6 +93,15 @@ TOOL_DEFS: list[tuple[str, str, dict[str, Any]]] = [
         },
     ),
     (
+        "anistroph_get_model_inputs",
+        "Get the prediction input schema for a trained model — what the caller must supply to predict. Returns the prediction mode (entity_id lookup vs records), the entity_key, whether a timestamp is required, and (for records-based prediction) the list of required source columns with their types and transforms. Use this before calling anistroph_predict to discover what inputs a model expects.",
+        {
+            "type": "object",
+            "properties": {"model_id": {"type": "string"}},
+            "required": ["model_id"],
+        },
+    ),
+    (
         "anistroph_predict",
         "Make a prediction using a trained model. For temporal datasets, provide entity_id and timestamp. For non-temporal datasets, provide records.",
         {
@@ -236,6 +245,8 @@ async def call_tool(name: str, arguments: dict[str, Any]) -> list[types.TextCont
             ]
         elif name == "anistroph_get_model_metrics":
             result = svc.get_model_metrics(arguments["model_id"])
+        elif name == "anistroph_get_model_inputs":
+            result = svc.get_model_inputs(arguments["model_id"])
         elif name == "anistroph_predict":
             result = svc.predict(
                 arguments["model_id"],

@@ -58,8 +58,9 @@ Under the hood, the platform is powered by **Polars + DuckDB + Parquet** for fas
 
 **Feature engineering**
 - **Leakage-safe transforms** — Rolling windows, slopes, deltas, and temporal features only use observations up to and including the current time. No future data leaks into training or inference.
-- **Categorical encoding** — One-hot encoding with learned categories persisted in `FeatureMetadata` so inference applies the identical encoding as training.
-- **Stable feature identities** — Feature names are human-readable and preserved end-to-end (e.g. `etch_tool__ETCH_02`, `temperature_mean_6h`). SHAP explanations map directly back to meaningful source conditions.
+- **Categorical encoding** — One-hot encoding with learned categories persisted in `FeatureMetadata` so inference applies the identical encoding as training. Output columns follow the `{source}__{category}` naming convention (e.g. `etch_tool__ETCH_02`).
+- **SHAP explanation normalization** — When one-hot encoding expands a source feature into multiple model features, `anistroph_explain_prediction` aggregates SHAP contributions back to the original source feature. The MCP response returns `{feature: "etch_tool", value: "ETCH_02", impact: +0.0024}` rather than separate `etch_tool__ETCH_01 = 0`, `etch_tool__ETCH_02 = 1` entries. Raw per-category SHAP values are retained in a `detail` field for debugging.
+- **Stable feature identities** — Feature names are human-readable and preserved end-to-end. SHAP explanations map directly back to meaningful source conditions, not opaque engineered indices.
 - **Dataset-specific preparation** — Each dataset may have its own feature preparation logic while sharing the same downstream training, inference, and analysis services.
 
 **Modeling**
@@ -85,7 +86,7 @@ Under the hood, the platform is powered by **Polars + DuckDB + Parquet** for fas
 
 **MCP runtime access**
 - **MCP stdio server** — Anistroph exposes runtime analysis and inference through MCP stdio for use by clients such as Claude Desktop.
-- **12 MCP tools** — Dataset discovery, dataset profiling, slicing, comparison, interesting-slice discovery, raw row sampling, model discovery, model metrics, prediction, SHAP-based prediction explanation, held-out evaluation, and error slice discovery.
+- **13 MCP tools** — Dataset discovery, dataset profiling, slicing, comparison, interesting-slice discovery, raw row sampling, model discovery, model metrics, model input schema, prediction, SHAP-based prediction explanation, held-out evaluation, and error slice discovery.
 - **No training via MCP** — Model training is an administrative operation. MCP is for runtime analysis and inference only.
 
 | Tool | What it does |
@@ -977,14 +978,25 @@ for c in expl['top_negative']:
 Feature engineering, preprocessing, model persistence, and inference preserve stable, human-readable feature identities and feature order:
 
 1. **FeatureSpec** defines source columns and transforms
-2. **FeatureEngine** produces named output columns (e.g. `etch_tool__ETCH_02`)
+2. **FeatureEngine** produces named output columns using the `{source}__{category}` convention for one-hot and `{source}_current` for passthrough
 3. **FeatureMetadata** persists the exact feature names and order
 4. **Model artifact** stores `feature_metadata.json` alongside `model.joblib`
 5. **Inference** reloads feature metadata and selects features in the same order
 6. **SHAP** produces values in the same order as the feature matrix columns
-7. **Explanation** maps SHAP values back to feature names
+7. **Explanation normalization** groups one-hot SHAP values back to the original source feature — sums contributions across all categories, identifies the active category (value=1), and returns `{feature, value, impact}` in human-readable form
 
-This ensures explanations always map back to meaningful manufacturing or operational conditions (e.g. `etch_tool__ETCH_02` = "the wafer was processed on etch tool ETCH_02").
+This ensures explanations always map back to meaningful manufacturing or operational conditions (e.g. `etch_tool = ETCH_02` = "the wafer was processed on etch tool ETCH_02") rather than opaque engineered indices.
+
+**SHAP explanation normalization in detail:** When a categorical source column like `etch_tool` is one-hot encoded into `etch_tool__ETCH_01`, `etch_tool__ETCH_02`, `etch_tool__ETCH_03`, SHAP returns a separate impact for each. The explanation layer groups these by splitting on the `__` separator, sums the impacts, and reports the active category:
+
+```
+One-hot SHAP values:          Grouped explanation:
+  etch_tool__ETCH_01 = -0.001    →  feature: "etch_tool"
+  etch_tool__ETCH_02 = +0.002    →  value:   "ETCH_02"     (the active category)
+  etch_tool__ETCH_03 = -0.0005   →  impact:  +0.0005       (sum of all three)
+```
+
+Raw per-category SHAP values are retained in a `detail` field for debugging but are not in the default MCP response. This makes agentic explanations clean — Claude sees `etch_tool = ETCH_02 contributed +0.0005` rather than trying to interpret three separate one-hot entries.
 
 SHAP explains **why the model produced a particular prediction**. It does not establish that a feature physically caused the observed outcome.
 

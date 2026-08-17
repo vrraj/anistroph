@@ -110,6 +110,19 @@ def explain_prediction(
         ts_str = str(entity_df[spec.time_key][0]) if spec.time_key and spec.time_key in entity_df.columns else None
     elif records is not None:
         df = pl.DataFrame(records)
+        # Add placeholder entity_key / time_key if missing (same fix as
+        # inference.predict — build_features sorts by these columns for
+        # temporal datasets, but records-based prediction doesn't include
+        # them. Safe because only current/categorical transforms are used
+        # with records; the placeholder values are never read as features.)
+        placeholder_cols = {}
+        if spec.entity_key and spec.entity_key not in df.columns:
+            placeholder_cols[spec.entity_key] = ["__record__"] * df.height
+        if spec.time_key and spec.time_key not in df.columns:
+            from datetime import datetime as _dt
+            placeholder_cols[spec.time_key] = [_dt(2000, 1, 1)] * df.height
+        if placeholder_cols:
+            df = df.with_columns([pl.Series(k, v) for k, v in placeholder_cols.items()])
         engine = FeatureEngine()
         feat_df, _ = engine.build_features(df, spec, feature_spec, metadata=feature_metadata, fit=False)
         X = feat_df.select(feature_cols).to_numpy()
@@ -126,6 +139,14 @@ def explain_prediction(
 
     # --- Compute per-prediction contributions ---
     contributions = _compute_contributions(predictor, X, feature_cols, feature_values)
+
+    # --- Group one-hot SHAP values by source column ---
+    # One-hot encoding creates N separate binary columns per categorical
+    # feature (e.g. product_id__PROD_A, product_id__PROD_B, product_id__PROD_C).
+    # SHAP returns a separate impact for each. Group them back into a single
+    # entry per source column so the caller sees "product_id = PROD_B" with
+    # the combined impact, rather than three separate "PROD_A = 0", etc.
+    contributions = _group_onehot_contributions(contributions)
 
     # Split into positive (increase prediction) and negative (decrease).
     positive = [c for c in contributions if c["impact"] > 0]
@@ -233,3 +254,70 @@ def _compute_contributions(
             "value": feature_values.get(fname),
         })
     return contributions
+
+
+def _group_onehot_contributions(contributions: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Group one-hot SHAP contributions by source column.
+
+    One-hot encoding creates columns named ``{source}__{category}``. SHAP
+    returns a separate impact for each. This function groups them back into
+    a single entry per source column, reporting the active category (the one
+    with value=1) and the summed impact across all one-hot columns for that
+    source.
+
+    Non-one-hot features (e.g. ``exposure_dose_current``) are passed through
+    unchanged.
+
+    Example input:
+      [
+        {"feature": "product_id__PROD_A", "impact": +0.0004, "value": 0.0},
+        {"feature": "product_id__PROD_B", "impact": +0.0006, "value": 1.0},
+        {"feature": "product_id__PROD_C", "impact":  0.0000, "value": 0.0},
+        {"feature": "exposure_dose_current", "impact": -0.0010, "value": 24.9},
+      ]
+
+    Example output:
+      [
+        {"feature": "product_id", "value": "PROD_B", "impact": +0.0010,
+         "detail": {"active_category": "PROD_B", "categories": {...}}},
+        {"feature": "exposure_dose", "value": 24.9, "impact": -0.0010},
+      ]
+    """
+    # Detect one-hot columns by the "__" separator.
+    groups: dict[str, list[dict[str, Any]]] = {}
+    standalone: list[dict[str, Any]] = []
+
+    for c in contributions:
+        fname = c["feature"]
+        if "__" in fname:
+            source, category = fname.rsplit("__", 1)
+            groups.setdefault(source, []).append({**c, "_category": category})
+        else:
+            # Strip the _current suffix for cleaner display if present.
+            display_name = fname
+            if fname.endswith("_current"):
+                display_name = fname[:-len("_current")]
+            standalone.append({**c, "feature": display_name})
+
+    # Build grouped contributions.
+    grouped: list[dict[str, Any]] = []
+    for source, members in groups.items():
+        total_impact = sum(m["impact"] for m in members)
+        # Find the active category (value=1). For records-based prediction
+        # with unseen categories, all may be 0.
+        active = next((m for m in members if m["value"] == 1.0), None)
+        active_category = active["_category"] if active else "(unseen)"
+        grouped.append({
+            "feature": source,
+            "value": active_category,
+            "impact": float(total_impact),
+            "detail": {
+                "active_category": active_category,
+                "categories": {
+                    m["_category"]: {"value": m["value"], "impact": m["impact"]}
+                    for m in members
+                },
+            },
+        })
+
+    return standalone + grouped
