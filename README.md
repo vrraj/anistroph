@@ -64,7 +64,7 @@ A common predictive lifecycle — each dataset keeps its own schema, features, a
 - **Cross-interface validation** — Claude/agent-generated inference for a model — predictions, explanations, and summaries — can be cross-validated in the Anistroph Web UI using the same source-feature JSON and persisted model/runtime.
 
 
-Anistroph ships with **synthetic reference datasets** across four domains — semiconductor manufacturing, predictive maintenance, Bay Area home prices, and **semiconductor materials procurement & supply planning** — that exercise the architecture across regression, classification, temporal forecasting, and multidimensional analysis. You can **add your own dataset** by authoring a `dataset.yaml` and registering it — see [Adding a Dataset](#adding-a-dataset) for the process summary and the [Setup & Usage Guide](docs/setup-usage.md) for the full YAML reference and worked examples.
+Anistroph ships with **synthetic reference datasets** across four domains — semiconductor manufacturing, predictive maintenance, Bay Area home prices, and **semiconductor materials procurement & supply planning** — that exercise the architecture across regression, classification, temporal forecasting, and multidimensional analysis. You can **add your own dataset** by authoring a `dataset.yaml` and registering it — see [Adding a Dataset](#adding-a-dataset) for the process summary and the [Setup & Usage Guide → Dataset Configuration](docs/setup-usage.md#dataset-configuration) for the full YAML reference and worked examples.
 
 > Anistroph is a reference architecture. The included datasets and models demonstrate how the components fit together rather than claiming validation across every potential domain.
 
@@ -916,7 +916,7 @@ split:
   eval: 0.20
 ```
 
-For the full YAML reference — column types/roles, the complete transform table, target semantics, split configuration, and worked examples (non-temporal regression, temporal classification with rolling windows, multi-target pattern) — see the **[Setup & Usage Guide](docs/setup-usage.md)**.
+For the full YAML reference — column types/roles, the complete transform table, target semantics, split configuration, and worked examples (non-temporal regression, temporal classification with rolling windows, multi-target pattern) — see the **[Setup & Usage Guide → Dataset Configuration](docs/setup-usage.md#dataset-configuration)**.
 
 ## Adding a Model
 

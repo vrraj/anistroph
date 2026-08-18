@@ -46,3 +46,5 @@ async def find_eval_slices(model_id: str, req: EvaluationSlicesRequest):
         )
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"{type(e).__name__}: {e}")

@@ -213,7 +213,7 @@ Anistroph ships with synthetic reference datasets across four domains exercising
 | **Bay Area Home Prices** | Real estate | 40,000 | Sale price (regression) |
 | **Semiconductor Materials Procurement** | Supply chain & materials planning | ~100,000 | Material demand next 4 weeks (regression), shortage risk next 4 weeks (classification) |
 
-Each dataset is declared through a `dataset.yaml` and registered with one call. You can add your own dataset by authoring a YAML and registering it — see [Adding a Dataset](https://github.com/vrraj/anistroph#adding-a-dataset) in the README.
+Each dataset is declared through a `dataset.yaml` and registered with one call. You can add your own dataset by authoring a YAML and registering it — see [Adding a Dataset](https://github.com/vrraj/anistroph#adding-a-dataset) in the README, and the [Dataset Configuration reference](setup-usage#dataset-configuration) in the Setup & Usage Guide for the full YAML schema, transform table, and worked examples.
 
 ## Architecture in brief
 

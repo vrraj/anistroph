@@ -1035,22 +1035,30 @@ async function findErrorSlices() {
     el.innerHTML = banner('Please select a model first.');
     return;
   }
+  // Pick the error metric based on the model's target type.
+  // Regression: abs_error (absolute error). Classification: log_loss.
+  const model = _evalModels.find(m => (m.model_id || m.id) === modelId);
+  const tgtType = (model && model.target_type) || '';
+  const isRegression = tgtType === 'regression';
+  const metric = isRegression ? 'abs_error' : 'log_loss';
+  const metricLabel = isRegression ? 'abs error' : 'log loss';
+
   el.innerHTML = '<div class="muted">Searching for error slices...</div>';
   try {
     const r = await api('/evaluations/' + encodeURIComponent(modelId) + '/slices', 'POST', {
-      metric: 'abs_error',
-      min_sample_size: 50,
+      metric: metric,
+      min_sample_size: 20,
       max_dimensions: 3,
       top_k: 20,
     });
     if (!Array.isArray(r) || !r.length) {
-      el.innerHTML = '<div class="muted">No slices found (try lowering min sample size).</div>';
+      el.innerHTML = '<div class="muted">No slices found — the evaluation set may be too small for the minimum sample size. Try a model with a larger eval partition.</div>';
       return;
     }
     const baseline = r[0].overall_baseline;
     let h = '<div class="result-card">';
     h += '<div class="result-title">Error Slice Discovery</div>';
-    h += `<div class="muted" style="margin-bottom:12px;">Overall ${r[0].dimensions.length > 0 ? "abs_error" : ""} baseline: ${fmtMetric('mae', baseline)} · top ${r.length} slices by deviation</div>`;
+    h += `<div class="muted" style="margin-bottom:12px;">Overall ${metricLabel} baseline: ${fmtMetric('mae', baseline)} · top ${r.length} slices by deviation</div>`;
     h += '<div class="data-table-wrap"><table class="data-table"><thead><tr>';
     h += '<th>Dimensions</th><th>Values</th><th>Rows</th><th>Error</th><th>Diff</th><th>vs Overall</th>';
     h += '</tr></thead><tbody>';
