@@ -22,19 +22,21 @@ Each step is a prompt you can paste into Claude Desktop (or any MCP client conne
 
 ## The Inference Lifecycle
 
-Every dataset in Anistroph follows the same seven-step lifecycle, regardless of domain or task type:
+Every dataset in Anistroph follows the same core lifecycle, regardless of domain or task type:
 
 | Step | Purpose | MCP Tool |
 |------|---------|----------|
-| **1. Discover** | See what datasets and models exist | `anistroph_list_datasets`, `anistroph_list_models` |
-| **2. Understand** | Profile the dataset and slice it by dimensions | `anistroph_profile_dataset`, `anistroph_slice_data`, `anistroph_compare_data` |
-| **3. Inspect the input contract** | Learn what the model needs to predict | `anistroph_get_model_inputs` |
-| **4. Predict** | Run inference — entity lookup or records | `anistroph_predict` |
-| **5. Explain** | SHAP feature drivers for a prediction | `anistroph_explain_prediction` |
-| **6. Evaluate** | Held-out metrics on the evaluation partition | `anistroph_evaluate_model` |
-| **7. Find error slices** | Where does the model break? | `anistroph_find_evaluation_slices` |
+| **Discover** | See what datasets and models exist | `anistroph_list_datasets`, `anistroph_list_models` |
+| **Understand** | Profile the dataset and slice it by dimensions | `anistroph_profile_dataset`, `anistroph_slice_data`, `anistroph_compare_data` |
+| **Inspect the input contract** | Learn what the model needs to predict | `anistroph_get_model_inputs` |
+| **Predict** | Run inference — entity lookup or records | `anistroph_predict` |
+| **Explain** | SHAP feature drivers for a prediction | `anistroph_explain_prediction` |
+| **Evaluate** | Held-out metrics on the evaluation partition | `anistroph_evaluate_model` |
+| **Find error slices** | Where does the model break? | `anistroph_find_evaluation_slices` |
 
-The walkthrough below runs all seven steps on three datasets that together exercise every prediction mode Anistroph supports:
+The procurement section below follows a **hook-first order** — leading with the prediction, then revealing the input contract, then exploring broader capabilities. Datasets 2 and 3 follow the traditional discovery-first order. Both orders exercise the same lifecycle; the difference is narrative pacing.
+
+The walkthrough runs the full lifecycle on three datasets that together exercise every prediction mode Anistroph supports:
 
 | Dataset | Domain | Target | Task | Prediction Mode |
 |---------|--------|--------|------|-----------------|
@@ -52,21 +54,19 @@ The walkthrough below runs all seven steps on three datasets that together exerc
 - **Model:** `semiconductor_procurement_demand-xgboost_regressor-20260818111627`
 - **Held-out R²:** 0.96 · MAE: 11.1 · RMSE: 17.8
 
-### Step 1 — Discover
+The procurement section follows a hook-first order: lead with the prediction, then reveal how it works, then explore the broader capabilities. This keeps the narrative moving and shows the most impressive capability immediately.
 
-> What datasets and models are available in Anistroph?
+### Step 1 — The hero prediction
 
-Claude calls `anistroph_list_datasets` and `anistroph_list_models` in parallel. You'll see 13 datasets and 13 models across four domains.
+> Predict the 4-week material demand for series FAB_A__MAT_0001 as of 2025-06-09. Then show me the actual demand for that period from the dataset so we can compare.
 
-### Step 2 — Understand
+Claude calls `anistroph_predict` with `entity_id=FAB_A__MAT_0001` and `timestamp=2025-06-09`. Anistroph loads 13 weeks of history for this series up to June 9th, computes the 4w/8w/13w rolling means, applies the trained XGBoost model, and returns the forecast. Claude then calls `anistroph_sample_rows` to fetch the actual `material_demand_next_4w` value (246.6) for that week so you can compare prediction vs. actual.
 
-> Profile the semiconductor_procurement_demand dataset. What's the row count, how many fab-material series are there, and how does 4-week material demand vary by material category?
+One MCP call produced a temporal forecast with rolling feature reconstruction — no feature pipeline, no manual window calculations.
 
-Claude profiles the dataset (`anistroph_profile_dataset`), then slices it (`anistroph_compare_data` with dimension=`material_category`, metric=`material_demand_next_4w`). You'll see which material categories (Photoresists, Process Gases, Wet Chemicals, etc.) drive the most demand.
+### Step 2 — Reveal the input contract
 
-### Step 3 — Inspect the input contract
-
-> What inputs does the semiconductor_procurement_demand model need to make a prediction? Does it require a timestamp, and if so, how much inference history does it need?
+> What inputs does this model need to make a prediction? Does it require a timestamp, and if so, how much history does it need?
 
 Claude calls `anistroph_get_model_inputs`. The response tells you:
 
@@ -75,31 +75,51 @@ Claude calls `anistroph_get_model_inputs`. The response tells you:
 - `inference_history_window: "13w"` — Anistroph will load 13 weeks of entity history to build the rolling features
 - `entity_key: "series_id"` — the entity is a composite of `{fab_id}__{material_id}`
 
-This is the key concept: the caller does not need to know about the rolling features. The model declares its own input contract.
+This is the key concept: Claude didn't need to know about the rolling features in Step 1. The model declares its own input contract, and Anistroph handles the history retrieval and feature reconstruction internally.
 
-### Step 4 — Predict
-
-> Predict the 4-week material demand for series FAB_A__MAT_0001 as of 2025-06-09. Then show me the actual demand for that period from the dataset so we can compare.
-
-Claude calls `anistroph_predict` with `entity_id=FAB_A__MAT_0001` and `timestamp=2025-06-09`. Anistroph loads 13 weeks of history for this series up to June 9th, computes the 4w/8w/13w rolling means, applies the trained XGBoost model, and returns the forecast. Claude then calls `anistroph_sample_rows` to fetch the actual `material_demand_next_4w` value (246.6) for that week so you can compare prediction vs. actual.
-
-### Step 5 — Explain
+### Step 3 — Explain the prediction
 
 > Explain the prediction you just made for FAB_A__MAT_0001. Which features are driving the demand forecast up or down?
 
 Claude calls `anistroph_explain_prediction`. The SHAP response shows the top positive and negative drivers — typically recent consumption trends (rolling means), planned wafer starts, and inventory level. Categorical features (fab, material category, supplier) appear as grouped contributions rather than separate one-hot columns.
 
-### Step 6 — Evaluate
+### Step 4 — Understand the domain
 
-> Evaluate the semiconductor_procurement_demand model on its held-out evaluation set. What are the R², MAE, and RMSE?
+> Profile the semiconductor_procurement_demand dataset. What's the row count, how many fab-material series are there, and how does 4-week material demand vary by material category?
 
-Claude calls `anistroph_evaluate_model`. The response includes aggregate metrics (R²=0.96, MAE=11.1, RMSE=17.8) and a sample of prediction-vs-actual rows from the evaluation partition — the most recent 20% of weeks that were never used during training.
+Claude profiles the dataset (`anistroph_profile_dataset`), then slices it (`anistroph_compare_data` with dimension=`material_category`, metric=`material_demand_next_4w`). You'll see which material categories (Photoresists, Process Gases, Wet Chemicals, etc.) drive the most demand.
 
-### Step 7 — Find error slices
+### Step 5 — Stress-test with a real crisis period
 
-> Find the slices where the demand forecast error is worst. Which fab, material category, or supplier combinations does the model struggle on?
+> Find a fab-material series that experienced a demand spike or inventory crisis — where inventory was near zero and consumption was high — and predict demand as of that crisis point. Then explain what drove the spike.
 
-Claude calls `anistroph_find_evaluation_slices`. The response ranks 1/2/3-dimensional combinations (e.g. `fab_id × material_category × supplier_id`) by how much the absolute prediction error deviates from the overall baseline. This tells you not just "the model is good overall" but "here's exactly where it's weak."
+This model is `entity_lookup` only (rolling transforms), so Claude can't send synthetic records. Instead, Claude searches the dataset for a real stress period — using `anistroph_sample_rows` or `anistroph_slice_data` to find a series/week where `inventory_on_hand` was near zero and `material_consumption_qty` was high. It then calls `anistroph_predict` with that `entity_id` + `timestamp`, and `anistroph_explain_prediction` on the same point.
+
+This demonstrates Claude acting as an analyst — it finds the stress scenario in the data, predicts at that point, and explains what drove the spike. The LLM orchestrates the investigation; Anistroph handles the feature reconstruction and model execution.
+
+### Step 6 — Multi-target: shortage risk classification
+
+> The procurement data also has a shortage risk model. Predict the probability of a shortage in the next 4 weeks for series FAB_C__MAT_0094 as of 2023-01-30, and explain which factors drive the risk.
+
+Same source parquet, different target, different task type — now we're predicting a probability, not a quantity. Claude calls `anistroph_predict` with the shortage model, `entity_id=FAB_C__MAT_0094`, and `timestamp=2023-01-30`. The SHAP drivers from `anistroph_explain_prediction` typically show inventory well below safety stock and long supplier lead times pushing the risk score up. Two models, one dataset, zero new application code.
+
+### Step 7 — Evaluate and find error slices
+
+> Evaluate the semiconductor_procurement_demand model on its held-out evaluation set. What are the R², MAE, and RMSE? Then find the slices where the demand forecast error is worst — which fab, material category, or supplier combinations does the model struggle on?
+
+Claude calls `anistroph_evaluate_model` (R²=0.96, MAE=11.1, RMSE=17.8) and `anistroph_find_evaluation_slices`. The error-slice search ranks 1/2/3-dimensional combinations (e.g. `fab_id × material_category × supplier_id`) by how much the absolute prediction error deviates from the overall baseline. This tells you not just "the model is good overall" but "here's exactly where it's weak."
+
+### Step 8 — Procurement risk analysis
+
+> Which suppliers are associated with the greatest shortage risk?
+
+Claude calls `anistroph_compare_data` (dimension=`supplier_id`, metric=`shortage_risk_next_4w`, aggregation=`mean`). The response ranks suppliers by average predicted shortage risk — a direct analytical question about the data that complements the model predictions.
+
+### Step 9 — Discover the full architecture
+
+> What datasets and models are available in Anistroph?
+
+Claude calls `anistroph_list_datasets` and `anistroph_list_models` in parallel. You'll see 13 datasets and 13 models across four domains — semiconductor manufacturing, predictive maintenance, real estate, and supply chain procurement. All discovered through one MCP connection, all using the same shared runtime.
 
 ---
 
@@ -235,20 +255,23 @@ Claude calls `anistroph_find_evaluation_slices` with `metric=log_loss`. The resp
 
 | Capability | Where it appears |
 |------------|-----------------|
-| **Discovery** — list datasets and models via MCP | Step 1 of every dataset |
-| **Multidimensional analysis** — slice and compare data by categorical dimensions | Step 2 of every dataset |
-| **Self-describing input contract** — model declares what it needs, including `as_of` and history window | Step 3 of every dataset |
-| **Temporal prediction** — rolling features reconstructed from entity history at prediction time | Datasets 1 and 3 |
+| **Temporal prediction** — rolling features reconstructed from entity history at prediction time | Dataset 1, Step 1; Dataset 3 |
+| **Self-describing input contract** — model declares what it needs, including `as_of` and history window | Dataset 1, Step 2; Datasets 2 and 3, Step 3 |
+| **SHAP explainability** with one-hot feature grouping | Dataset 1, Step 3; Datasets 2 and 3, Step 5 |
+| **Multidimensional analysis** — slice and compare data by categorical dimensions | Dataset 1, Step 4; Datasets 2 and 3, Step 2 |
+| **Stress-test with real data** — Claude searches for a crisis period and predicts at that point | Dataset 1, Step 5 |
+| **Multi-target on one source** — same parquet, different target, different task type | Dataset 1, Step 6 |
+| **Regression evaluation** — R², MAE, RMSE, MAPE | Dataset 1, Step 7; Dataset 2 |
+| **Classification evaluation** — ROC-AUC, F1, precision, recall | Dataset 1, Step 6; Dataset 3 |
+| **Error slice discovery** — where does the model break, by dimension combination | Dataset 1, Step 7; Datasets 2 and 3 |
+| **Procurement risk analysis** — which suppliers carry the greatest shortage risk | Dataset 1, Step 8 |
+| **Discovery** — list datasets and models via MCP | Dataset 1, Step 9; Datasets 2 and 3, Step 1 |
 | **Non-temporal prediction** — single-row entity lookup | Dataset 2 |
 | **Records mode** — send raw feature values instead of an entity ID | Dataset 2, Step 4b |
 | **Staged prediction** — same target, progressively more features | Dataset 2, optional step |
-| **SHAP explainability** with one-hot feature grouping | Step 5 of every dataset |
-| **Regression evaluation** — R², MAE, RMSE, MAPE | Datasets 1 and 2 |
-| **Classification evaluation** — ROC-AUC, F1, precision, recall | Dataset 3 |
-| **Error slice discovery** — where does the model break, by dimension combination | Step 7 of every dataset |
 | **Multi-domain** — same lifecycle across supply chain, manufacturing, and equipment health | All three datasets |
 
-The same seven MCP tools, the same seven-step lifecycle, and the same Claude conversation — across three domains, two task types, and both temporal and non-temporal prediction. No domain-specific code was written for any of these steps. The datasets declare their schemas and feature transforms in YAML; the runtime handles the rest.
+The same MCP tools, the same lifecycle, and the same Claude conversation — across three domains, two task types, and both temporal and non-temporal prediction. No domain-specific code was written for any of these steps. The datasets declare their schemas and feature transforms in YAML; the runtime handles the rest.
 
 ---
 
