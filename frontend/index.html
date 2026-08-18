@@ -262,7 +262,7 @@
           <div id="ev-filter-bar" class="filter-bar"></div>
         </div>
         <button onclick="evaluateModel()">Evaluate</button>
-        <button onclick="findErrorSlices()" style="margin-left:8px;">Find Error Slices</button>
+        <button onclick="findErrorSlices()" style="margin-left:8px;">Find Error Slices <i class="tooltip-icon" data-tooltip="Automatically searches combinations of categorical dimensions (e.g. machine_type, city, supplier) to find populations where the model's prediction error deviates most from the overall average. Answers 'where is my model wrong the most?' — use it to target model improvements, calibrate trust by segment, and investigate root causes. Regression models use absolute error; classification models use log loss. Results are ranked by deviation from baseline (red = worse than average, green = better).">i</i></button>
         <div id="ev-result" style="margin-top:16px;"><div class="muted">Evaluation results will appear here.</div></div>
         <div id="ev-slices-result" style="margin-top:16px;"></div>
       </div>
@@ -1060,7 +1060,7 @@ async function findErrorSlices() {
     h += '<div class="result-title">Error Slice Discovery</div>';
     h += `<div class="muted" style="margin-bottom:12px;">Overall ${metricLabel} baseline: ${fmtMetric('mae', baseline)} · top ${r.length} slices by deviation</div>`;
     h += '<div class="data-table-wrap"><table class="data-table"><thead><tr>';
-    h += '<th>Dimensions</th><th>Values</th><th>Rows</th><th>Error</th><th>Diff</th><th>vs Overall</th>';
+    h += `<th>Dimensions</th><th>Values</th><th>Rows</th><th>Error (${metricLabel})</th><th>Diff vs Avg</th><th>vs Overall</th>`;
     h += '</tr></thead><tbody>';
     for (const s of r) {
       const dimStr = s.dimensions.join(' + ');
@@ -1077,6 +1077,7 @@ async function findErrorSlices() {
     h += '<div class="muted" style="margin-top:8px;">Positive diff (red) = worse than average. Negative diff (green) = better than average. Use with filtered evaluation to drill into specific slices.</div>';
     h += '</div>';
     el.innerHTML = h;
+    el.scrollIntoView({behavior: 'smooth', block: 'start'});
   } catch (e) {
     el.innerHTML = banner('Error: ' + e.message);
   }
