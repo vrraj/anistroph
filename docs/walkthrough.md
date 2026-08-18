@@ -10,6 +10,8 @@ A step-by-step walkthrough of the full inference lifecycle across three referenc
 
 Each step is a prompt you can paste into Claude Desktop (or any MCP client connected to Anistroph). Run the prompts in order within a single conversation — Claude carries context forward, so later prompts can build on earlier results.
 
+> **New to Anistroph?** See the [Anistroph project overview](https://vrraj.github.io/anistroph/) for the architecture, capabilities, and design goals.
+
 > **Prerequisites:** Anistroph installed and datasets registered (`make install`), and the Anistroph MCP server configured in Claude Desktop. See the [Setup & Usage Guide](setup-usage.md) for setup details.
 
 > **AI Agent Analysis & Validation**
@@ -252,7 +254,7 @@ The same seven MCP tools, the same seven-step lifecycle, and the same Claude con
 
 ## Next Steps
 
-- **Add your own dataset:** See [Adding a Dataset](../README.md#adding-a-dataset) and the [Dataset Configuration reference](setup-usage.md#configure-your-own-dataset).
+- **Add your own dataset:** See [Adding a Dataset](https://github.com/vrraj/anistroph#adding-a-dataset) and the [Dataset Configuration reference](setup-usage.md#configure-your-own-dataset).
 - **Full YAML reference and operations guide:** [Setup & Usage Guide](setup-usage.md).
 - **Architecture details:** [Technical Architecture](technical-architecture.md).
 - **Temporal prediction deep dive:** [Temporal Prediction, History, and Retraining](setup-usage.md#temporal-prediction).
