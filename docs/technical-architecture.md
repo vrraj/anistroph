@@ -46,6 +46,11 @@ generically. Leakage-safe: features at time T never use observations after T.
 Categorical encodings are fitted during training and stored in
 `FeatureMetadata` so inference applies the identical encoding.
 
+`FeatureSpec.max_history_window()` derives the longest rolling-window
+duration from the configured transforms (e.g. `"13w"` if the widest window
+is 13 weeks). The inference layer uses this to bound the entity history
+scan, avoiding a full-dataset load when only recent history is needed.
+
 ### 2.5 Target Engine (`backend/targets/engine.py`)
 
 Dispatches target construction by type. `future_event` labels are
@@ -66,7 +71,10 @@ entity-isolated: a failure on entity B never labels entity A.
   recall, F1, confusion matrix) and regression (MAE, MSE, RMSE, R², MAPE,
   max error) metrics. Configurable threshold (optimized for F1 on validation).
 - `backend/ml/inference.py` — `predict(model_id, entity_id, timestamp,
-  records)`. Reconstructs features from history via the same engine.
+  records)`. Reconstructs features from entity history via the same engine.
+  For temporal models, uses lazy Parquet scanning with predicate pushdown
+  and a history-window lower bound derived from the model's feature
+  configuration (e.g. 13w) to avoid loading the full dataset.
 - `backend/ml/explain.py` — SHAP TreeExplainer for XGBoost; importance-weighted
   contributions as fallback. Groups one-hot SHAP values back to source features.
 - `backend/ml/registry.py` — Filesystem-backed model artifact store.

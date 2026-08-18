@@ -55,6 +55,7 @@ A common predictive lifecycle — each dataset keeps its own schema, features, a
 ### What the architecture supports
 
 - **Multi-domain datasets** — add datasets from different domains without changing the shared prediction, explanation, evaluation, or multidimensional slicing services. Dataset-specific schemas, features, targets, and preprocessing remain isolated behind common runtime contracts.
+- **Temporal & non-temporal datasets** — datasets with a `time_key` support rolling-window features (mean, std, slope, delta), chronological train/eval splitting, and entity-history-based prediction. Datasets without a `time_key` use random splitting and single-row entity lookup. The runtime automatically detects which mode applies based on the model's feature transforms.
 - **Multiple targets** — one source dataset can train independent models for different outcomes.
 - **Multiple model types** — regression and classification today, with additional task/model types extensible through adapters.
 - **Process-stage prediction** — models can predict at different points in a workflow using only features available at that stage.
@@ -77,6 +78,7 @@ Anistroph separates **dataset-specific modeling** from a **shared predictive run
 Semiconductor ──→ Yield / CD / Film Models ──────┐
 Maintenance ────→ Failure / RUL Models ──────────┤
 Home Prices ────→ Price Model ───────────────────┼─→ Shared Runtime
+Procurement ────→ Demand / Shortage Models ──────┤
 Future Domains ─→ Domain-Specific Models ────────┘
                                                    │
                                       Predict • Explain • Evaluate
@@ -101,6 +103,53 @@ Explanation, evaluation, and observed-data analysis provide different perspectiv
 
 ---
 
+## Temporal Prediction and Rolling Forecasts
+
+Temporal datasets use the same trained models as other Anistroph prediction problems, but some model inputs can change over time.
+
+For example, a procurement model may predict **material demand over the next four weeks** using current inventory, supplier metrics, production plans, and recent consumption trends.
+
+Anistroph separates three concepts:
+
+- **Model training** — learns the relationship between input features and the target. The model does **not** need to be retrained for every new prediction period.
+- **Temporal feature calculation** — when features use rolling windows or other history-based transforms, Anistroph calculates their current values from entity history as of the prediction point.
+- **Forecast horizon** — the target defines what happens after the prediction point. A `material_demand_next_4w` target represents demand during the following four weeks.
+
+For a rolling four-week forecast:
+
+```text
+As of Week 10 → predict Weeks 11–14
+As of Week 11 → predict Weeks 12–15
+As of Week 12 → predict Weeks 13–16
+```
+
+The forecast window advances as new observations become available, while the same trained model can continue to be used.
+
+For history-dependent features, the prediction point acts as an **`as_of` boundary**: only observations available through that point are used to construct model inputs. This prevents future information from leaking into the prediction.
+
+The required inference history window is derived from the model's feature configuration (e.g. 13 weeks if the longest rolling window is 13w) — not specified by the caller. Anistroph scans only the bounded entity history needed to construct the temporal features, not the full dataset.
+
+Temporal feature calculation and model retraining are therefore independent. New observations can produce new forecasts without retraining the model.
+
+### Temporal vs Non-Temporal Datasets
+
+Anistroph distinguishes two dataset types based on whether a `time_key` is declared in the YAML:
+
+| | Temporal dataset | Non-temporal dataset |
+|---|---|---|
+| **YAML** | `time_key: <column>` | `time_key` omitted or null |
+| **Examples** | Procurement (weekly), Predictive Maintenance (5-min sensor) | Semiconductor Yield (per wafer), Home Prices (per listing) |
+| **Splitting** | Chronological (oldest → train, newest → eval) | Random with fixed seed |
+| **Rolling transforms** | Available (`mean`, `std`, `slope`, `delta` over time windows) | Not applicable |
+| **Prediction** | Entity lookup loads history up to `as_of` date to build rolling features | Entity lookup fetches single row; records mode also available |
+
+A dataset can have a timestamp column for chronological splitting without being "temporal" in the forecasting sense. The key distinction is whether the model's feature transforms include rolling windows — if they do, the runtime requires `entity_id + timestamp` for prediction so it can load historical observations. If features are only `current` and `categorical`, both entity lookup and records-based prediction work without a timestamp.
+
+The `anistroph_get_model_inputs` tool exposes this via `requires_timestamp` (true/false) and `prediction_mode` (`entity_lookup` vs `entity_lookup_or_records`), so Claude and other agents know which inputs to request.
+
+For a deeper explanation of temporal prediction, history reconstruction, and retraining, see the [Setup & Usage Guide — Temporal Prediction, History, and Retraining](docs/setup-usage.md#temporal-prediction-history-and-retraining).
+
+---
 
 ## Install / Setup
 

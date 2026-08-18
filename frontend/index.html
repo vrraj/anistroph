@@ -213,7 +213,7 @@
         <div id="pr-entity-section">
           <div class="form-row">
             <div class="field"><label>Entity ID <i class="tooltip-icon" data-tooltip="The entity to predict for (e.g. a machine_id like TOOL_000, or a wafer_id like WAFER_015000). For temporal datasets, Anistroph retrieves historical observations for this entity up to the given timestamp.">i</i></label><input id="pr-entity" value="TOOL_000"></div>
-            <div class="field"><label>Timestamp (optional) <i class="tooltip-icon" data-tooltip="For temporal datasets, the point in time to predict at. Anistroph loads all observations for the entity up to and including this timestamp. Leave blank for non-temporal datasets.">i</i></label><input id="pr-timestamp" placeholder="2026-07-15T12:00:00"></div>
+            <div class="field"><label id="pr-timestamp-label">Timestamp (optional) <i class="tooltip-icon" data-tooltip="For temporal models, this is the as-of date — the last known point in history. Anistroph loads all observations for the entity up to and including this date to build rolling features. This is NOT the date being predicted. Leave blank for non-temporal datasets.">i</i></label><input id="pr-timestamp" placeholder="2026-07-15T12:00:00"></div>
           </div>
         </div>
         <!-- Records mode -->
@@ -641,8 +641,20 @@ async function predict() {
     h += '<div class="result-metrics">';
     if (r.prediction !== undefined) h += `<div class="result-metric"><span class="result-metric-label">Prediction</span><span class="result-metric-value">${r.prediction}</span></div>`;
     if (r.probability !== undefined) h += `<div class="result-metric"><span class="result-metric-label">Probability</span><span class="result-metric-value">${(r.probability * 100).toFixed(1)}%</span></div>`;
-    if (r.predicted_yield !== undefined) h += `<div class="result-metric"><span class="result-metric-label">Predicted Yield</span><span class="result-metric-value">${(r.predicted_yield * 100).toFixed(2)}%</span></div>`;
-    if (r.actual_yield !== undefined) h += `<div class="result-metric"><span class="result-metric-label">Actual Yield</span><span class="result-metric-value">${(r.actual_yield * 100).toFixed(2)}%</span></div>`;
+    if (r.predicted_yield !== undefined) {
+      const tname = r.target_name || 'Prediction';
+      const val = r.predicted_yield;
+      const isRatio = val >= 0 && val <= 1.5;
+      const label = isRatio ? `Predicted ${tname}` : `Predicted ${tname}`;
+      const formatted = isRatio ? `${(val * 100).toFixed(2)}%` : `${val.toFixed(2)}`;
+      h += `<div class="result-metric"><span class="result-metric-label">${label}</span><span class="result-metric-value">${formatted}</span></div>`;
+    }
+    if (r.actual_yield !== undefined) {
+      const val = r.actual_yield;
+      const isRatio = val >= 0 && val <= 1.5;
+      const formatted = isRatio ? `${(val * 100).toFixed(2)}%` : `${val.toFixed(2)}`;
+      h += `<div class="result-metric"><span class="result-metric-label">Actual</span><span class="result-metric-value">${formatted}</span></div>`;
+    }
     if (r.threshold !== undefined) h += `<div class="result-metric"><span class="result-metric-label">Threshold</span><span class="result-metric-value">${(r.threshold * 100).toFixed(1)}%</span></div>`;
     h += '</div>';
     h += `<pre style="margin-top:12px;">${JSON.stringify(r, null, 2)}</pre>`;
@@ -676,7 +688,11 @@ async function explain() {
     h += `<div class="result-title">SHAP Explanation</div>`;
     h += `<span class="category-tag">${r.explanation_method || 'unknown'}</span>`;
     if (r.predicted_yield !== undefined) {
-      h += `<div class="result-metrics"><div class="result-metric"><span class="result-metric-label">Predicted Yield</span><span class="result-metric-value">${(r.predicted_yield * 100).toFixed(2)}%</span></div></div>`;
+      const tname = r.target_name || 'Prediction';
+      const val = r.predicted_yield;
+      const isRatio = val >= 0 && val <= 1.5;
+      const formatted = isRatio ? `${(val * 100).toFixed(2)}%` : `${val.toFixed(2)}`;
+      h += `<div class="result-metrics"><div class="result-metric"><span class="result-metric-label">Predicted ${tname}</span><span class="result-metric-value">${formatted}</span></div></div>`;
     }
     if (r.probability !== undefined) {
       h += `<div class="result-metrics"><div class="result-metric"><span class="result-metric-label">Probability</span><span class="result-metric-value">${(r.probability * 100).toFixed(1)}%</span></div></div>`;
@@ -722,9 +738,45 @@ function onPredictModeChange() {
   document.getElementById('pr-records-section').style.display = mode === 'records' ? '' : 'none';
 }
 
-function onPredictModelChange() {
+async function onPredictModelChange() {
   // When model changes in records mode, clear old schema
   document.getElementById('pr-schema-result').innerHTML = '';
+  const modelId = document.getElementById('pr-model').value;
+  const tsField = document.getElementById('pr-timestamp');
+  const tsLabel = document.getElementById('pr-timestamp-label');
+  const modeSelect = document.getElementById('pr-mode');
+  const recordsOption = modeSelect.querySelector('option[value="records"]');
+
+  if (!modelId) return;
+
+  try {
+    const r = await api(`/models/${encodeURIComponent(modelId)}/inputs`, 'GET');
+    // Timestamp: required for temporal datasets, optional otherwise
+    if (r.requires_timestamp) {
+      tsField.disabled = false;
+      tsField.placeholder = 'Required — as of date (e.g. 2025-06-09)';
+      tsLabel.innerHTML = 'As of date <i class="tooltip-icon" data-tooltip="Required for this temporal model. The as-of date is the last known point in history — Anistroph loads entity history up to this date, computes rolling features, and applies the fixed model. This is NOT the date being predicted.">i</i> <span style="color:#e53e3e;">*</span>';
+    } else {
+      tsField.disabled = false;
+      tsField.placeholder = 'Optional (non-temporal dataset)';
+      tsLabel.innerHTML = 'Timestamp (optional) <i class="tooltip-icon" data-tooltip="This dataset has a timestamp but it is used for chronological splitting only. Leave blank for non-temporal prediction.">i</i>';
+    }
+    // Records mode: disable if model uses rolling-window transforms
+    if (r.prediction_mode === 'entity_lookup') {
+      recordsOption.disabled = true;
+      recordsOption.textContent = 'Records (not supported — rolling-window transforms)';
+      if (modeSelect.value === 'records') {
+        modeSelect.value = 'entity';
+        onPredictModeChange();
+      }
+    } else {
+      recordsOption.disabled = false;
+      recordsOption.textContent = 'Records (raw feature values)';
+    }
+  } catch (e) {
+    // If schema fetch fails, leave defaults
+    console.warn('Could not load model inputs:', e.message);
+  }
 }
 
 async function loadModelInputSchema() {
@@ -780,6 +832,8 @@ async function loadModelDropdown() {
   } catch (e) {
     sel.innerHTML = '<option value="">Error loading models</option>';
   }
+  // Trigger dynamic UI update for the first selected model
+  if (sel.value) onPredictModelChange();
 }
 
 // Populate the model dropdown on the evaluation tab

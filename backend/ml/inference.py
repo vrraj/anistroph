@@ -12,7 +12,7 @@ This allows future non-temporal datasets to provide records directly.
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Any, Optional
 
 import numpy as np
@@ -22,13 +22,14 @@ import joblib
 from backend.datasets.config import DatasetConfig
 from backend.datasets.registry import DatasetRegistry
 from backend.features.engine import FeatureEngine
+from backend.features.spec import FeatureSpec
 from backend.ml.base import Predictor
 from backend.ml.registry import ModelRegistry
 from backend.models.logistic import LogisticRegressionPredictor
 from backend.models.xgboost import XGBoostPredictor
 from backend.models.xgboost_regressor import XGBoostRegressorPredictor
 from backend.models.linear_regression import LinearRegressionPredictor
-from backend.targets.spec import TargetType
+from backend.targets.spec import TargetType, parse_duration
 
 
 def _load_predictor(model_type: str, artifact_path: str) -> Predictor:
@@ -86,13 +87,47 @@ def predict(
     # or a single-row entity lookup (e.g. wafer-level data with a timestamp
     # used only for chronological splitting).
     if spec.is_temporal() and entity_id is not None and timestamp is not None:
-        # Temporal lookup: load history up to timestamp.
-        df = pl.read_parquet(meta.parquet_path)
+        # Temporal lookup: load entity history up to the as_of timestamp.
+        # Use lazy scanning with predicate pushdown so only the required
+        # row groups are read from disk, not the entire parquet.
         ts_parsed = _parse_timestamp(timestamp)
-        entity_df = df.filter(
-            (pl.col(spec.entity_key) == entity_id)
-            & (pl.col(spec.time_key) <= ts_parsed)
-        ).sort(spec.time_key)
+
+        # Derive the required inference history window from the model's
+        # feature configuration (e.g. "13w" if the longest rolling window
+        # is 13 weeks). This bounds the time range we scan to avoid loading
+        # the entire dataset when only recent history is needed.
+        history_window = feature_spec.max_history_window()
+        time_lower = None
+        if history_window is not None:
+            time_lower = ts_parsed - timedelta(seconds=parse_duration(history_window))
+
+        lazy = pl.scan_parquet(meta.parquet_path)
+        base_filters = [
+            pl.col(spec.entity_key) == entity_id,
+            pl.col(spec.time_key) <= ts_parsed,
+        ]
+        if time_lower is not None:
+            windowed_filters = base_filters + [pl.col(spec.time_key) >= time_lower]
+            entity_df = (
+                lazy.filter(pl.all_horizontal(windowed_filters))
+                .collect()
+                .sort(spec.time_key)
+            )
+            # If the windowed query returns no rows (e.g. the as_of point is
+            # beyond the available train data), fall back to loading all
+            # available history up to as_of without the time lower bound.
+            if entity_df.height == 0:
+                entity_df = (
+                    lazy.filter(pl.all_horizontal(base_filters))
+                    .collect()
+                    .sort(spec.time_key)
+                )
+        else:
+            entity_df = (
+                lazy.filter(pl.all_horizontal(base_filters))
+                .collect()
+                .sort(spec.time_key)
+            )
 
         if entity_df.height == 0:
             raise ValueError(
@@ -138,8 +173,12 @@ def predict(
     else:
         # Non-temporal: either entity_id lookup or records provided.
         if entity_id is not None:
-            df = pl.read_parquet(meta.parquet_path)
-            entity_df = df.filter(pl.col(spec.entity_key) == entity_id)
+            # Use lazy scanning with predicate pushdown for efficiency.
+            entity_df = (
+                pl.scan_parquet(meta.parquet_path)
+                .filter(pl.col(spec.entity_key) == entity_id)
+                .collect()
+            )
             if entity_df.height == 0:
                 raise ValueError(f"no rows found for entity {entity_id!r}")
             engine = FeatureEngine()

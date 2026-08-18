@@ -44,6 +44,7 @@ Dataset Feature Specification  ⮕ train  ⮕ predict  ⮕ explain  ⮕ evaluate
 - **Explain** — which source features drove an individual prediction (SHAP, normalized back to original inputs)?
 - **Evaluate** — how well does a model perform on held-out data, overall and across multidimensional populations?
 - **Discover** — where in the data are outcomes unusually high or low, and where does the model perform unusually well or poorly?
+- **Temporal prediction & rolling forecasts** — for temporal datasets, Anistroph dynamically reconstructs rolling features from entity history at prediction time. The required history window is derived from the model's feature configuration (not specified by the caller), and only the bounded entity history is scanned — not the full dataset. The model stays fixed between retraining cycles; only the feature values change as new observations arrive. A procurement demand model, for example, can produce a new 4-week forecast each week without retraining.
 - **Agent access** — Claude Desktop, Claude CLI, and other MCP-compatible agents can discover models, inspect required inputs, generate test records, predict, explain, and evaluate — all through 13 domain-agnostic MCP tools.
 
 ## Why it exists
@@ -122,6 +123,21 @@ pred = svc.predict(
 )
 ```
 
+### Predict (temporal — rolling forecast)
+
+```python
+# For temporal models, timestamp is the "as of" date — the last known point
+# in history. Anistroph loads entity history through that point, computes
+# rolling features, and applies the fixed trained model.
+pred = svc.predict(
+    model_id="semiconductor_procurement_demand-xgboost_regressor-...",
+    entity_id="FAB_A__MAT_0001",
+    timestamp="2025-06-09",   # as_of: predict using history through this week
+)
+# Returns predicted material demand for the next 4 weeks (June 16 → July 7)
+# No retraining needed — the model is static, only the feature values change
+```
+
 ### Explain a prediction
 
 ```python
@@ -188,13 +204,14 @@ open http://localhost:9500/docs
 
 ## Reference datasets
 
-Anistroph ships with three synthetic reference datasets exercising regression, classification, temporal, and multidimensional patterns:
+Anistroph ships with synthetic reference datasets across four domains exercising regression, classification, temporal forecasting, and multidimensional patterns:
 
 | Dataset | Domain | Rows | Targets |
 |---|---|---|---|
 | **Semiconductor Manufacturing** | Wafer fab process | 50,000 | Wafer yield, critical dimension, film thickness (regression) |
 | **Predictive Maintenance** | Tool health monitoring | ~864,000 | Failure within 24h (classification), remaining useful life (regression), maintenance required (classification) |
 | **Bay Area Home Prices** | Real estate | 40,000 | Sale price (regression) |
+| **Semiconductor Materials Procurement** | Supply chain & materials planning | ~100,000 | Material demand next 4 weeks (regression), shortage risk next 4 weeks (classification) |
 
 Each dataset is declared through a `dataset.yaml` and registered with one call. You can add your own dataset by authoring a YAML and registering it — see [Adding a Dataset](https://github.com/vrraj/anistroph#adding-a-dataset) in the README.
 
@@ -206,6 +223,7 @@ Anistroph separates **dataset-specific modeling** from a **shared predictive run
 Semiconductor ──→ Yield / CD / Film Models ──────┐
 Maintenance ────→ Failure / RUL Models ──────────┤
 Home Prices ────→ Price Model ───────────────────┼─→ Shared Runtime
+Procurement ────→ Demand / Shortage Models ──────┤
 Future Domains ─→ Domain-Specific Models ────────┘
                                                    │
                                       Predict • Explain • Evaluate
@@ -221,9 +239,9 @@ Feature transforms (rolling windows, slopes, deltas) are leakage-safe — they u
 
 ## Documentation
 
-- **[Setup & Usage Guide](setup-usage)** — dataset configuration, operations, MCP setup, API reference
+- **[Setup & Usage Guide](setup-usage)** — dataset configuration, temporal prediction & retraining, operations, MCP setup, API reference
 - **[Technical Architecture](technical-architecture)** — deeper architecture details
-- **[Full README](https://github.com/vrraj/anistroph#readme)** — install, features, extending, tests
+- **[Full README](https://github.com/vrraj/anistroph#readme)** — install, features, temporal prediction, extending, tests
 - **[Release Notes](https://github.com/vrraj/anistroph/blob/main/RELEASE_NOTES.md)** — version history
 
 ## Links

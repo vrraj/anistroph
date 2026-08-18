@@ -335,6 +335,7 @@ class AnistrophServices:
 
         if has_history_transforms:
             prediction_mode = "entity_lookup"
+            requires_timestamp = True
             mode_note = (
                 "This model uses rolling-window transforms that require historical "
                 "observations. Use entity_id + timestamp — Anistroph loads the entity's "
@@ -343,6 +344,7 @@ class AnistrophServices:
             )
         else:
             prediction_mode = "entity_lookup_or_records"
+            requires_timestamp = False
             mode_note = (
                 "Both prediction modes work: (1) entity_id (+ timestamp if temporal) "
                 "to look up an existing row, or (2) records — a list of dicts with the "
@@ -357,7 +359,8 @@ class AnistrophServices:
             "target_type": meta.target_type,
             "prediction_mode": prediction_mode,
             "entity_key": spec.entity_key,
-            "requires_timestamp": spec.is_temporal(),
+            "requires_timestamp": requires_timestamp,
+            "inference_history_window": fs.max_history_window(),
             "required_columns": required_columns,
             "note": mode_note,
         }

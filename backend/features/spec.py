@@ -52,6 +52,40 @@ class FeatureSpec(BaseModel):
     def source_columns(self) -> list[str]:
         return [fs.column for fs in self.features.values()]
 
+    def max_history_window(self) -> Optional[str]:
+        """Return the longest rolling-window duration across all features.
+
+        For example, if features use ``mean: {windows: [4w, 8w, 13w]}`` and
+        ``slope: {windows: [8w]}``, this returns ``"13w"``.
+
+        Returns ``None`` if no rolling-window transforms are configured (i.e.
+        the model does not require inference history).
+        """
+        from backend.targets.spec import parse_duration
+        history_ops = {"mean", "min", "max", "std", "median", "slope", "delta"}
+        max_seconds = 0.0
+        found = False
+        for col_spec in self.features.values():
+            for t in normalize_transforms(col_spec.transforms):
+                op = t.get("op", "")
+                if op in history_ops:
+                    for w in t.get("windows", []):
+                        try:
+                            secs = parse_duration(w)
+                            if secs > max_seconds:
+                                max_seconds = secs
+                                found = True
+                        except (ValueError, KeyError):
+                            pass
+        if not found:
+            return None
+        # Convert back to a human-readable duration string
+        units = [("w", 604800), ("d", 86400), ("h", 3600), ("m", 60), ("s", 1)]
+        for unit, secs in units:
+            if max_seconds >= secs and max_seconds % secs == 0:
+                return f"{int(max_seconds / secs)}{unit}"
+        return f"{max_seconds}s"
+
 
 def _parse_transform(td: TransformDef) -> dict[str, Any]:
     if isinstance(td, str):

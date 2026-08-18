@@ -29,10 +29,13 @@ Anistroph ships with synthetic datasets across three domains. Each can be explor
 | **[Predictive Maintenance — Maintenance Required](#predictive-maintenance--maintenance-required)** | Equipment health | `maintenance_required` (classification) | "Predict maintenance required for TOOL_010" · "Evaluate filtered to machine_type=TYPE_B" · "Find slices where log loss is highest" |
 | **[Bay Area Home Prices](#bay-area-home-prices)** | Real estate | `price` (regression) | "Show median price by city" · "Find the most expensive zip codes" · "Compare MAPE for Saratoga vs Los Gatos vs San Jose" |
 
+> **Temporal datasets & rolling forecasts:** Anistroph supports temporal prediction where rolling features are dynamically reconstructed from entity history at prediction time — the model is static, the features are not. See [Temporal Prediction, History, and Retraining](#temporal-prediction-history-and-retraining) for the full explanation.
+
 ---
 
 **What's in this document:**
 - **[Dataset Configuration](#dataset-configuration)** — YAML authoring: schema, features, targets, transforms, split strategy, worked examples
+- **[Temporal Prediction, History, and Retraining](#temporal-prediction-history-and-retraining)** — how temporal models work: as-of prediction, rolling features, and when to retrain
 - **[Operations](#operations)** — Register, profile, train, predict, explain, evaluate, and analyze via Python and MCP
 - **[MCP Setup](#mcp-setup)** — Claude Desktop (stdio), MCP Streamable HTTP, ChatGPT (GPT Actions)
 - **[Example MCP Prompts](#example-mcp-prompts)** — Categorized prompts for discovery, prediction, evaluation, and analysis
@@ -301,6 +304,274 @@ A single source parquet can support multiple targets. Each target gets its own d
 
 ---
 
+## Temporal Prediction, History, and Retraining
+
+Temporal prediction introduces an important distinction between the **trained model**, the **current model inputs**, and the **future period being predicted**.
+
+### 1. The trained model does not contain current history
+
+A trained model learns relationships between features and outcomes.
+
+For example, a material-demand model may learn relationships involving:
+
+```text
+recent 4-week consumption
+recent 8-week consumption
+planned wafer starts
+inventory on hand
+supplier lead time
+scheduled receipts
+        ↓
+material demand over the next 4 weeks
+```
+
+The model retains the learned relationship, but values such as **recent 4-week consumption** are not permanently stored as the current state of each fab/material combination.
+
+Those values change whenever a new observation becomes available.
+
+Therefore, a new prediction does **not** normally require retraining. It requires the latest feature values.
+
+---
+
+### 2. History-dependent features are calculated at prediction time
+
+Consider a temporal feature configuration such as:
+
+```yaml
+material_consumption_qty:
+  column: material_consumption_qty
+  transforms:
+    - current
+    - mean:
+        windows: [4w, 8w, 13w]
+```
+
+The trained model expects features such as:
+
+```text
+material_consumption_qty_mean_4w
+material_consumption_qty_mean_8w
+material_consumption_qty_mean_13w
+```
+
+For a prediction made **as of Week 20**, Anistroph retrieves the entity's observations through Week 20 and calculates the appropriate rolling values.
+
+Conceptually:
+
+```text
+Entity history through Week 20
+             ↓
+4w / 8w / 13w rolling features
+             ↓
+current operational features
+             ↓
+existing trained model
+             ↓
+prediction
+```
+
+The historical observations are therefore used to **construct the current model inputs**. They are not being used to retrain the model.
+
+#### Inference history window is derived from the model configuration
+
+The amount of inference history required is determined from the temporal features configured for the model — not specified by the caller.
+
+```text
+Configured windows: 4w, 8w, 13w
+              ↓
+Required inference history: 13w
+```
+
+Anistroph scans only the required entity history (bounded by the longest configured window) rather than loading the entire dataset. The `anistroph_get_model_inputs` tool exposes this as `inference_history_window` (e.g. `"13w"`, `"6h"`, or `null` for non-temporal models).
+
+The caller does not need to understand the temporal feature implementation. The MCP prediction contract remains simple:
+
+```text
+anistroph_predict(
+    model_id,
+    entity_id,
+    as_of
+)
+```
+
+---
+
+### 3. The prediction point is an `as_of` boundary
+
+Temporal prediction requires a point separating known history from the future.
+
+Conceptually, this is the prediction **`as_of`** time.
+
+For example:
+
+```text
+entity: FAB_A__MAT_0001
+as_of: 2025-06-09
+```
+
+means:
+
+> Make a prediction for this entity using only information available through June 9, 2025.
+
+Anistroph can then:
+
+1. Select the entity's history through the `as_of` point.
+2. Calculate required rolling/history-based features.
+3. Use current values from the latest available observation.
+4. Pass the resulting feature vector to the existing trained model.
+5. Return the prediction.
+
+The `as_of` point is **not the future date being predicted**. It represents the end of known information.
+
+---
+
+### 4. The target determines the future horizon
+
+Consider:
+
+```yaml
+target:
+  name: material_demand_next_4w
+  type: regression
+  source_column: material_demand_next_4w
+```
+
+For each historical observation, the target represents demand during the four weeks following that observation.
+
+```text
+Observation Week 10 → actual demand Weeks 11–14
+Observation Week 11 → actual demand Weeks 12–15
+Observation Week 12 → actual demand Weeks 13–16
+```
+
+The trained regression model therefore learns to predict the **next four weeks** from the state available at each observation point.
+
+At inference time the same interpretation applies:
+
+```text
+as_of Week 20 → predict Weeks 21–24
+as_of Week 21 → predict Weeks 22–25
+as_of Week 22 → predict Weeks 23–26
+```
+
+The forecast horizon rolls forward with the prediction point.
+
+---
+
+### 5. A rolling forecast does not require retraining
+
+Suppose a model was trained through Week 100.
+
+When Week 101 observations become available:
+
+```text
+New Week 101 observation
+        ↓
+history now includes Week 101
+        ↓
+rolling features recalculated
+        ↓
+existing trained model
+        ↓
+new next-4-week prediction
+```
+
+Week 102 repeats the same process using the updated history.
+
+The model itself remains unchanged.
+
+Retraining is appropriate when the **learned relationship** needs to change — for example because of model-performance degradation, concept drift, significant changes to the underlying process, or changes to the feature definition.
+
+It is not required simply because another week of observations has arrived.
+
+#### Training history vs inference history
+
+Training and inference use history for different purposes:
+
+```text
+Training history
+      ↓
+learn relationships between features and outcomes
+      ↓
+trained model
+
+
+Recent entity history
+      ↓
+construct current temporal features
+      ↓
+trained model
+      ↓
+new prediction
+```
+
+For example:
+
+```text
+Training history     2–3 years
+Inference history    13 weeks
+                     (derived from configured features)
+Forecast horizon     4 weeks
+```
+
+These values are independent. Training history determines the operating patterns and relationships the model learns. Inference history provides the recent state required to construct the current model inputs. The forecast horizon determines how far forward the target represents.
+
+---
+
+### 6. Temporal features can also be supplied precomputed
+
+Anistroph can conceptually support two patterns.
+
+**History-derived features**
+
+```text
+entity + as_of
+      ↓
+Anistroph retrieves history
+      ↓
+Anistroph calculates rolling features
+      ↓
+model prediction
+```
+
+This keeps temporal feature construction within the prediction pipeline and ensures that features are calculated using information available at the requested prediction point.
+
+**Precomputed features**
+
+```text
+upstream data pipeline
+      ↓
+fully prepared feature row
+      ↓
+model prediction
+```
+
+Here, an upstream process calculates rolling and lag features before invoking prediction.
+
+The trained model ultimately receives the same type of feature vector in either case. The difference is **where temporal feature computation occurs**.
+
+---
+
+### 7. Temporal prediction vs. model retraining
+
+| Event                                      | New prediction? | Retraining required? |
+| ------------------------------------------ | --------------: | -------------------: |
+| New weekly observation                     |             Yes |                   No |
+| Rolling window advances                    |             Yes |                   No |
+| Inventory or supplier metrics change       |             Yes |                   No |
+| Forecast `as_of` point changes             |             Yes |                   No |
+| Model performance degrades                 |               — |          Potentially |
+| Underlying relationships materially change |               — |          Potentially |
+| Feature definitions change                 |               — |                  Yes |
+
+The key architectural distinction is:
+
+> **Temporal history determines the current feature values. Training determines how the model interprets those values. The forecast target determines what future outcome is predicted.**
+
+These three concerns remain independent.
+
+---
+
 ## Operations
 
 All operations are available via Python, REST, MCP, and the Web UI. Examples below show Python (primary) and MCP (for agent interaction). REST endpoints are listed in the [API Reference](#api-reference) section.
@@ -465,22 +736,24 @@ Via MCP:
 
 Two prediction modes:
 
-**A. Entity lookup** (existing entity in the data): provide `model_id` + `entity_id` (+ `timestamp` for temporal datasets). Anistroph loads the entity's row(s) from the parquet, builds features, and returns the prediction.
+**A. Entity lookup** (existing entity in the data): provide `model_id` + `entity_id` (+ `timestamp` for temporal models). Anistroph loads the entity's row(s) from the parquet, builds features, and returns the prediction.
 
 **B. Records** (new or hypothetical entity): provide `model_id` + `records` — a list of dicts with raw source-column values matching the model's `features:` block. The caller never constructs engineered features.
+
+> For temporal models, `timestamp` is the **`as_of` date** — the last known point in history, not the date being predicted. See [Temporal Prediction, History, and Retraining](#temporal-prediction-history-and-retraining) for the full explanation.
 
 ```python
 from backend.services import get_services
 
-# A. Entity lookup (temporal dataset)
+# A. Entity lookup (temporal dataset — as_of date required)
 pred = get_services().predict(
     model_id="my-pm-model",
     entity_id="TOOL_000",
-    timestamp="2026-06-15T12:00:00",
+    timestamp="2026-06-15T12:00:00",   # as_of: predict using history through this point
 )
 print(f"Probability: {pred['probability']:.4f}")
 
-# A. Entity lookup (non-temporal dataset)
+# A. Entity lookup (non-temporal dataset — no timestamp needed)
 pred = get_services().predict(
     model_id="my-wafer-yield-model",
     entity_id="WAFER_015000",
@@ -513,6 +786,8 @@ pred = get_services().predict(
 ```python
 schema = get_services().get_model_inputs("my-wafer-yield-model")
 print(f"Mode: {schema['prediction_mode']}")
+print(f"Requires timestamp: {schema['requires_timestamp']}")
+print(f"Inference history window: {schema['inference_history_window']}")
 for c in schema["required_columns"]:
     print(f"  {c['column']:30s} type={c['type']:12s} transforms={c['transforms']}")
 ```
@@ -520,9 +795,11 @@ for c in schema["required_columns"]:
 Via MCP:
 > "What inputs does the my-wafer-yield-model need for prediction?"
 
-The `prediction_mode` field tells you which modes work:
-- `entity_lookup_or_records` — both modes work (model uses only `current` and `categorical` transforms)
-- `entity_lookup` — only entity lookup works (model uses rolling-window transforms that require historical observations)
+The response includes:
+- `prediction_mode` — `entity_lookup_or_records` (both modes work; no history needed) or `entity_lookup` (rolling-window transforms require history)
+- `requires_timestamp` — whether the `as_of` timestamp is required
+- `inference_history_window` — the required history duration derived from the model's feature config (e.g. `"13w"`, `"6h"`, or `null`)
+- `entity_lookup` — only entity lookup works (model uses rolling-window transforms that require historical observations; `timestamp`/as_of required)
 
 Via MCP:
 > "Predict wafer yield for WAFER_015000 using model my-wafer-yield-model"
