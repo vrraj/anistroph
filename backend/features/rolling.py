@@ -35,6 +35,9 @@ def rolling_aggregate(
         raise ValueError(f"unsupported rolling op: {op!r}")
 
     df = df.sort([entity_col, time_col])
+    if df.height == 0:
+        # No rows: return with the output column filled as null.
+        return df.with_columns(pl.lit(None).cast(pl.Float64).alias(out_col))
     parts = []
     for (entity,), g in df.group_by(entity_col):
         g = g.sort(time_col)

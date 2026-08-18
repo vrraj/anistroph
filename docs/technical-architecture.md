@@ -1,4 +1,16 @@
-# Anistroph v0.1 — Technical Architecture
+---
+layout: default
+title: "Technical Architecture | Anistroph"
+description: "Internal architecture of the Anistroph predictive analytics framework — core components, data flow, and extension points."
+---
+
+# Anistroph — Technical Architecture
+
+This document describes the internal architecture of the Anistroph predictive analytics framework — core components, data flow, and extension points.
+
+> **New here?** Start with the project overview on the home page: **[Anistroph docs home](https://vrraj.github.io/anistroph/)**.
+>
+> **Source + releases:** GitHub repo is linked from the home page.
 
 ## 1. Design Principle
 

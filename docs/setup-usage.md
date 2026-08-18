@@ -1,6 +1,35 @@
+---
+layout: default
+title: "Setup & Usage | Anistroph"
+description: "Dataset configuration, operations, MCP setup, and API reference for the Anistroph predictive analytics architecture."
+---
+
 # Anistroph — Setup & Usage Guide
 
 Detailed reference for dataset configuration, operations, MCP setup, and API reference.
+
+> **New here?** Start with the project overview on the home page: **[Anistroph docs home](https://vrraj.github.io/anistroph/)**.
+>
+> **Source + releases:** GitHub repo is linked from the home page.
+
+## Reference Datasets at a Glance
+
+Anistroph ships with synthetic datasets across three domains. Each can be explored via Claude/MCP using the prompts in [Per-Dataset Example Queries](#per-dataset-example-queries).
+
+| Dataset | Domain | Target | Sample Questions |
+|---------|--------|--------|------------------|
+| **[Semiconductor Procurement — Demand](#semiconductor-procurement--demand-forecasting)** | Supply chain | `material_demand_next_4w` (regression) | "Predict 4-week material demand for FAB_A__MAT_0001" · "Which material categories have the highest forecast demand at FAB_A?" · "Where is forecast error highest by fab × material category?" |
+| **[Semiconductor Procurement — Shortage Risk](#semiconductor-procurement--shortage-risk)** | Supply chain | `shortage_risk_next_4w` (classification) | "Predict shortage risk for FAB_H__MAT_0050" · "Which suppliers are associated with the greatest shortage risk?" · "Which fab × supplier combinations have the worst prediction error?" |
+| **[Semiconductor Yield](#semiconductor-yield)** | Manufacturing | `wafer_yield` (regression) | "Predict wafer yield for WAFER_015000" · "Find the worst yield combinations" · "Show yield by etch tool and chamber" |
+| **[Semiconductor Critical Dimension](#semiconductor-critical-dimension)** | Manufacturing | `critical_dimension_nm` (regression) | "Predict critical dimension for WAFER_015000" · "Which etch tools produce the widest CDs?" · "Find interesting slices by etch_tool and etch_recipe" |
+| **[Semiconductor Film Thickness](#semiconductor-film-thickness)** | Manufacturing | `film_thickness_nm` (regression) | "Predict film thickness for WAFER_015000" · "Compare film thickness across deposition tools" · "Find evaluation slices by deposition_tool and deposition_recipe" |
+| **[Semiconductor Staged Prediction (A–D)](#semiconductor-staged-prediction-stage-ad)** | Manufacturing | `wafer_yield` (regression, 4 stages) | "What inputs does the stage A model need?" · "Predict yield using stage A vs stage D" · "How much does accuracy improve with more process data?" |
+| **[Predictive Maintenance — Failure](#predictive-maintenance--failure)** | Equipment health | `failure_within_horizon` (classification) | "Predict failure probability for TOOL_010" · "Show mean failure rate by machine_type" · "Evaluate the model on the held-out set" |
+| **[Predictive Maintenance — RUL](#predictive-maintenance--remaining-useful-life)** | Equipment health | `remaining_useful_life_hours` (regression) | "Predict remaining useful life for TOOL_010" · "Which machines have the shortest RUL?" · "Find evaluation slices ranked by MAE deviation" |
+| **[Predictive Maintenance — Maintenance Required](#predictive-maintenance--maintenance-required)** | Equipment health | `maintenance_required` (classification) | "Predict maintenance required for TOOL_010" · "Evaluate filtered to machine_type=TYPE_B" · "Find slices where log loss is highest" |
+| **[Bay Area Home Prices](#bay-area-home-prices)** | Real estate | `price` (regression) | "Show median price by city" · "Find the most expensive zip codes" · "Compare MAPE for Saratoga vs Los Gatos vs San Jose" |
+
+---
 
 **What's in this document:**
 - **[Dataset Configuration](#dataset-configuration)** — YAML authoring: schema, features, targets, transforms, split strategy, worked examples
@@ -721,7 +750,56 @@ Claude prompts tailored to each reference dataset. Replace model IDs with your o
 > "Find the populations where the home price model has the worst prediction error"
 > "Show me 5 homes in Saratoga sorted by price descending"
 
+### Semiconductor Procurement — Demand Forecasting
+
+**Discovery:**
+> "What datasets and models are available for semiconductor procurement?"
+> "What inputs does the demand forecasting model need?"
+> "Profile the semiconductor_procurement_demand dataset"
+
+**Demand forecasting:**
+> "Predict 4-week material demand for series FAB_A__MAT_0001 at 2025-10-06 using the procurement demand model"
+> "Explain that prediction — what are the top drivers?"
+> "Show me 10 rows for FAB_A__MAT_0001 sorted by week descending"
+> "What's the forecast error (MAE, R²) for the demand model on the held-out eval set?"
+
+**Demand-driver analysis:**
+> "Explain the demand prediction for FAB_A__MAT_0001 — what are the top SHAP drivers?"
+> "Which features matter most across all demand predictions?"
+> "Find interesting slices in semiconductor_procurement_demand for material_demand_next_4w"
+> "How does rolling 13-week consumption compare to current consumption as a demand driver?"
+
+**Procurement-risk slicing:**
+> "Which material categories have the highest forecast demand at FAB_A?"
+> "Slice semiconductor_procurement_demand by fab_id, metric material_demand_next_4w"
+> "Find evaluation slices for the demand model — where is forecast error highest by fab x material category?"
+> "Where is forecast error highest by fab x material category?"
+> "Which fab x material combinations have increasing demand and low inventory coverage?"
+
+### Semiconductor Procurement — Shortage Risk
+
+**Shortage risk prediction:**
+> "Predict shortage risk for series FAB_H__MAT_0050 at 2025-10-06 using the shortage risk model"
+> "Explain that shortage risk prediction — what increases the risk?"
+> "Which series currently have the highest predicted shortage probability?"
+> "Evaluate the shortage risk model filtered to FAB_H only"
+
+**Procurement-risk slicing:**
+> "Which suppliers are associated with the greatest shortage risk?"
+> "Slice semiconductor_procurement_shortage by supplier_id, metric shortage_risk_next_4w, aggregation mean"
+> "Find evaluation slices for the shortage model — which fab x supplier combinations have the worst error?"
+> "Compare shortage risk across fabs and material categories"
+
+### Semiconductor Procurement — Suggested Demo Flow
+
+1. > "What datasets and models are available for semiconductor procurement?" — discovery
+2. > "Predict 4-week material demand for FAB_A__MAT_0001 at 2025-10-06" — prediction
+3. > "Explain that prediction — what are the top drivers?" — SHAP explanation
+4. > "Which suppliers are associated with the greatest shortage risk?" — slicing
+5. > "Find evaluation slices for the demand model — where is forecast error highest?" — error discovery
+
 ---
+
 
 ## Troubleshooting
 

@@ -63,7 +63,7 @@ A common predictive lifecycle — each dataset keeps its own schema, features, a
 - **Cross-interface validation** — Claude/agent-generated inference for a model — predictions, explanations, and summaries — can be cross-validated in the Anistroph Web UI using the same source-feature JSON and persisted model/runtime.
 
 
-Anistroph ships with a few **synthetic reference datasets** (semiconductor manufacturing, predictive maintenance, Bay Area home prices) that exercise the architecture across regression, classification, temporal, and multidimensional patterns. You can **add your own dataset** by authoring a `dataset.yaml` and registering it — see [Adding a Dataset](#adding-a-dataset) for the process summary and the [Setup & Usage Guide](docs/setup-usage.md) for the full YAML reference and worked examples.
+Anistroph ships with **synthetic reference datasets** across four domains — semiconductor manufacturing, predictive maintenance, Bay Area home prices, and **semiconductor materials procurement & supply planning** — that exercise the architecture across regression, classification, temporal forecasting, and multidimensional analysis. You can **add your own dataset** by authoring a `dataset.yaml` and registering it — see [Adding a Dataset](#adding-a-dataset) for the process summary and the [Setup & Usage Guide](docs/setup-usage.md) for the full YAML reference and worked examples.
 
 > Anistroph is a reference architecture. The included datasets and models demonstrate how the components fit together rather than claiming validation across every potential domain.
 
@@ -129,7 +129,7 @@ This runs `scripts/setup_anistroph.py`, which:
 - Checks for `libomp` on macOS (XGBoost dependency) and offers to install it via Homebrew if missing
 - Creates a virtualenv at `.venv` and installs the package in editable mode
 - Creates `.env` from `.env.example` (partition defaults — edit to override or add `NGROK_AUTHTOKEN`)
-- Generates and registers all eleven reference dataset configs (idempotent — re-runs skip what's already done)
+- Generates and registers all thirteen reference dataset configs (idempotent — re-runs skip what's already done)
 - Prints the **ready-to-paste Claude Desktop MCP config** with absolute paths filled in
 
 > **Without `make install`**, the equivalent manual steps are:
@@ -503,6 +503,20 @@ Features include city, ZIP code, square footage, bedrooms, bathrooms, lot size, 
 
 The regression target `price` is generated from location-specific price-per-square-foot baselines plus property-size effects, bedroom/bathroom premiums, property age, lot size, garage capacity, and controlled noise.
 
+### Semiconductor Materials Procurement — `generate_procurement_data.py`
+
+**Domain:** supply chain & materials planning  
+**Shape:** ~100,000 weekly rows at `week × fab × material` grain (8 fabs, 100 materials, 15 suppliers, 160 weeks)
+
+Features include planned/actual wafer starts, fab utilization, material consumption, inventory, safety stock, open POs, scheduled receipts, supplier lead time, supplier OTD %, unit cost, MOQ, and pre-computed consumption lags (1/2/4/8/13 weeks).
+
+Two targets are generated:
+
+- `material_demand_next_4w` — regression: total material consumption over the next 4 weeks, driven by recent consumption (lags + rolling means), wafer starts, and utilization. Trained XGBoost regressor achieves R² ≈ 0.96.
+- `shortage_risk_next_4w` — classification: 1 if inventory drops below safety stock in the next 4 weeks, driven by inventory level, lead time, supplier OTD, and scheduled receipts. Trained XGBoost classifier achieves ROC-AUC ≈ 0.99, F1 ≈ 0.90.
+
+The data includes realistic temporal effects: production trends, seasonal cycles, demand spikes, fab shutdowns, supplier lead-time disruptions, and OTD degradation. Lag features are pre-computed per `(fab, material)` series because Anistroph's feature engine does not include a lag transform.
+
 ### Common Generator Design
 
 - **Reproducible** — `seed=42` by default.
@@ -531,6 +545,11 @@ TOOL / PREDICTIVE MAINTENANCE
 ├── failure                       classification
 ├── remaining_useful_life_hours   regression
 └── maintenance_required          classification
+
+SEMICONDUCTOR MATERIALS PROCUREMENT
+│
+├── material_demand_next_4w       regression
+└── shortage_risk_next_4w         classification
 ```
 
 
@@ -592,6 +611,27 @@ A third reference domain uses synthetic Bay Area housing data across San Jose, S
 | Target | Task | Represents |
 |---|---|---|
 | `price` | Regression | Home sale price (USD) |
+
+### Semiconductor Materials Procurement & Supply Planning — Forecasting + Risk
+
+A fourth reference domain validates that Anistroph can support **temporal procurement analytics** without new application code. The dataset represents weekly material consumption, inventory, supplier performance, and demand at the `week × fab × material` grain across 8 fabs, 100 materials, and 15 suppliers over 3 years (~100K rows).
+
+```text
+Planned Wafer Starts → Material Consumption → Inventory Depletion
+   ↓                                              ↓
+Supplier Lead Time → Scheduled Receipts      Safety Stock
+   ↓                                              ↓
+Supplier OTD → Reorder Timing              Shortage Risk
+   ↓                                              ↓
+Material Demand (next 4 weeks)              Shortage Risk (next 4 weeks)
+```
+
+| Target | Task | Represents |
+|---|---|---|
+| `material_demand_next_4w` | Regression | Total material consumption over next 4 weeks |
+| `shortage_risk_next_4w` | Classification | Inventory drops below safety stock in next 4 weeks |
+
+The dataset includes pre-computed lag features (`consumption_lag_1w` through `_13w`) and uses Anistroph's existing rolling-mean transform for `4w/8w/13w` windows. A trained XGBoost regressor on the demand target achieves R² ≈ 0.96, and the shortage-risk classifier achieves ROC-AUC ≈ 0.99. Train your own with `python scripts/train_model.py --dataset semiconductor_procurement_demand --model-type xgboost_regressor`.
 
 ## System Architecture & Technology Stack
 

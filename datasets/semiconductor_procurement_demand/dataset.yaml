@@ -1,0 +1,197 @@
+# Anistroph — Semiconductor Materials Procurement & Supply Planning (Demand Forecasting)
+#
+# One row = one week x fab_id x material_id. The model predicts
+# material_demand_next_4w (regression) — the total material consumption
+# expected over the next 4 weeks for a given fab/material series.
+#
+# This is a temporal dataset with weekly grain. The entity_key is a composite
+# series_id = {fab_id}__{material_id}. Lag features are pre-computed in the
+# data (Anistroph has no lag transform). Rolling mean features are generated
+# at feature-engineering time via the existing `mean` transform.
+#
+# Chronological split: earliest 80% → train, most recent 20% → evaluation.
+
+dataset:
+  dataset_id: semiconductor_procurement_demand
+  name: Semiconductor Procurement — Demand Forecasting
+  entity_key: series_id
+  time_key: week
+
+  columns:
+    week:
+      type: timestamp
+      role: identifier
+    series_id:
+      type: categorical
+      role: identifier
+    fab_id:
+      type: categorical
+      role: feature
+    material_id:
+      type: categorical
+      role: feature
+    material_category:
+      type: categorical
+      role: feature
+    material_spec:
+      type: string
+      role: metadata
+    supplier_id:
+      type: categorical
+      role: feature
+    planned_wafer_starts:
+      type: numeric
+      role: feature
+    actual_wafer_starts:
+      type: numeric
+      role: feature
+    fab_utilization_pct:
+      type: numeric
+      role: feature
+    material_consumption_qty:
+      type: numeric
+      role: feature
+    inventory_on_hand:
+      type: numeric
+      role: feature
+    safety_stock_qty:
+      type: numeric
+      role: feature
+    open_po_qty:
+      type: numeric
+      role: feature
+    scheduled_receipt_qty:
+      type: numeric
+      role: feature
+    supplier_lead_time_days:
+      type: numeric
+      role: feature
+    supplier_otd_pct:
+      type: numeric
+      role: feature
+    unit_cost:
+      type: numeric
+      role: feature
+    minimum_order_qty:
+      type: numeric
+      role: feature
+    consumption_lag_1w:
+      type: numeric
+      role: feature
+    consumption_lag_2w:
+      type: numeric
+      role: feature
+    consumption_lag_4w:
+      type: numeric
+      role: feature
+    consumption_lag_8w:
+      type: numeric
+      role: feature
+    consumption_lag_13w:
+      type: numeric
+      role: feature
+    material_demand_next_4w:
+      type: numeric
+      role: target
+    shortage_risk_next_4w:
+      type: boolean
+      role: target
+
+  split:
+    strategy: chronological
+    train: 0.80
+    validation: 0.10
+    test: 0.10
+
+features:
+  fab_id:
+    column: fab_id
+    transforms:
+      - categorical
+  material_id:
+    column: material_id
+    transforms:
+      - categorical
+  material_category:
+    column: material_category
+    transforms:
+      - categorical
+  supplier_id:
+    column: supplier_id
+    transforms:
+      - categorical
+  planned_wafer_starts:
+    column: planned_wafer_starts
+    transforms:
+      - current
+  actual_wafer_starts:
+    column: actual_wafer_starts
+    transforms:
+      - current
+  fab_utilization_pct:
+    column: fab_utilization_pct
+    transforms:
+      - current
+  material_consumption_qty:
+    column: material_consumption_qty
+    transforms:
+      - current
+      - mean:
+          windows: [4w, 8w, 13w]
+  inventory_on_hand:
+    column: inventory_on_hand
+    transforms:
+      - current
+  safety_stock_qty:
+    column: safety_stock_qty
+    transforms:
+      - current
+  open_po_qty:
+    column: open_po_qty
+    transforms:
+      - current
+  scheduled_receipt_qty:
+    column: scheduled_receipt_qty
+    transforms:
+      - current
+  supplier_lead_time_days:
+    column: supplier_lead_time_days
+    transforms:
+      - current
+  supplier_otd_pct:
+    column: supplier_otd_pct
+    transforms:
+      - current
+  unit_cost:
+    column: unit_cost
+    transforms:
+      - current
+  minimum_order_qty:
+    column: minimum_order_qty
+    transforms:
+      - current
+  consumption_lag_1w:
+    column: consumption_lag_1w
+    transforms:
+      - current
+  consumption_lag_2w:
+    column: consumption_lag_2w
+    transforms:
+      - current
+  consumption_lag_4w:
+    column: consumption_lag_4w
+    transforms:
+      - current
+  consumption_lag_8w:
+    column: consumption_lag_8w
+    transforms:
+      - current
+  consumption_lag_13w:
+    column: consumption_lag_13w
+    transforms:
+      - current
+
+target:
+  name: material_demand_next_4w
+  type: regression
+  source_column: material_demand_next_4w

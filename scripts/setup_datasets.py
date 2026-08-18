@@ -32,6 +32,7 @@ GENERATORS = [
     ("scripts/generate_sensor_data.py", "data/raw/predictive_maintenance.parquet"),
     ("scripts/generate_semiconductor_yield_data.py", "data/semiconductor_yield/data.parquet"),
     ("scripts/generate_home_prices_data.py", "data/home_prices/data.parquet"),
+    ("scripts/generate_procurement_data.py", "data/semiconductor_procurement/data.parquet"),
 ]
 
 # --- Dataset configs -----------------------------------------------------
@@ -53,6 +54,9 @@ DATASETS = [
     ("datasets/semiconductor_yield_stage_d/dataset.yaml", "data/semiconductor_yield/data.parquet"),
     # Home prices — 1 target
     ("datasets/home_prices/dataset.yaml", "data/home_prices/data.parquet"),
+    # Semiconductor procurement — 2 targets (demand + shortage risk), one source
+    ("datasets/semiconductor_procurement_demand/dataset.yaml", "data/semiconductor_procurement/data.parquet"),
+    ("datasets/semiconductor_procurement_shortage/dataset.yaml", "data/semiconductor_procurement/data.parquet"),
 ]
 
 

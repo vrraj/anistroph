@@ -236,14 +236,16 @@ def train_model(
     # --- Impute NaN values (from rolling windows at series start) ---
     imputer = SimpleImputer(strategy="median")
     X_train = imputer.fit_transform(X_train)
-    X_val = imputer.transform(X_val)
+    has_val = X_val.shape[0] > 0
+    if has_val:
+        X_val = imputer.transform(X_val)
     X_eval = imputer.transform(X_eval)
 
     # --- Train ---
     params = model_parameters or {}
     predictor = MODEL_FACTORIES[model_type](**params)
     predictor._feature_names = feature_cols
-    predictor.fit(X_train, y_train, X_val, y_val)
+    predictor.fit(X_train, y_train, X_val if has_val else None, y_val if has_val else None)
 
     # --- Evaluate (branch on target type) ---
     is_regression = ts.type.is_regression
@@ -255,7 +257,10 @@ def train_model(
         threshold = 0.0  # not used for regression
     else:
         y_eval_proba = predictor.predict_proba(X_eval)[:, 1]
-        threshold = best_threshold_by_f1(y_val, predictor.predict_proba(X_val)[:, 1])
+        if has_val:
+            threshold = best_threshold_by_f1(y_val, predictor.predict_proba(X_val)[:, 1])
+        else:
+            threshold = 0.5
         metrics = evaluate_binary(y_eval, y_eval_proba, threshold=threshold)
 
     # --- Persist model ---
