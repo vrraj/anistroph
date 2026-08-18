@@ -26,6 +26,7 @@ Anistroph runtime.
 > **Explore:** [GitHub](https://github.com/vrraj/anistroph) · [Setup &
 > Usage](setup-usage) · [Technical Architecture](technical-architecture)
 
+
 ![Anistroph predictive analytics
 pipeline](https://raw.githubusercontent.com/vrraj/anistroph/main/docs/images/anistroph-pipeline.png)
 
