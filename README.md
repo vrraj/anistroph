@@ -3,7 +3,7 @@
 [![GitHub Release](https://img.shields.io/github/v/release/vrraj/anistroph?label=release&color=orange&logo=github)](https://github.com/vrraj/anistroph/releases)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](https://github.com/vrraj/anistroph/blob/main/LICENSE)
 [![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue?logo=python&logoColor=white)](https://www.python.org/downloads/)
-[![Tests](https://img.shields.io/badge/tests-147%20passing-brightgreen)](https://github.com/vrraj/anistroph/blob/main/README_TEST.md)
+[![Tests](https://img.shields.io/badge/tests-147%20passing-brightgreen)](https://vrraj.github.io/anistroph/setup-usage#testing)
 [![MCP Tools](https://img.shields.io/badge/MCP-13%20tools-purple)](https://github.com/vrraj/anistroph#mcp-and-agent-access)
 [![GitHub Pages](https://img.shields.io/badge/docs-GitHub%20Pages-blue)](https://vrraj.github.io/anistroph/)
 
@@ -856,7 +856,6 @@ The current suite contains **147 tests** spanning dataset specifications, ingest
 - **[docs/index.md](docs/index.md)** — GitHub Pages landing page (positioning, tech stack, code examples)
 - **[docs/setup-usage.md](docs/setup-usage.md)** — setup, usage, training, prediction, and MCP examples
 - **[docs/technical-architecture.md](docs/technical-architecture.md)** — deeper architecture details
-- **[README_TEST.md](README_TEST.md)** — testing and MCP testing guide
 - **[RELEASE_NOTES.md](RELEASE_NOTES.md)** — release notes
 
 ## License

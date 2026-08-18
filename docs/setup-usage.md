@@ -751,6 +751,46 @@ brew install libomp
 
 ---
 
+## Testing
+
+### Full test suite
+
+```bash
+pytest
+```
+
+147 tests covering datasets, features, targets, partitioning, training, inference, explanation, MCP, REST API, and SHAP grouping.
+
+### Unit tests only
+
+```bash
+pytest tests/unit/ -v
+```
+
+### Integration tests only
+
+```bash
+pytest tests/integration/ -v
+```
+
+### Leakage and parity checks
+
+```bash
+# Rolling-window features never use observations after time T
+pytest tests/unit/test_features.py::TestFeatureEngine::test_rolling_mean_leakage_safe -v
+
+# A failure on one entity never labels another entity
+pytest tests/unit/test_targets.py::TestFutureEventTarget::test_entity_isolation -v
+
+# Train and inference use the same feature metadata
+pytest tests/unit/test_features.py::TestFeatureEngine::test_inference_uses_same_metadata -v
+
+# REST and MCP produce identical predictions (same service layer)
+pytest tests/integration/test_e2e.py::TestEndToEnd::test_rest_and_mcp_same_services -v
+```
+
+---
+
 ## API Reference
 
 ### REST API endpoints

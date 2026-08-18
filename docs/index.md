@@ -6,9 +6,11 @@ description: "A domain-agnostic reference architecture for predictive analytics,
 
 # Anistroph
 
-**A domain-agnostic reference architecture for predictive analytics, explainability, and multidimensional discovery across structured datasets.**
+Anistroph is a **multi-domain predictive analytics architecture** in which datasets from different domains share common prediction, explanation, evaluation, and multidimensional analysis services while keeping their own schemas, features, targets, preprocessing, and models.
 
-Anistroph provides a common predictive lifecycle — train, predict, explain, evaluate, and discover patterns — while allowing each dataset to retain its own schema, features, targets, preprocessing, and models. The same runtime serves Claude Desktop, MCP-compatible agents, REST clients, and a Web UI through one shared service layer.
+Anistroph provides a common predictive lifecycle — 
+Dataset Feature Specification  ⮕ train  ⮕ predict  ⮕ explain  ⮕ evaluate  ⮕ discover patterns , while allowing each dataset to retain its own schema, features, targets, preprocessing, and models. 
+> The same runtime serves Claude Desktop, MCP-compatible agents, REST clients, and a Web UI through one **shared service layer**.
 
 ```text
                   DATASETS (Multi-domain)
