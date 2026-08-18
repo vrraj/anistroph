@@ -28,36 +28,7 @@ performance, and analyze data through **MCP (stdio and Streamable
 HTTP)**. The same runtime is also accessible through **REST/OpenAPI and
 the Anistroph Web UI**.
 
-``` text
-                       DATASETS (Multi-domain)
-                                  │
-                   Data Preparation / Feature Engineering
-                                  │
-                           Train / Eval Split
-                                  │
-                   ┌──────────────┴──────────────┐
-                   ▼                             ▼
-              MODEL TRAINING                 EVALUATION
-                   │                             │
-             train.parquet                 evaluation.parquet
-                   │                             │
-                   ▼                             ▼
-              Train Model              Evaluate Persisted Model
-                   │                             │
-                   ▼                             ▼
-             Persist Model                Model Metrics
-                                         + Multidimensional
-                                            Evaluation
-                   │                             │
-                   └──────────────┬──────────────┘
-                                  ▼
-                           SHARED RUNTIME
-                    Predict • Explain • Analyze • Evaluate
-                                  │
-                        MCP • REST/OpenAPI • UI
-                                  │
-                    Claude • Agents • Applications
-```
+![Anistroph predictive analytics pipeline](https://raw.githubusercontent.com/vrraj/anistroph/main/docs/images/anistroph-pipeline.png)
 
 ### AI Agent Analysis & Validation
 

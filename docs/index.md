@@ -28,39 +28,19 @@ Anistroph runtime.
 > Usage](setup-usage) · [Technical Architecture](technical-architecture)
 
 ![Anistroph predictive analytics
-pipeline](images/anistroph-pipeline.png)
+pipeline](https://raw.githubusercontent.com/vrraj/anistroph/main/docs/images/anistroph-pipeline.png)
 
 ## Predictive Use Cases
 
 Anistroph includes synthetic reference implementations designed to
 exercise different parts of the architecture.
 
-  -----------------------------------------------------------------------
-  Reference domain        Predictive use cases    What it demonstrates
-  ----------------------- ----------------------- -----------------------
-  **Semiconductor         Wafer yield, critical   Multiple targets,
-  Manufacturing**         dimension, film         process-stage
-                          thickness               prediction, SHAP
-                                                  explainability,
-                                                  multidimensional
-                                                  evaluation
-
-  **Predictive            Equipment failure,      Temporal sensor data,
-  Maintenance**           remaining useful life,  classification +
-                          maintenance required    regression,
-                                                  history-based features
-
-  **Semiconductor         4-week material demand, Rolling forecasts,
-  Materials Procurement** 4-week shortage risk    temporal prediction,
-                                                  inventory/supplier
-                                                  signals,
-                                                  multidimensional
-                                                  analysis
-
-  Real estate             Home price prediction   Lightweight
-                                                  cross-domain regression
-                                                  validation
-  -----------------------------------------------------------------------
+| Reference domain | Predictive use cases | What it demonstrates |
+|---|---|---|
+| **Semiconductor Manufacturing** | Wafer yield, critical dimension, film thickness | Multiple targets, process-stage prediction, SHAP explainability, multidimensional evaluation |
+| **Predictive Maintenance** | Equipment failure, remaining useful life, maintenance required | Temporal sensor data, classification + regression, history-based features |
+| **Semiconductor Materials Procurement** | 4-week material demand, 4-week shortage risk | Rolling forecasts, temporal prediction, inventory/supplier signals, multidimensional analysis |
+| Real estate | Home price prediction | Lightweight cross-domain regression validation |
 
 The reference datasets are not intended as production benchmarks. They
 provide concrete, reproducible problems for demonstrating how the same
@@ -282,44 +262,18 @@ rebuilding the runtime services or agent interfaces.
 Anistroph is implemented as a modular Python architecture with thin
 interfaces over a shared service layer.
 
-  -----------------------------------------------------------------------
-  Layer                   Technology              Role
-  ----------------------- ----------------------- -----------------------
-  Language                **Python**              Core services, data
-                                                  preparation, ML
-                                                  orchestration
-
-  API / Service           **FastAPI + Uvicorn**   REST/OpenAPI and Web UI
-                                                  service layer
-
-  Data processing         **Polars + DuckDB**     Columnar
-                                                  transformations,
-                                                  querying, analytical
-                                                  slicing
-
-  Persistence             **Parquet**             Dataset and partition
-                                                  storage
-
-  Configuration           **YAML**                Dataset schemas,
-                                                  features, targets, and
-                                                  split strategy
-
-  ML                      **XGBoost +             Regression and
-                          scikit-learn**          classification models
-
-  Explainability          **SHAP TreeExplainer**  Per-prediction XGBoost
-                                                  explanations
-
-  Model artifacts         **joblib**              Model persistence and
-                                                  reload
-
-  Agent access            **MCP SDK**             Domain-agnostic tools
-                                                  over stdio and
-                                                  Streamable HTTP
-
-  Testing                 **pytest**              Unit, integration, MCP,
-                                                  and end-to-end coverage
-  -----------------------------------------------------------------------
+| Layer | Technology | Role |
+|---|---|---|
+| Language | **Python** | Core services, data preparation, ML orchestration |
+| API / Service | **FastAPI + Uvicorn** | REST/OpenAPI and Web UI service layer |
+| Data processing | **Polars + DuckDB** | Columnar transformations, querying, analytical slicing |
+| Persistence | **Parquet** | Dataset and partition storage |
+| Configuration | **YAML** | Dataset schemas, features, targets, and split strategy |
+| ML | **XGBoost + scikit-learn** | Regression and classification models |
+| Explainability | **SHAP TreeExplainer** | Per-prediction XGBoost explanations |
+| Model artifacts | **joblib** | Model persistence and reload |
+| Agent access | **MCP SDK** | Domain-agnostic tools over stdio and Streamable HTTP |
+| Testing | **pytest** | Unit, integration, MCP, and end-to-end coverage |
 
 No database, message queue, or vector store is required by the current
 reference implementation.
