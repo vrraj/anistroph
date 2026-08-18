@@ -3,8 +3,7 @@ description: A multi-domain predictive analytics architecture for
   prediction, explainability, evaluation, multidimensional analysis,
   temporal forecasting, and AI agent access.
 layout: default
-title: "Anistroph: Multi-Domain Predictive Analytics and AI Agent
-  Access"
+title: "Anistroph: Multi-Domain Predictive Analytics with AI Agent Access"
 ---
 
 # Anistroph
