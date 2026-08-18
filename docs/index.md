@@ -1,253 +1,378 @@
 ---
+description: A multi-domain predictive analytics architecture for
+  prediction, explainability, evaluation, multidimensional analysis,
+  temporal forecasting, and AI agent access.
 layout: default
-title: "Anistroph: Predictive Analytics, Explainability, and Multidimensional Discovery"
-description: "A domain-agnostic reference architecture for predictive analytics, model explainability, and multidimensional discovery across structured datasets."
+title: "Anistroph: Multi-Domain Predictive Analytics and AI Agent
+  Access"
 ---
 
 # Anistroph
 
-Anistroph is a **multi-domain predictive analytics architecture** in which datasets from different domains share common prediction, explanation, evaluation, and multidimensional analysis services while keeping their own schemas, features, targets, preprocessing, and models.
+**Anistroph is a multi-domain predictive analytics architecture for
+structured data --- connecting dataset-specific models to shared
+prediction, explainability, evaluation, multidimensional analysis, and
+AI-agent services.**
 
-> **Source + releases:** [GitHub repo](https://github.com/vrraj/anistroph) · [Setup & Usage Guide](setup-usage) · [Technical Architecture](technical-architecture)
+Different domains can have different schemas, features, targets,
+preprocessing, and models without rebuilding the surrounding analytics
+stack.
 
-Anistroph provides a common predictive lifecycle:
+A semiconductor manufacturing team can predict wafer yield at different
+process stages. A maintenance team can predict equipment failure and
+remaining useful life. A procurement team can forecast material demand
+and shortage risk. Each problem is different, but all use the same
+Anistroph runtime.
 
-Dataset Feature Specification  ⮕ train  ⮕ predict  ⮕ explain  ⮕ evaluate  ⮕ discover patterns , while allowing each dataset to retain its own schema, features, targets, preprocessing, and models. 
-> The same runtime serves Claude Desktop, MCP-compatible agents, REST clients, and a Web UI through one **shared service layer**.
+> **Explore:** [GitHub](https://github.com/vrraj/anistroph) · [Setup &
+> Usage](setup-usage) · [Technical Architecture](technical-architecture)
 
-```text
-                  DATASETS (Multi-domain)
-                            │
-             Data Preparation / Feature Engineering
-                            │
-                     Train / Eval Split
-                            │
-             ┌──────────────┴──────────────┐
-             ▼                             ▼
-        MODEL TRAINING                 EVALUATION
-             │                             │
-       Persist Model              Held-out Metrics
-             │                             │
-             └──────────────┬──────────────┘
-                            ▼
-                     SHARED RUNTIME
-                  Predict • Explain • Analyze
-                            │
-                  MCP • REST/OpenAPI • UI
-                            │
-              Claude • MCP Agents • Applications
+![Anistroph predictive analytics
+pipeline](images/anistroph-pipeline.png)
+
+## Predictive Use Cases
+
+Anistroph includes synthetic reference implementations designed to
+exercise different parts of the architecture.
+
+  -----------------------------------------------------------------------
+  Reference domain        Predictive use cases    What it demonstrates
+  ----------------------- ----------------------- -----------------------
+  **Semiconductor         Wafer yield, critical   Multiple targets,
+  Manufacturing**         dimension, film         process-stage
+                          thickness               prediction, SHAP
+                                                  explainability,
+                                                  multidimensional
+                                                  evaluation
+
+  **Predictive            Equipment failure,      Temporal sensor data,
+  Maintenance**           remaining useful life,  classification +
+                          maintenance required    regression,
+                                                  history-based features
+
+  **Semiconductor         4-week material demand, Rolling forecasts,
+  Materials Procurement** 4-week shortage risk    temporal prediction,
+                                                  inventory/supplier
+                                                  signals,
+                                                  multidimensional
+                                                  analysis
+
+  Real estate             Home price prediction   Lightweight
+                                                  cross-domain regression
+                                                  validation
+  -----------------------------------------------------------------------
+
+The reference datasets are not intended as production benchmarks. They
+provide concrete, reproducible problems for demonstrating how the same
+architecture behaves across different predictive domains.
+
+## What Anistroph Does
+
+### Predict
+
+Run persisted models against existing entities or new source-feature
+records. The runtime applies the same feature metadata and preprocessing
+used during training.
+
+### Explain
+
+Explain individual predictions using model-specific explainability.
+XGBoost models use TreeSHAP, with transformed categorical features
+normalized back to understandable source fields and values.
+
+### Evaluate
+
+Evaluate persisted models against held-out data using task-appropriate
+metrics. Evaluation can also be scoped to specific populations rather
+than relying only on aggregate model performance.
+
+### Discover
+
+Analyze the underlying data across one, two, or three dimensions to find
+populations where outcomes differ materially from the overall baseline.
+
+### Forecast Over Time
+
+For temporal problems, Anistroph reconstructs rolling and
+history-dependent model inputs as of a prediction point. New
+observations can produce updated forecasts without requiring the model
+to be retrained for every forecast period.
+
+### Work Through AI Agents
+
+Claude and other MCP-compatible agents can discover datasets and models,
+inspect required inputs, generate or select source-feature records,
+predict, explain, evaluate, and analyze through domain-agnostic MCP
+tools.
+
+## AI Agents as an Interface to Predictive Analytics
+
+Anistroph exposes predictive and analytical capabilities to Claude and
+other AI agents through **MCP stdio and Streamable HTTP**.
+
+``` text
+User
+ │
+ ▼
+Claude / AI Agent
+ │
+ ├── Discover datasets and models
+ ├── Inspect model input requirements
+ ├── Predict and explain
+ ├── Evaluate model performance
+ └── Analyze multidimensional populations
+ │
+ ▼
+Anistroph Shared Runtime
+ │
+ ├── Registered Datasets
+ ├── Feature / Preprocessing Contracts
+ └── Persisted Models
 ```
 
-## What Anistroph does
+Agents operate against the same runtime used by REST/OpenAPI and the Web
+UI rather than implementing their own prediction or analytical logic.
 
-- **Predict** — what outcome does a model forecast for a given record or entity?
-- **Explain** — which source features drove an individual prediction (SHAP, normalized back to original inputs)?
-- **Evaluate** — how well does a model perform on held-out data, overall and across multidimensional populations?
-- **Discover** — where in the data are outcomes unusually high or low, and where does the model perform unusually well or poorly?
-- **Temporal prediction & rolling forecasts** — for temporal datasets, Anistroph dynamically reconstructs rolling features from entity history at prediction time. The required history window is derived from the model's feature configuration (not specified by the caller), and only the bounded entity history is scanned — not the full dataset. The model stays fixed between retraining cycles; only the feature values change as new observations arrive. A procurement demand model, for example, can produce a new 4-week forecast each week without retraining.
-- **Agent access** — Claude Desktop, Claude CLI, and other MCP-compatible agents can discover models, inspect required inputs, generate test records, predict, explain, and evaluate — all through 13 domain-agnostic MCP tools.
+### AI Agent Analysis & Validation
 
-## Why it exists
+> Claude and AI agents can orchestrate Anistroph's prediction and
+> analytical capabilities through MCP. Predictions, explanations,
+> evaluations, and analyses are executed by Anistroph's shared services
+> and can be independently reproduced through the Web UI or REST API
+> when validation is required.
 
-Most predictive analytics projects rebuild the same plumbing for each new dataset: ingestion, feature engineering, train/test splitting, model persistence, inference, explanation, evaluation, and agent access. Anistroph isolates that plumbing behind common contracts so each dataset only defines what is unique to it — its schema, features, and target.
+This makes the source-feature inputs, selected model, and analytical
+operation portable across interfaces. An agent-driven workflow can
+therefore be inspected or reproduced independently without changing the
+underlying model execution path.
 
-The result is a reference architecture where adding a new domain (semiconductor, maintenance, real estate, or something else) means authoring one YAML file and calling register — not rewriting the pipeline.
+## One Architecture, Different Prediction Problems
 
-## Tech stack
+### Multi-Domain Datasets
 
-| Layer | Technology | Role |
-|---|---|---|
-| Language | **Python** | Core services, data preparation, ML orchestration |
-| API / Service | **FastAPI + Uvicorn** | REST API and Web UI service layer |
-| Data processing | **Polars + DuckDB** | Columnar transformations, analytical slicing |
-| Data persistence | **Parquet** | Efficient dataset storage |
-| Dataset configuration | **YAML** | Declarative schemas, features, targets, split strategy |
-| ML | **scikit-learn** | Logistic Regression, Linear/Ridge Regression, metrics |
-| Gradient boosting | **XGBoost** | Classification and regression models |
-| Explainability | **SHAP TreeExplainer** | Per-prediction feature contributions, normalized to source features |
-| Model artifacts | **joblib** | Model persistence and reload |
-| Agent integration | **MCP SDK** | Domain-agnostic runtime tools over stdio and Streamable HTTP |
-| Testing | **pytest** | Unit, integration, MCP, and end-to-end tests (147 tests) |
+Each dataset retains its own schema, features, targets, preprocessing,
+and model artifacts. Shared services remain independent of
+semiconductor, maintenance, procurement, real estate, or future domain
+concepts.
 
-No database, message queue, or vector store is required.
-
-## Quick start
-
-```bash
-git clone https://github.com/vrraj/anistroph
-cd anistroph
-make install
-```
-
-`make install` creates a virtualenv, installs the package, generates and registers all reference datasets, and prints a ready-to-paste Claude Desktop MCP config with absolute paths filled in.
-
-Then paste the printed config into Claude Desktop and ask:
-
-> "List all Anistroph datasets"
-> "Predict wafer yield for WAFER_015000 and explain what pushed it up or down"
-
-## Code examples
-
-### Train a model
-
-```bash
-python scripts/train_model.py --dataset semiconductor_yield \
-  --model-type xgboost_regressor --model-id my-wafer-yield-model
-```
-
-### Predict (entity lookup)
-
-```python
-from backend.services import get_services
-
-svc = get_services()
-pred = svc.predict(
-    model_id="my-wafer-yield-model",
-    entity_id="WAFER_015000",
-)
-print(pred)
-```
-
-### Predict (records — new or hypothetical rows)
-
-```python
-pred = svc.predict(
-    model_id="my-wafer-yield-model",
-    records=[{
-        "product_id": "PROD_B",
-        "etch_tool": "ETCH_02",
-        "etch_chamber": "CH_B",
-        "etch_temperature_std": 1.8,
-        # ... all source columns listed in the model's features block
-    }],
-)
-```
-
-### Predict (temporal — rolling forecast)
-
-```python
-# For temporal models, timestamp is the "as of" date — the last known point
-# in history. Anistroph loads entity history through that point, computes
-# rolling features, and applies the fixed trained model.
-pred = svc.predict(
-    model_id="semiconductor_procurement_demand-xgboost_regressor-...",
-    entity_id="FAB_A__MAT_0001",
-    timestamp="2025-06-09",   # as_of: predict using history through this week
-)
-# Returns predicted material demand for the next 4 weeks (June 16 → July 7)
-# No retraining needed — the model is static, only the feature values change
-```
-
-### Explain a prediction
-
-```python
-expl = svc.explain(
-    model_id="my-wafer-yield-model",
-    entity_id="WAFER_015000",
-    top_k=10,
-)
-# Returns SHAP contributions normalized back to source features
-# (one-hot groups are summed back to the original categorical column)
-```
-
-### Evaluate on held-out data
-
-```python
-result = svc.evaluate_model(
-    model_id="my-wafer-yield-model",
-    sample_size=1000,
-)
-# Returns MAE, RMSE, R², MSE, MAPE, max_error
-```
-
-### Discover multidimensional patterns
-
-```python
-interesting = svc.find_interesting_slices(
-    "semiconductor_yield",
-    "wafer_yield",
-    top_k=20,
-)
-# Finds tool/chamber/recipe combinations where yield deviates most from baseline
-```
-
-### MCP via Claude Desktop
-
-```json
-{
-  "mcpServers": {
-    "anistroph": {
-      "command": "/path/to/anistroph/.venv/bin/python",
-      "args": ["-m", "backend.integrations.mcp.server"],
-      "cwd": "/path/to/anistroph"
-    }
-  }
-}
-```
-
-13 MCP tools are available — `anistroph_list_datasets`, `anistroph_predict`, `anistroph_explain_prediction`, `anistroph_evaluate_model`, `anistroph_find_interesting_slices`, `anistroph_get_model_inputs`, and more.
-
-### REST API
-
-```bash
-# Start the server
-make start-native
-
-# Predict via REST
-curl -X POST http://localhost:9500/predictions \
-  -H "Content-Type: application/json" \
-  -d '{"model_id": "my-wafer-yield-model", "entity_id": "WAFER_015000"}'
-
-# OpenAPI docs
-open http://localhost:9500/docs
-```
-
-## Reference datasets
-
-Anistroph ships with synthetic reference datasets across four domains exercising regression, classification, temporal forecasting, and multidimensional patterns:
-
-| Dataset | Domain | Rows | Targets |
-|---|---|---|---|
-| **Semiconductor Manufacturing** | Wafer fab process | 50,000 | Wafer yield, critical dimension, film thickness (regression) |
-| **Predictive Maintenance** | Tool health monitoring | ~864,000 | Failure within 24h (classification), remaining useful life (regression), maintenance required (classification) |
-| **Bay Area Home Prices** | Real estate | 40,000 | Sale price (regression) |
-| **Semiconductor Materials Procurement** | Supply chain & materials planning | ~100,000 | Material demand next 4 weeks (regression), shortage risk next 4 weeks (classification) |
-
-Each dataset is declared through a `dataset.yaml` and registered with one call. You can add your own dataset by authoring a YAML and registering it — see [Adding a Dataset](https://github.com/vrraj/anistroph#adding-a-dataset) in the README, and the [Dataset Configuration reference](setup-usage#dataset-configuration) in the Setup & Usage Guide for the full YAML schema, transform table, and worked examples.
-
-## Architecture in brief
-
-Anistroph separates **dataset-specific modeling** from a **shared predictive runtime**:
-
-```text
+``` text
 Semiconductor ──→ Yield / CD / Film Models ──────┐
 Maintenance ────→ Failure / RUL Models ──────────┤
-Home Prices ────→ Price Model ───────────────────┼─→ Shared Runtime
-Procurement ────→ Demand / Shortage Models ──────┤
+Procurement ────→ Demand / Shortage Models ──────┼─→ Shared Runtime
+Real Estate ────→ Price Model ───────────────────┤
 Future Domains ─→ Domain-Specific Models ────────┘
                                                    │
-                                      Predict • Explain • Evaluate
+                                  Predict • Explain • Evaluate • Analyze
                                                    │
-                                          MCP • REST • UI
+                                      MCP • REST/OpenAPI • Web UI
 ```
 
-- **Dataset-specific:** schema, features, targets, preprocessing, model artifacts — declared in YAML, isolated per dataset.
-- **Shared:** training/evaluation, persistence, inference, explainability, multidimensional analysis, and all interfaces.
-- **Extensible:** additional targets, model families, process-stage predictions, domains, and agent integrations.
+### Declarative Dataset and Model Contracts
 
-Feature transforms (rolling windows, slopes, deltas) are leakage-safe — they use only observations up to and including the current time. Datasets are partitioned at registration (80/20 train/eval); temporal datasets split chronologically.
+Dataset YAML defines what is unique to a prediction problem:
 
-## Documentation
+-   source schema and identifiers;
+-   model input features and transforms;
+-   prediction target and task type;
+-   temporal semantics where applicable;
+-   train/evaluation split strategy.
 
-- **[Setup & Usage Guide](setup-usage)** — dataset configuration, temporal prediction & retraining, operations, MCP setup, API reference
-- **[Technical Architecture](technical-architecture)** — deeper architecture details
-- **[Full README](https://github.com/vrraj/anistroph#readme)** — install, features, temporal prediction, extending, tests
-- **[Release Notes](https://github.com/vrraj/anistroph/blob/main/RELEASE_NOTES.md)** — version history
+The shared services consume these contracts rather than embedding
+domain-specific rules into the runtime. To add your own dataset, author
+a `dataset.yaml` and register it — see [Adding a
+Dataset](https://github.com/vrraj/anistroph#adding-a-dataset) in the
+README and the [Dataset Configuration
+reference](setup-usage#configure-your-own-dataset) in the Setup & Usage
+Guide for the full YAML schema, transform table, and worked examples.
 
-## Links
+### Multiple Targets
 
-- [GitHub Repository](https://github.com/vrraj/anistroph)
-- [Full README](https://github.com/vrraj/anistroph#readme)
+One source dataset can support independent predictive outcomes.
+Semiconductor manufacturing, for example, uses separate models for wafer
+yield, critical dimension, and film thickness while sharing the same
+underlying source data.
+
+### Process-Stage Prediction
+
+Anistroph can train separate models for different points in a process
+using only the information available at each stage.
+
+``` text
+Before Etch ──→ After Etch ──→ Deposition / Lithography ──→ Final Test
+     │               │                         │
+     ▼               ▼                         ▼
+ Early Model     Mid-Process Model        Later-Stage Model
+```
+
+This supports progressively better-informed predictions without
+introducing future-process information into earlier-stage models.
+
+### Temporal Prediction
+
+Temporal prediction separates the trained model from the changing
+history used to construct its current inputs.
+
+``` text
+Entity History through as_of
+            │
+            ▼
+   Rolling / Current Features
+            │
+            ▼
+      Persisted Model
+            │
+            ▼
+       Future Outcome
+```
+
+The longest configured rolling window determines how much entity history
+is needed. The forecast target determines what future period is being
+predicted.
+
+### Source-Level Explainability
+
+Model preprocessing can expand one business/source feature into several
+engineered model features. Anistroph normalizes explanation output back
+to the original source feature so users and agents do not need to reason
+about one-hot encoded columns.
+
+### Multidimensional Analysis and Evaluation
+
+Anistroph distinguishes between two related questions:
+
+-   **Where is the outcome unusual?** --- multidimensional analysis of
+    observed data.
+-   **Where is the model unusually good or bad?** --- multidimensional
+    evaluation of held-out prediction error.
+
+For example, a wafer-yield model can be evaluated overall and then
+across `Product`, `Product × Tool`, and `Product × Tool × Chamber`
+populations.
+
+## How the System Fits Together
+
+Each dataset follows a common predictive lifecycle:
+
+**Dataset → define prediction targets → select and transform source
+features → prepare training data → train models → evaluate persisted
+models**
+
+Once trained, models enter the shared runtime:
+
+``` text
+Dataset-Specific Layer
+Schema • Features • Target • Preprocessing • Model
+                         │
+                         ▼
+                  SHARED RUNTIME
+          Predict • Explain • Evaluate • Analyze
+                         │
+          ┌──────────────┼───────────────┐
+          ▼              ▼               ▼
+         MCP        REST / OpenAPI      Web UI
+          │
+   Claude / AI Agents
+```
+
+The separation allows new datasets and models to be introduced without
+rebuilding the runtime services or agent interfaces.
+
+## For Developers
+
+Anistroph is implemented as a modular Python architecture with thin
+interfaces over a shared service layer.
+
+  -----------------------------------------------------------------------
+  Layer                   Technology              Role
+  ----------------------- ----------------------- -----------------------
+  Language                **Python**              Core services, data
+                                                  preparation, ML
+                                                  orchestration
+
+  API / Service           **FastAPI + Uvicorn**   REST/OpenAPI and Web UI
+                                                  service layer
+
+  Data processing         **Polars + DuckDB**     Columnar
+                                                  transformations,
+                                                  querying, analytical
+                                                  slicing
+
+  Persistence             **Parquet**             Dataset and partition
+                                                  storage
+
+  Configuration           **YAML**                Dataset schemas,
+                                                  features, targets, and
+                                                  split strategy
+
+  ML                      **XGBoost +             Regression and
+                          scikit-learn**          classification models
+
+  Explainability          **SHAP TreeExplainer**  Per-prediction XGBoost
+                                                  explanations
+
+  Model artifacts         **joblib**              Model persistence and
+                                                  reload
+
+  Agent access            **MCP SDK**             Domain-agnostic tools
+                                                  over stdio and
+                                                  Streamable HTTP
+
+  Testing                 **pytest**              Unit, integration, MCP,
+                                                  and end-to-end coverage
+  -----------------------------------------------------------------------
+
+No database, message queue, or vector store is required by the current
+reference implementation.
+
+### Runtime Interfaces
+
+-   **MCP** --- 13 domain-agnostic tools for dataset/model discovery,
+    prediction, explanation, evaluation, and analysis.
+-   **REST / OpenAPI** --- programmatic access to runtime and
+    administrative capabilities.
+-   **Web UI** --- exploration, model interaction, and cross-interface
+    validation.
+-   **Python services** --- direct access to the shared application
+    layer.
+
+Training and dataset administration are intentionally excluded from the
+MCP agent tool surface.
+
+## Extending Anistroph
+
+The architecture is designed to extend along several dimensions:
+
+-   add structured datasets from new domains;
+-   define additional prediction targets against an existing source
+    dataset;
+-   add model adapters and task types;
+-   introduce new model-specific explainability methods;
+-   add additional process-stage models;
+-   extend agent and application interfaces while retaining the shared
+    runtime.
+
+The current implementation supports regression and binary
+classification. Multiclass classification, specialized forecasting
+models, anomaly detection, model versioning/promotion, and
+monitoring/drift detection are natural extension paths.
+
+## Explore the Project
+
+-   **[GitHub Repository](https://github.com/vrraj/anistroph)** ---
+    source, releases, tests, and full README
+-   **[Guided Walkthrough](walkthrough)** --- step-by-step inference
+    lifecycle across three datasets (regression + classification,
+    temporal + non-temporal)
+-   **[Setup & Usage Guide](setup-usage)** --- Claude/MCP usage, dataset
+    configuration, temporal prediction, operations, examples, and API
+    reference
+-   **[Technical Architecture](technical-architecture)** --- deeper
+    implementation and architecture details
+-   **[Full README](https://github.com/vrraj/anistroph#readme)** ---
+    install, features, temporal prediction, extending, tests
+-   **[Release
+    Notes](https://github.com/vrraj/anistroph/blob/main/RELEASE_NOTES.md)**
+    --- version history
 
 ## License
 

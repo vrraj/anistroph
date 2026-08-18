@@ -1,67 +1,156 @@
 ---
 layout: default
 title: "Setup & Usage | Anistroph"
-description: "Dataset configuration, operations, MCP setup, and API reference for the Anistroph predictive analytics architecture."
+description: "Set up Anistroph, connect it to Claude through MCP, and explore dataset configuration, prediction, explanation, evaluation, and multidimensional analysis."
 ---
 
 # Anistroph — Setup & Usage Guide
 
-Detailed reference for dataset configuration, operations, MCP setup, and API reference.
+This guide shows how to set up Anistroph, connect it to Claude through MCP, and use its prediction, explanation, evaluation, and multidimensional analysis capabilities.
 
-> **New here?** Start with the project overview on the home page: **[Anistroph docs home](https://vrraj.github.io/anistroph/)**.
+Start with the quick-start section to get Anistroph running and try it with Claude. The sections that follow explain dataset configuration, temporal prediction, operations, interfaces, and the underlying APIs in more detail.
+
+> **New to Anistroph?** See the [Anistroph project overview](https://vrraj.github.io/anistroph/) for the architecture, capabilities, and design goals.
+
+> **AI Agent Analysis & Validation**
 >
-> **Source + releases:** GitHub repo is linked from the home page.
+> Claude and AI agents can orchestrate Anistroph's prediction and analytical capabilities through MCP. Predictions, explanations, evaluations, and analyses are executed by Anistroph's shared services and can be independently reproduced through the Web UI or REST API when validation is required.
 
-## Reference Datasets at a Glance
+## Contents
 
-Anistroph ships with synthetic datasets across three domains. Each can be explored via Claude/MCP using the prompts in [Per-Dataset Example Queries](#per-dataset-example-queries).
-
-| Dataset | Domain | Target | Sample Questions |
-|---------|--------|--------|------------------|
-| **[Semiconductor Procurement — Demand](#semiconductor-procurement--demand-forecasting)** | Supply chain | `material_demand_next_4w` (regression) | "Predict 4-week material demand for FAB_A__MAT_0001" · "Which material categories have the highest forecast demand at FAB_A?" · "Where is forecast error highest by fab × material category?" |
-| **[Semiconductor Procurement — Shortage Risk](#semiconductor-procurement--shortage-risk)** | Supply chain | `shortage_risk_next_4w` (classification) | "Predict shortage risk for FAB_H__MAT_0050" · "Which suppliers are associated with the greatest shortage risk?" · "Which fab × supplier combinations have the worst prediction error?" |
-| **[Semiconductor Yield](#semiconductor-yield)** | Manufacturing | `wafer_yield` (regression) | "Predict wafer yield for WAFER_015000" · "Find the worst yield combinations" · "Show yield by etch tool and chamber" |
-| **[Semiconductor Critical Dimension](#semiconductor-critical-dimension)** | Manufacturing | `critical_dimension_nm` (regression) | "Predict critical dimension for WAFER_015000" · "Which etch tools produce the widest CDs?" · "Find interesting slices by etch_tool and etch_recipe" |
-| **[Semiconductor Film Thickness](#semiconductor-film-thickness)** | Manufacturing | `film_thickness_nm` (regression) | "Predict film thickness for WAFER_015000" · "Compare film thickness across deposition tools" · "Find evaluation slices by deposition_tool and deposition_recipe" |
-| **[Semiconductor Staged Prediction (A–D)](#semiconductor-staged-prediction-stage-ad)** | Manufacturing | `wafer_yield` (regression, 4 stages) | "What inputs does the stage A model need?" · "Predict yield using stage A vs stage D" · "How much does accuracy improve with more process data?" |
-| **[Predictive Maintenance — Failure](#predictive-maintenance--failure)** | Equipment health | `failure_within_horizon` (classification) | "Predict failure probability for TOOL_010" · "Show mean failure rate by machine_type" · "Evaluate the model on the held-out set" |
-| **[Predictive Maintenance — RUL](#predictive-maintenance--remaining-useful-life)** | Equipment health | `remaining_useful_life_hours` (regression) | "Predict remaining useful life for TOOL_010" · "Which machines have the shortest RUL?" · "Find evaluation slices ranked by MAE deviation" |
-| **[Predictive Maintenance — Maintenance Required](#predictive-maintenance--maintenance-required)** | Equipment health | `maintenance_required` (classification) | "Predict maintenance required for TOOL_010" · "Evaluate filtered to machine_type=TYPE_B" · "Find slices where log loss is highest" |
-| **[Bay Area Home Prices](#bay-area-home-prices)** | Real estate | `price` (regression) | "Show median price by city" · "Find the most expensive zip codes" · "Compare MAPE for Saratoga vs Los Gatos vs San Jose" |
-
-> **Temporal datasets & rolling forecasts:** Anistroph supports temporal prediction where rolling features are dynamically reconstructed from entity history at prediction time — the model is static, the features are not. See [Temporal Prediction, History, and Retraining](#temporal-prediction-history-and-retraining) for the full explanation.
+- [Get Anistroph Running](#get-anistroph-running)
+- [Use Anistroph with Claude](#use-anistroph-with-claude)
+- [What Just Happened?](#what-just-happened)
+- [Reference Datasets](#reference-datasets)
+- [Configure Your Own Dataset](#configure-your-own-dataset)
+- [Temporal Prediction](#temporal-prediction)
+- [Operations](#operations)
+- [Other Interfaces](#other-interfaces)
+- [Example Queries](#example-queries)
+- [Testing & Troubleshooting](#testing--troubleshooting)
+- [API Reference](#api-reference)
+- [Web UI](#web-ui)
 
 ---
 
-**What's in this document:**
-- **[Dataset Configuration](#dataset-configuration)** — YAML authoring: schema, features, targets, transforms, split strategy, worked examples
-- **[Temporal Prediction, History, and Retraining](#temporal-prediction-history-and-retraining)** — how temporal models work: as-of prediction, rolling features, and when to retrain
-- **[Operations](#operations)** — Register, profile, train, predict, explain, evaluate, and analyze via Python and MCP
-- **[MCP Setup](#mcp-setup)** — Claude Desktop (stdio), MCP Streamable HTTP, ChatGPT (GPT Actions)
-- **[Example MCP Prompts](#example-mcp-prompts)** — Categorized prompts for discovery, prediction, evaluation, and analysis
-- **[Per-Dataset Example Queries](#per-dataset-example-queries)** — Claude prompts tailored to each reference dataset
-- **[Troubleshooting](#troubleshooting)** — Common issues and fixes
-- **[API Reference](#api-reference)** — REST endpoints, MCP tools, Python methods
+## Get Anistroph Running
 
-For installation and architecture overview, see **[README.md](../README.md)**.
+For installation prerequisites and the architecture overview, see [README.md](../README.md).
+
+```bash
+# Generate and register the reference datasets
+make setup
+
+# Start Anistroph natively
+make start-native
+
+# Or start with Docker
+make start
+```
+
+Once Anistroph is running, the MCP Streamable HTTP endpoint is available at `http://localhost:9500/mcp`. The Web UI and Swagger documentation are also available, but the quickest way to experience Anistroph is through Claude and MCP.
 
 ---
 
-## Dataset Configuration
+## Use Anistroph with Claude
+
+The fastest way to explore Anistroph is to connect Claude Desktop directly to its MCP server.
+
+### Claude Desktop (MCP stdio)
+
+Add to `~/Library/Application Support/Claude/claude_desktop_config.json`:
+
+```json
+{
+  "mcpServers": {
+    "anistroph": {
+      "command": "/path/to/anistroph/.venv/bin/python",
+      "args": ["-m", "backend.integrations.mcp.server"],
+      "cwd": "/path/to/anistroph"
+    }
+  }
+}
+```
+
+> Use the absolute path to the venv Python so Claude Desktop picks up all installed dependencies.
+
+After saving: fully quit Claude Desktop (`Cmd+Q`), reopen, start a new conversation, and verify Anistroph tools appear (hammer/tools icon).
+
+### Try Anistroph
+
+After Claude can see the Anistroph tools, start with a short workflow:
+
+1. **Discover** — "What datasets and models are available in Anistroph?"
+2. **Predict** — "Predict 4-week material demand for FAB_A__MAT_0001."
+3. **Explain** — "Explain that prediction — what are the top drivers?"
+4. **Analyze** — "Which suppliers are associated with the greatest shortage risk?"
+5. **Evaluate** — "Where is forecast error highest by fab × material category?"
+
+These queries exercise the same shared Anistroph services used by REST, Python, and the Web UI.
+
+---
+
+## What Just Happened?
+
+Claude is acting as the conversational client. MCP exposes Anistroph's prediction and analytical capabilities as tools, while Anistroph owns the datasets, feature construction, trained models, evaluation, and explanation logic.
+
+```text
+Claude / AI Agent
+       ↓
+      MCP
+       ↓
+    Anistroph
+       ↓
+Dataset + Feature Engine + Model
+       ↓
+Predict • Explain • Analyze • Evaluate
+```
+
+Claude does not need to construct engineered model features itself. It can discover the model's required inputs, invoke prediction or explanation, and use Anistroph's analytical tools against the same registered datasets and models.
+
+Administrative operations such as dataset registration, model training, and deletion remain outside MCP by design.
+
+---
+
+## Reference Datasets
+
+Anistroph ships with synthetic reference datasets across four domains. Each can be explored via Claude/MCP using the prompts in [Example Queries](#example-queries).
+
+| Dataset | Domain | Target | Task |
+|---------|--------|--------|------|
+| **Semiconductor Procurement — Demand** | Supply chain | `material_demand_next_4w` | Regression |
+| **Semiconductor Procurement — Shortage Risk** | Supply chain | `shortage_risk_next_4w` | Classification |
+| **Semiconductor Yield** | Manufacturing | `wafer_yield` | Regression |
+| **Semiconductor Critical Dimension** | Manufacturing | `critical_dimension_nm` | Regression |
+| **Semiconductor Film Thickness** | Manufacturing | `film_thickness_nm` | Regression |
+| **Semiconductor Staged Prediction (A–D)** | Manufacturing | `wafer_yield` (4 stages) | Regression |
+| **Predictive Maintenance — Failure** | Equipment health | `failure_within_horizon` | Classification |
+| **Predictive Maintenance — RUL** | Equipment health | `remaining_useful_life_hours` | Regression |
+| **Predictive Maintenance — Maintenance Required** | Equipment health | `maintenance_required` | Classification |
+| **Bay Area Home Prices** | Real estate | `price` | Regression |
+
+> **Temporal datasets & rolling forecasts:** Anistroph supports temporal prediction where rolling features are dynamically reconstructed from entity history at prediction time — the model is static, the features are not. See [Temporal Prediction](#temporal-prediction) for the full explanation.
+
+---
+
+## Configure Your Own Dataset
 
 Before registering a dataset, you author a `dataset.yaml` that declares the schema, the model inputs, and the target. This is the single source of truth the generic ML pipeline consults — no domain knowledge lives in the engine itself.
 
-A YAML has four required blocks and one optional block:
+A YAML has a `dataset:` block containing schema and split configuration, plus top-level `features:` and `target:` blocks:
 
 ```yaml
-dataset:        # schema + identifiers + split strategy
+dataset:        # identifiers + schema + split strategy
   ...
-columns:        # per-column type and role (inside `dataset:`)
+  columns:      # per-column type and role
+    ...
+  split:        # train/evaluation partitioning (optional)
+    ...
+
+features:       # actual model inputs
   ...
-features:       # the actual model inputs (top-level)
-  ...
-target:         # what to predict (top-level)
-split:          # train/eval partitioning (inside `dataset:`, optional)
+
+target:         # what to predict
   ...
 ```
 
@@ -207,7 +296,7 @@ split:
   strategy: chronological   # "chronological" (temporal) or "random" (non-temporal)
   train: 0.80
   validation: 0.0           # reserved for validate-during-training partition
-  test: 0.20                # becomes the held-out evaluation partition
+  eval: 0.20                # becomes the held-out evaluation partition
 ```
 
 If omitted, defaults are read from `.env` (`TRAIN_DATASET_PCT`, `EVAL_DATASET_PCT`, `VALIDATE_DATASET_PCT`). Set `train: 1.0` to skip partitioning entirely (single-file mode).
@@ -304,7 +393,7 @@ A single source parquet can support multiple targets. Each target gets its own d
 
 ---
 
-## Temporal Prediction, History, and Retraining
+## Temporal Prediction
 
 Temporal prediction introduces an important distinction between the **trained model**, the **current model inputs**, and the **future period being predicted**.
 
@@ -554,15 +643,15 @@ The trained model ultimately receives the same type of feature vector in either 
 
 ### 7. Temporal prediction vs. model retraining
 
-| Event                                      | New prediction? | Retraining required? |
-| ------------------------------------------ | --------------: | -------------------: |
-| New weekly observation                     |             Yes |                   No |
-| Rolling window advances                    |             Yes |                   No |
-| Inventory or supplier metrics change       |             Yes |                   No |
-| Forecast `as_of` point changes             |             Yes |                   No |
-| Model performance degrades                 |               — |          Potentially |
-| Underlying relationships materially change |               — |          Potentially |
-| Feature definitions change                 |               — |                  Yes |
+| Event | New prediction? | Retraining required? |
+|-------|----------------:|---------------------:|
+| New weekly observation | Yes | No |
+| Rolling window advances | Yes | No |
+| Inventory or supplier metrics change | Yes | No |
+| Forecast `as_of` point changes | Yes | No |
+| Model performance degrades | — | Potentially |
+| Underlying relationships materially change | — | Potentially |
+| Feature definitions change | — | Yes |
 
 The key architectural distinction is:
 
@@ -574,7 +663,7 @@ These three concerns remain independent.
 
 ## Operations
 
-All operations are available via Python, REST, MCP, and the Web UI. Examples below show Python (primary) and MCP (for agent interaction). REST endpoints are listed in the [API Reference](#api-reference) section.
+Anistroph exposes operational capabilities across Python, REST, MCP, and the Web UI. Administrative operations such as training, registration, and deletion are intentionally excluded from MCP. Examples below show Python and MCP; REST endpoints are listed in the [API Reference](#api-reference).
 
 ### Register a Dataset
 
@@ -740,7 +829,7 @@ Two prediction modes:
 
 **B. Records** (new or hypothetical entity): provide `model_id` + `records` — a list of dicts with raw source-column values matching the model's `features:` block. The caller never constructs engineered features.
 
-> For temporal models, `timestamp` is the **`as_of` date** — the last known point in history, not the date being predicted. See [Temporal Prediction, History, and Retraining](#temporal-prediction-history-and-retraining) for the full explanation.
+> For temporal models, `timestamp` is the **`as_of` date** — the last known point in history, not the date being predicted. See [Temporal Prediction](#temporal-prediction) for the full explanation.
 
 ```python
 from backend.services import get_services
@@ -799,7 +888,6 @@ The response includes:
 - `prediction_mode` — `entity_lookup_or_records` (both modes work; no history needed) or `entity_lookup` (rolling-window transforms require history)
 - `requires_timestamp` — whether the `as_of` timestamp is required
 - `inference_history_window` — the required history duration derived from the model's feature config (e.g. `"13w"`, `"6h"`, or `null`)
-- `entity_lookup` — only entity lookup works (model uses rolling-window transforms that require historical observations; `timestamp`/as_of required)
 
 Via MCP:
 > "Predict wafer yield for WAFER_015000 using model my-wafer-yield-model"
@@ -827,7 +915,7 @@ Via MCP:
 
 When a categorical source column is one-hot encoded, the FeatureEngine expands it into N binary model features using `{source}__{category}` naming. SHAP returns a separate impact for each. The explanation layer groups these back to the original source feature:
 
-```
+```text
 Source column:  etch_tool
 Input value:    ETCH_02
                     ↓ (FeatureEngine one-hot encodes)
@@ -881,27 +969,9 @@ Via MCP:
 
 ---
 
-## MCP Setup
+## Other Interfaces
 
-### Claude Desktop (MCP stdio)
-
-Add to `~/Library/Application Support/Claude/claude_desktop_config.json`:
-
-```json
-{
-  "mcpServers": {
-    "anistroph": {
-      "command": "/path/to/anistroph/.venv/bin/python",
-      "args": ["-m", "backend.integrations.mcp.server"],
-      "cwd": "/path/to/anistroph"
-    }
-  }
-}
-```
-
-> Use the absolute path to the venv Python so Claude Desktop picks up all installed dependencies.
-
-After saving: fully quit Claude Desktop (`Cmd+Q`), reopen, start a new conversation, and verify Anistroph tools appear (hammer/tools icon).
+Claude Desktop over MCP stdio is the simplest interactive starting point, but Anistroph exposes the same runtime capabilities through additional interfaces.
 
 ### MCP Streamable HTTP
 
@@ -918,195 +988,68 @@ make stop-gpt     # closes the tunnel when done
 
 Paste the OpenAPI URL into ChatGPT: GPTs → Create → Configure → Actions → Import from URL. The filtered spec at `/openapi-gpt.json` excludes training and dataset registration — only runtime prediction, explanation, and analysis are exposed.
 
+### REST / OpenAPI
+
+The REST API exposes dataset, model, prediction, explanation, evaluation, and analysis endpoints. Once the server is running, the OpenAPI documentation is available at `/docs` and `/redoc`.
+
+The complete endpoint list is in [API Reference](#api-reference).
+
 ---
 
-## Example MCP Prompts
+## Example Queries
 
-These prompts work with any stdio MCP client — Claude Desktop, Claude CLI, Cursor, Cline, etc.
+Claude prompts grouped by intent. These work with any MCP client — Claude Desktop, Claude CLI, Cursor, etc. Replace model IDs with your own (check with "What models are available?").
 
-**Discovery & profiling**
-- "List all Anistroph datasets"
-- "Profile the predictive_maintenance dataset"
-- "What columns and types are in semiconductor_yield?"
+### Discover
 
-**Slicing & comparison**
-- "Slice semiconductor_yield by etch_tool and etch_chamber, metric wafer_yield, aggregation mean"
-- "Compare wafer_yield across fab_id values"
+> "What datasets and models are available in Anistroph?"
+> "Profile the semiconductor_procurement_demand dataset"
+> "What columns and types are in semiconductor_yield?"
+> "Show me the metrics for the wafer yield model"
 
-**Interesting slice discovery**
-- "Find the worst yield combinations in the semiconductor dataset"
-- "What combinations have the lowest wafer yield?"
+### Predict
 
-**Raw row inspection**
-- "Show me the row for wafer_id WAFER_015000"
-- "Show me 10 semiconductor_yield rows where etch_tool is ETCH_02 and etch_chamber is CH_B"
+> "Predict 4-week material demand for FAB_A__MAT_0001 as of 2025-06-09"
+> "Predict wafer yield for WAFER_015000"
+> "Predict failure probability for TOOL_010 as of 2026-06-02T05:30:00"
+> "Predict the price of a 2000 sqft, 4-bedroom home in Saratoga"
+> "What inputs does the demand model need?"
 
-**Models & metrics**
-- "What models are available?"
-- "Show me the metrics for model my-wafer-yield-model"
+### Explain
 
-**Prediction & explanation**
-- "Predict wafer yield for WAFER_015000 using model my-wafer-yield-model"
-- "What inputs does the my-wafer-yield-model need for prediction?"
-- "Explain that prediction — what are the top drivers?"
+> "Explain that prediction — what are the top drivers?"
+> "Which features are pushing the demand forecast up or down?"
+> "What's driving the failure risk for TOOL_010?"
 
-**Held-out evaluation**
-- "Evaluate model my-wafer-yield-model against the held-out evaluation set"
-- "Evaluate the home price model filtered to San Jose only"
+### Analyze
 
-**Error slice discovery**
-- "Find the populations where the home price model has the worst prediction error"
-- "Where is the model over-predicting vs under-predicting?"
+> "Which material categories have the highest forecast demand at FAB_A?"
+> "Show yield by etch tool and chamber"
+> "Which suppliers are associated with the greatest shortage risk?"
+> "Find the worst yield combinations in the semiconductor dataset"
+> "Show me 5 homes in Saratoga sorted by price descending"
+> "Compare wafer yield across fab_id values"
+
+### Evaluate
+
+> "Evaluate the demand model on the held-out set"
+> "Evaluate the home price model filtered to San Jose only"
+> "Where is forecast error highest by fab × material category?"
+> "Find the populations where the home price model has the worst prediction error"
+> "Where is the model over-predicting vs under-predicting?"
+> "Which machine type has the worst prediction error?"
+
+### Staged Prediction
+
+> "What inputs does the stage A model need?"
+> "Predict yield for WAFER_015000 using stage A vs stage D — how much does accuracy improve?"
+> "Compare predictions from all four staged models for the same wafer"
 
 > Training, dataset registration, and deletion are NOT available via MCP — use REST, Python, CLI, or the Web UI for admin operations.
 
 ---
 
-## Per-Dataset Example Queries
-
-Claude prompts tailored to each reference dataset. Replace model IDs with your own (check with "What models are available?").
-
-### Semiconductor Yield
-
-> "Predict wafer yield for WAFER_015000 using model wafer-yield-xgboost"
-> "Explain that prediction — what are the top drivers?"
-> "Find the worst yield combinations in the semiconductor dataset"
-> "Show yield by etch tool and chamber"
-> "Slice semiconductor_yield by process_route, metric wafer_yield, aggregation min"
-> "Predict wafer yield for a new wafer with: product_id=PROD_A, fab_id=FAB_01, process_route=ROUTE_1, etch_tool=ETCH_01, etch_chamber=CH_A, etch_recipe=RECIPE_A, deposition_tool=DEP_01, deposition_chamber=DEP_CH_A, deposition_recipe=DEP_RECIPE_A, etch_temperature_mean=85, etch_pressure_mean=4.0, exposure_dose=32.5, focus_offset=0.1"
-
-### Semiconductor Critical Dimension
-
-> "Predict critical dimension for WAFER_015000 using model critical-dimension-xgboost"
-> "Explain the critical dimension prediction for WAFER_015000 with top_k=10"
-> "Which etch tools produce the widest critical dimensions?"
-> "Find interesting slices in semiconductor_cd by etch_tool and etch_recipe"
-
-### Semiconductor Film Thickness
-
-> "Predict film thickness for WAFER_015000 using model film-thickness-xgboost"
-> "Explain the film thickness prediction — what are the top drivers?"
-> "Find evaluation slices for film-thickness-xgboost by deposition_tool and deposition_recipe"
-> "Compare film thickness across deposition tools"
-
-### Semiconductor Staged Prediction (Stage A–D)
-
-> "What inputs does the stage A model need for prediction?"
-> "Predict wafer yield for a new wafer using the stage A model with: product_id=PROD_A, fab_id=FAB_01, process_route=ROUTE_1, etch_recipe=RECIPE_A, deposition_recipe=DEP_RECIPE_A, exposure_dose=32.5, focus_offset=0.12"
-> "Compare predictions from stage A vs stage D for the same wafer — how much does accuracy improve with more process data?"
-
-### Predictive Maintenance — Failure
-
-> "Predict failure probability for TOOL_010 at 2026-06-28T12:00:00 using model predictive-maintenance-xgboost"
-> "Explain that prediction — what are the top drivers?"
-> "Show me the metrics for model predictive-maintenance-xgboost"
-> "Evaluate model predictive-maintenance-xgboost against the held-out evaluation set"
-> "Slice predictive_maintenance by machine_type and show mean failure rate"
-
-### Predictive Maintenance — Remaining Useful Life
-
-> "Predict remaining useful life for TOOL_010 at 2026-07-15T12:00:00 using model rul-xgboost"
-> "Explain the RUL prediction for TOOL_010 — what are the top drivers?"
-> "Which machines have the shortest remaining useful life?"
-> "Find evaluation slices for rul-xgboost ranked by MAE deviation"
-
-### Predictive Maintenance — Maintenance Required
-
-> "Predict maintenance required for TOOL_010 at 2026-07-15T12:00:00 using model maintenance-required-xgboost"
-> "Evaluate the maintenance-required-xgboost model filtered to machine_type=TYPE_B"
-> "Find slices where the model's log loss is highest"
-
-### Bay Area Home Prices
-
-> "Show median price by city in the home_prices dataset"
-> "Find the most expensive zip codes in home_prices"
-> "Slice home_prices by city and bedrooms, median price"
-> "Find interesting slices in home_prices for price"
-> "Evaluate the home price model filtered to San Jose only"
-> "Compare MAPE for Saratoga vs Los Gatos vs San Jose in the home price model"
-> "Find the populations where the home price model has the worst prediction error"
-> "Show me 5 homes in Saratoga sorted by price descending"
-
-### Semiconductor Procurement — Demand Forecasting
-
-**Discovery:**
-> "What datasets and models are available for semiconductor procurement?"
-> "What inputs does the demand forecasting model need?"
-> "Profile the semiconductor_procurement_demand dataset"
-
-**Demand forecasting:**
-> "Predict 4-week material demand for series FAB_A__MAT_0001 at 2025-10-06 using the procurement demand model"
-> "Explain that prediction — what are the top drivers?"
-> "Show me 10 rows for FAB_A__MAT_0001 sorted by week descending"
-> "What's the forecast error (MAE, R²) for the demand model on the held-out eval set?"
-
-**Demand-driver analysis:**
-> "Explain the demand prediction for FAB_A__MAT_0001 — what are the top SHAP drivers?"
-> "Which features matter most across all demand predictions?"
-> "Find interesting slices in semiconductor_procurement_demand for material_demand_next_4w"
-> "How does rolling 13-week consumption compare to current consumption as a demand driver?"
-
-**Procurement-risk slicing:**
-> "Which material categories have the highest forecast demand at FAB_A?"
-> "Slice semiconductor_procurement_demand by fab_id, metric material_demand_next_4w"
-> "Find evaluation slices for the demand model — where is forecast error highest by fab x material category?"
-> "Where is forecast error highest by fab x material category?"
-> "Which fab x material combinations have increasing demand and low inventory coverage?"
-
-### Semiconductor Procurement — Shortage Risk
-
-**Shortage risk prediction:**
-> "Predict shortage risk for series FAB_H__MAT_0050 at 2025-10-06 using the shortage risk model"
-> "Explain that shortage risk prediction — what increases the risk?"
-> "Which series currently have the highest predicted shortage probability?"
-> "Evaluate the shortage risk model filtered to FAB_H only"
-
-**Procurement-risk slicing:**
-> "Which suppliers are associated with the greatest shortage risk?"
-> "Slice semiconductor_procurement_shortage by supplier_id, metric shortage_risk_next_4w, aggregation mean"
-> "Find evaluation slices for the shortage model — which fab x supplier combinations have the worst error?"
-> "Compare shortage risk across fabs and material categories"
-
-### Semiconductor Procurement — Suggested Demo Flow
-
-1. > "What datasets and models are available for semiconductor procurement?" — discovery
-2. > "Predict 4-week material demand for FAB_A__MAT_0001 at 2025-10-06" — prediction
-3. > "Explain that prediction — what are the top drivers?" — SHAP explanation
-4. > "Which suppliers are associated with the greatest shortage risk?" — slicing
-5. > "Find evaluation slices for the demand model — where is forecast error highest?" — error discovery
-
----
-
-
-## Troubleshooting
-
-### MCP tools not appearing in Claude Desktop
-
-- Check config JSON is valid: `python3 -c "import json; json.load(open('~/Library/Application Support/Claude/claude_desktop_config.json'))"`
-- Check logs: `tail -100 ~/Library/Logs/Claude/main.log | grep -i "mcp\|anistroph\|error"`
-- Fully quit Claude Desktop (`Cmd+Q`), not just close the window
-- Verify the venv Python path exists
-
-### Predictions fail with "feature spec not found"
-
-The model artifacts are missing. Re-train the model:
-```bash
-python scripts/train_model.py --dataset predictive_maintenance --model-type xgboost --model-id my-pm-model
-```
-
-### MCP returns empty lists
-
-Restart Claude Desktop after registering new datasets or training new models.
-
-### XGBoost library loading error (macOS)
-
-```bash
-brew install libomp
-```
-
----
-
-## Testing
+## Testing & Troubleshooting
 
 ### Full test suite
 
@@ -1142,6 +1085,30 @@ pytest tests/unit/test_features.py::TestFeatureEngine::test_inference_uses_same_
 
 # REST and MCP produce identical predictions (same service layer)
 pytest tests/integration/test_e2e.py::TestEndToEnd::test_rest_and_mcp_same_services -v
+```
+
+### MCP tools not appearing in Claude Desktop
+
+- Check config JSON is valid: `python3 -c "import json; json.load(open('~/Library/Application Support/Claude/claude_desktop_config.json'))"`
+- Check logs: `tail -100 ~/Library/Logs/Claude/main.log | grep -i "mcp\|anistroph\|error"`
+- Fully quit Claude Desktop (`Cmd+Q`), not just close the window
+- Verify the venv Python path exists
+
+### Predictions fail with "feature spec not found"
+
+The model artifacts are missing. Re-train the model:
+```bash
+python scripts/train_model.py --dataset predictive_maintenance --model-type xgboost --model-id my-pm-model
+```
+
+### MCP returns empty lists
+
+Restart Claude Desktop after registering new datasets or training new models.
+
+### XGBoost library loading error (macOS)
+
+```bash
+brew install libomp
 ```
 
 ---
@@ -1229,17 +1196,14 @@ pytest tests/integration/test_e2e.py::TestEndToEnd::test_rest_and_mcp_same_servi
 
 ---
 
-## Quick Reference
+## Web UI
 
-| Action | Command / Endpoint |
-|--------|-------------------|
-| Start app (native) | `make start-native` or `uvicorn backend.main:app --reload --port 9500` |
-| Start app (Docker) | `make start` |
-| Generate + register all datasets | `make setup` |
-| Train a model | `python scripts/train_model.py --dataset <id> --model-type <type> --model-id <name>` |
-| Run tests | `pytest` |
-| MCP server (stdio) | `python -m backend.integrations.mcp.server` |
-| MCP server (HTTP) | `http://localhost:9500/mcp` |
-| Web UI | http://localhost:9500 |
-| API docs (Swagger) | http://localhost:9500/docs |
-| Health check | `curl http://localhost:9500/health` |
+Anistroph also includes a static Web UI for direct exploration and cross-interface validation.
+
+With the server running, open:
+
+```text
+http://localhost:9500
+```
+
+The Web UI uses the same underlying Anistroph services as the REST and MCP interfaces, so predictions and analyses can be reproduced across interfaces using the same model inputs.
