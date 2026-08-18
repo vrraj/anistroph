@@ -16,7 +16,11 @@ Each step is a prompt you can paste into Claude Desktop (or any MCP client conne
 
 > **AI Agent Analysis & Validation**
 >
-> Claude and AI agents can orchestrate Anistroph's prediction and analytical capabilities through MCP. Predictions, explanations, evaluations, and analyses are executed by Anistroph's shared services and can be independently reproduced through the Web UI or REST API when validation is required.
+> **Discover → Understand → Execute → Validate**
+>
+> Claude and AI agents first discover the available datasets and models, then inspect the selected model's input contract to determine required inputs, temporal requirements such as `as_of`, and required inference history.
+>
+> The agent can then orchestrate prediction, explanation, evaluation, and analysis through MCP. These operations are executed by Anistroph's shared services and can be independently reproduced through the Web UI or REST API when validation is required.
 
 ---
 
@@ -56,9 +60,11 @@ The walkthrough runs the full lifecycle on three datasets that together exercise
 
 The procurement section follows a hook-first order: lead with the prediction, then reveal how it works, then explore the broader capabilities. This keeps the narrative moving and shows the most impressive capability immediately.
 
+> **Before you start:** These prompts assume the Anistroph MCP server is connected to Claude. If Claude doesn't recognize Anistroph tool names, the MCP server isn't configured — see [Setup & Usage → Use Anistroph with Claude](setup-usage.md#use-anistroph-with-claude). To verify, ask: *"What datasets are available in Anistroph?"* — Claude should list the registered datasets without asking for a file upload.
+
 ### Step 1 — The hero prediction
 
-> Predict the 4-week material demand for series FAB_A__MAT_0001 as of 2025-06-09. Then show me the actual demand for that period from the dataset so we can compare.
+> Use Anistroph to predict the 4-week material demand for series FAB_A__MAT_0001 as of 2025-06-09. Then show me the actual demand for that period from the dataset so we can compare.
 
 Claude calls `anistroph_predict` with `entity_id=FAB_A__MAT_0001` and `timestamp=2025-06-09`. Anistroph loads 13 weeks of history for this series up to June 9th, computes the 4w/8w/13w rolling means, applies the trained XGBoost model, and returns the forecast. Claude then calls `anistroph_sample_rows` to fetch the actual `material_demand_next_4w` value (246.6) for that week so you can compare prediction vs. actual.
 
@@ -99,7 +105,7 @@ This demonstrates Claude acting as an analyst — it finds the stress scenario i
 
 ### Step 6 — Multi-target: shortage risk classification
 
-> The procurement data also has a shortage risk model. Predict the probability of a shortage in the next 4 weeks for series FAB_C__MAT_0094 as of 2023-01-30, and explain which factors drive the risk.
+> The procurement data also has a shortage risk model in Anistroph. Predict the probability of a shortage in the next 4 weeks for series FAB_C__MAT_0094 as of 2023-01-30, and explain which factors drive the risk.
 
 Same source parquet, different target, different task type — now we're predicting a probability, not a quantity. Claude calls `anistroph_predict` with the shortage model, `entity_id=FAB_C__MAT_0094`, and `timestamp=2023-01-30`. The SHAP drivers from `anistroph_explain_prediction` typically show inventory well below safety stock and long supplier lead times pushing the risk score up. Two models, one dataset, zero new application code.
 
@@ -111,7 +117,7 @@ Claude calls `anistroph_evaluate_model` (R²=0.96, MAE=11.1, RMSE=17.8) and `ani
 
 ### Step 8 — Procurement risk analysis
 
-> Which suppliers are associated with the greatest shortage risk?
+> In Anistroph's procurement data, which suppliers are associated with the greatest shortage risk?
 
 Claude calls `anistroph_compare_data` (dimension=`supplier_id`, metric=`shortage_risk_next_4w`, aggregation=`mean`). The response ranks suppliers by average predicted shortage risk — a direct analytical question about the data that complements the model predictions.
 
@@ -133,7 +139,7 @@ Claude calls `anistroph_list_datasets` and `anistroph_list_models` in parallel. 
 
 ### Step 1 — Discover
 
-> What models are available for semiconductor wafer yield prediction?
+> In Anistroph, what models are available for semiconductor wafer yield prediction?
 
 Claude calls `anistroph_list_models` and filters to models whose `target_name` is `wafer_yield`. You'll see the main model plus four staged models (A through D).
 
@@ -164,7 +170,7 @@ Claude calls `anistroph_sample_rows` (filter `wafer_id=WAFER_015000`) to show th
 
 ### Step 4b — Predict (records mode)
 
-> Generate a plausible "worst-case" wafer record — pick etch_tool, chamber, recipe, and process settings that you'd expect to produce low yield — and run it through the wafer-yield-xgboost model. Then generate a "best-case" record and predict that too. Compare the two.
+> Use Anistroph to generate a plausible "worst-case" wafer record — pick etch_tool, chamber, recipe, and process settings that you'd expect to produce low yield — and run it through the wafer-yield-xgboost model. Then generate a "best-case" record and predict that too. Compare the two.
 
 Claude uses the input schema from Step 3, composes two records using domain reasoning (e.g. ETCH_02 + CH_B + high maintenance age + low exposure dose for the worst case), and calls `anistroph_predict` with `records=[worst, best]`. This demonstrates records mode — the LLM is the test harness, fabricating realistic inputs and predicting on them without any feature pipeline code.
 
@@ -204,7 +210,7 @@ Claude calls `anistroph_predict` four times on the staged model IDs. The predict
 
 ### Step 1 — Discover
 
-> What models are available for predictive maintenance?
+> In Anistroph, what models are available for predictive maintenance?
 
 Claude calls `anistroph_list_models` and filters to maintenance-related models. You'll see the failure model (classification), the RUL model (regression), and the maintenance-required model (classification).
 

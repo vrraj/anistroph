@@ -14,7 +14,11 @@ Start with the quick-start section to get Anistroph running and try it with Clau
 
 > **AI Agent Analysis & Validation**
 >
-> Claude and AI agents can orchestrate Anistroph's prediction and analytical capabilities through MCP. Predictions, explanations, evaluations, and analyses are executed by Anistroph's shared services and can be independently reproduced through the Web UI or REST API when validation is required.
+> **Discover → Understand → Execute → Validate**
+>
+> Claude and AI agents first discover the available datasets and models, then inspect the selected model's input contract to determine required inputs, temporal requirements such as `as_of`, and required inference history.
+>
+> The agent can then orchestrate prediction, explanation, evaluation, and analysis through MCP. These operations are executed by Anistroph's shared services and can be independently reproduced through the Web UI or REST API when validation is required.
 
 ## Contents
 
