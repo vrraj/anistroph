@@ -36,7 +36,7 @@ Claude and AI agents first discover the available datasets and models, then insp
 
 The agent can then orchestrate prediction, explanation, evaluation, and analysis through MCP. These operations are executed by Anistroph's shared services and can be independently reproduced through the Web UI or REST API when validation is required.
 
-## Predictive Analytics Through MCP — Anistroph Through Claude
+## Predictive Analytics — Anistroph Through Claude MCP
 
 <br><br>
 

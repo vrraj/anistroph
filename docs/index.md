@@ -26,7 +26,7 @@ Anistroph runtime.
 > **Explore:** [GitHub](https://github.com/vrraj/anistroph) · [Setup &
 > Usage](setup-usage) · [Technical Architecture](technical-architecture)
 
-## Predictive Analytics Through MCP — Anistroph Through Claude
+## Predictive Analytics — Anistroph Through Claude MCP
 
 <br><br>
 
