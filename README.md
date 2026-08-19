@@ -49,25 +49,25 @@ The agent can then orchestrate prediction, explanation, evaluation, and analysis
 
 <table style="width:100%; border:none; table-layout:fixed;">
   <tr>
-    <td align="center" style="border:none; padding:8px;">
-      <em>Discovering available datasets and models</em>
+    <td align="center" valign="top" style="border:none; padding:8px;">
+      <strong>Discovering available datasets and models</strong>
       <br>
       <img src="https://raw.githubusercontent.com/vrraj/anistroph/main/docs/images/anistroph-discover-models-claude.png" width="90%" />
     </td>
-    <td align="center" style="border:none; padding:8px;">
-      <em>Explaining the prediction with SHAP feature drivers</em>
+    <td align="center" valign="top" style="border:none; padding:8px;">
+      <strong>Explaining the prediction with SHAP feature drivers</strong>
       <br>
       <img src="https://raw.githubusercontent.com/vrraj/anistroph/main/docs/images/anistroph-explain-prediction-claude.png" width="90%" />
     </td>
   </tr>
   <tr>
-    <td align="center" style="border:none; padding:8px;">
-      <em>Stress-testing: finding a real inventory crisis and predicting at that point</em>
+    <td align="center" valign="top" style="border:none; padding:8px;">
+      <strong>Stress-testing: finding a real inventory crisis and predicting at that point</strong>
       <br>
       <img src="https://raw.githubusercontent.com/vrraj/anistroph/main/docs/images/anistroph-stress-test-claude.png" width="90%" />
     </td>
-    <td align="center" style="border:none; padding:8px;">
-      <em>Deterministic MCP tools — same services as REST and Web UI</em>
+    <td align="center" valign="top" style="border:none; padding:8px;">
+      <strong>Deterministic MCP tools — same services as REST and Web UI</strong>
       <br>
       <img src="https://raw.githubusercontent.com/vrraj/anistroph/main/docs/images/anistroph-deterministic-tools.png" width="90%" />
     </td>
