@@ -327,6 +327,9 @@ monitoring/drift detection are natural extension paths.
 -   **[Release
     Notes](https://github.com/vrraj/anistroph/blob/main/RELEASE_NOTES.md)**
     --- version history
+-   **[Story on
+    Medium](https://medium.com/@vr.rajkumar99/designing-a-multi-domain-predictive-analytics-architecture-with-ai-agent-access-2476009916b2)**
+    --- design narrative and architecture walkthrough
 
 ## License
 
