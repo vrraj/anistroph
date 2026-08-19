@@ -38,6 +38,36 @@ Claude and AI agents first discover the available datasets and models, then insp
 
 The agent can then orchestrate prediction, explanation, evaluation, and analysis through MCP. These operations are executed by Anistroph's shared services and can be independently reproduced through the Web UI or REST API when validation is required.
 
+## Claude in Action
+
+<p align="center">
+  <img src="https://raw.githubusercontent.com/vrraj/anistroph/main/docs/images/anistroph-predict-material-demand-claude.png" width="100%" />
+</p>
+<p align="center"><em>Predicting 4-week material demand with temporal as_of inference — rolling features reconstructed from 13 weeks of entity history.</em></p>
+
+<table style="width:100%; border:none; table-layout:fixed;">
+  <tr>
+    <td align="center" style="border:none; padding:8px;">
+      <img src="https://raw.githubusercontent.com/vrraj/anistroph/main/docs/images/anistroph-discover-models-claude.png" width="90%" />
+      <br><em>Discovering available datasets and models</em>
+    </td>
+    <td align="center" style="border:none; padding:8px;">
+      <img src="https://raw.githubusercontent.com/vrraj/anistroph/main/docs/images/anistroph-explain-prediction-claude.png" width="90%" />
+      <br><em>Explaining the prediction with SHAP feature drivers</em>
+    </td>
+  </tr>
+  <tr>
+    <td align="center" style="border:none; padding:8px;">
+      <img src="https://raw.githubusercontent.com/vrraj/anistroph/main/docs/images/anistroph-stress-test-claude.png" width="90%" />
+      <br><em>Stress-testing: finding a real inventory crisis and predicting at that point</em>
+    </td>
+    <td align="center" style="border:none; padding:8px;">
+      <img src="https://raw.githubusercontent.com/vrraj/anistroph/main/docs/images/anistroph-deterministic-tools.png" width="90%" />
+      <br><em>Deterministic MCP tools — same services as REST and Web UI</em>
+    </td>
+  </tr>
+</table>
+
 ## What the Architecture Supports
 
 -   **Multi-domain datasets** --- datasets from different domains use
