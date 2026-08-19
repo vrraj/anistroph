@@ -32,6 +32,8 @@ pipeline](https://raw.githubusercontent.com/vrraj/anistroph/main/docs/images/ani
 
 ## Claude in Action
 
+<br><br>
+
 <p align="center">
   <img src="https://raw.githubusercontent.com/vrraj/anistroph/main/docs/images/anistroph-predict-material-demand-claude.png" width="100%" />
 </p>

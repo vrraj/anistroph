@@ -40,6 +40,8 @@ The agent can then orchestrate prediction, explanation, evaluation, and analysis
 
 ## Claude in Action
 
+<br><br>
+
 <p align="center">
   <img src="https://raw.githubusercontent.com/vrraj/anistroph/main/docs/images/anistroph-predict-material-demand-claude.png" width="100%" />
 </p>
