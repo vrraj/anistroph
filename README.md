@@ -43,7 +43,7 @@ The agent can then orchestrate prediction, explanation, evaluation, and analysis
 <br><br>
 
 <p align="center">
-  <img src="https://raw.githubusercontent.com/vrraj/anistroph/main/docs/images/anistroph-predict-material-demand-claude.png" width="100%" />
+  <img src="https://raw.githubusercontent.com/vrraj/anistroph/main/docs/images/anistroph-predict-material-demand-claude.png" width="60%" />
 </p>
 <p align="center"><em>Predicting 4-week material demand with temporal as_of inference — rolling features reconstructed from 13 weeks of entity history.</em></p>
 
