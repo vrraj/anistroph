@@ -37,25 +37,31 @@ pipeline](https://raw.githubusercontent.com/vrraj/anistroph/main/docs/images/ani
 </p>
 <p align="center"><em>Predicting 4-week material demand with temporal as_of inference — rolling features reconstructed from 13 weeks of entity history.</em></p>
 
+<br><br>
+
 <table style="width:100%; border:none; table-layout:fixed;">
   <tr>
     <td align="center" style="border:none; padding:8px;">
+      <em>Discovering available datasets and models</em>
+      <br>
       <img src="https://raw.githubusercontent.com/vrraj/anistroph/main/docs/images/anistroph-discover-models-claude.png" width="90%" />
-      <br><em>Discovering available datasets and models</em>
     </td>
     <td align="center" style="border:none; padding:8px;">
+      <em>Explaining the prediction with SHAP feature drivers</em>
+      <br>
       <img src="https://raw.githubusercontent.com/vrraj/anistroph/main/docs/images/anistroph-explain-prediction-claude.png" width="90%" />
-      <br><em>Explaining the prediction with SHAP feature drivers</em>
     </td>
   </tr>
   <tr>
     <td align="center" style="border:none; padding:8px;">
+      <em>Stress-testing: finding a real inventory crisis and predicting at that point</em>
+      <br>
       <img src="https://raw.githubusercontent.com/vrraj/anistroph/main/docs/images/anistroph-stress-test-claude.png" width="90%" />
-      <br><em>Stress-testing: finding a real inventory crisis and predicting at that point</em>
     </td>
     <td align="center" style="border:none; padding:8px;">
+      <em>Deterministic MCP tools — same services as REST and Web UI</em>
+      <br>
       <img src="https://raw.githubusercontent.com/vrraj/anistroph/main/docs/images/anistroph-deterministic-tools.png" width="90%" />
-      <br><em>Deterministic MCP tools — same services as REST and Web UI</em>
     </td>
   </tr>
 </table>
