@@ -1002,52 +1002,91 @@ The complete endpoint list is in [API Reference](#api-reference).
 
 ## Example Queries
 
-Claude prompts grouped by intent. These work with any MCP client — Claude Desktop, Claude CLI, Cursor, etc. Replace model IDs with your own (check with "What models are available?").
+Claude prompts grouped by dataset. These work with any MCP client — Claude Desktop, Claude CLI, Cursor, etc. Replace model IDs with your own (check with "What models are available?").
 
-### Discover
+### Discover (cross-dataset)
 
 > "What datasets and models are available in Anistroph?"
 > "Profile the semiconductor_procurement_demand dataset"
 > "What columns and types are in semiconductor_yield?"
-> "Show me the metrics for the wafer yield model"
 
-### Predict
+### Semiconductor Procurement — Demand
 
 > "Predict 4-week material demand for FAB_A__MAT_0001 as of 2025-06-09"
-> "Predict wafer yield for WAFER_015000"
-> "Predict failure probability for TOOL_010 as of 2026-06-02T05:30:00"
-> "Predict the price of a 2000 sqft, 4-bedroom home in Saratoga"
 > "What inputs does the demand model need?"
-
-### Explain
-
 > "Explain that prediction — what are the top drivers?"
 > "Which features are pushing the demand forecast up or down?"
-> "What's driving the failure risk for TOOL_010?"
-
-### Analyze
-
 > "Which material categories have the highest forecast demand at FAB_A?"
-> "Show yield by etch tool and chamber"
-> "Which suppliers are associated with the greatest shortage risk?"
-> "Find the worst yield combinations in the semiconductor dataset"
-> "Show me 5 homes in Saratoga sorted by price descending"
-> "Compare wafer yield across fab_id values"
-
-### Evaluate
-
 > "Evaluate the demand model on the held-out set"
-> "Evaluate the home price model filtered to San Jose only"
 > "Where is forecast error highest by fab × material category?"
-> "Find the populations where the home price model has the worst prediction error"
-> "Where is the model over-predicting vs under-predicting?"
-> "Which machine type has the worst prediction error?"
 
-### Staged Prediction
+### Semiconductor Procurement — Shortage Risk
+
+> "Predict shortage risk for FAB_A__MAT_0001 as of 2025-06-09"
+> "Which suppliers are associated with the greatest shortage risk?"
+> "Evaluate the shortage risk model on the held-out set"
+> "Where is shortage risk mispredicted — which fab × material category combinations?"
+
+### Semiconductor Yield
+
+> "Predict wafer yield for WAFER_015000"
+> "Explain the wafer yield prediction for WAFER_015000 — what are the top drivers?"
+> "Show yield by etch tool and chamber"
+> "Find the worst yield combinations in the semiconductor dataset"
+> "Compare wafer yield across fab_id values"
+> "Evaluate the wafer yield model on the held-out set"
+> "Where is the model over-predicting vs under-predicting wafer yield?"
+
+### Semiconductor Critical Dimension
+
+> "Predict critical dimension for WAFER_015000"
+> "Explain that CD prediction — which process settings are driving it?"
+> "Show critical dimension by etch tool and recipe"
+> "Evaluate the CD model on the held-out set"
+
+### Semiconductor Film Thickness
+
+> "Predict film thickness for WAFER_015000"
+> "Explain that film thickness prediction — what are the top drivers?"
+> "Show film thickness by deposition tool and chamber"
+> "Evaluate the film thickness model on the held-out set"
+
+### Semiconductor Staged Prediction (A–D)
 
 > "What inputs does the stage A model need?"
 > "Predict yield for WAFER_015000 using stage A vs stage D — how much does accuracy improve?"
 > "Compare predictions from all four staged models for the same wafer"
+> "Show the metrics for all four staged models side by side"
+
+### Predictive Maintenance — Failure
+
+> "Predict failure probability for TOOL_010 as of 2026-06-02T05:30:00"
+> "What's driving the failure risk for TOOL_010?"
+> "Slice predictive_maintenance by machine_type and show mean failure rate"
+> "Evaluate the failure model on the held-out set"
+> "Which machine type has the worst prediction error?"
+
+### Predictive Maintenance — RUL
+
+> "Predict remaining useful life for TOOL_010 as of 2026-06-02T05:30:00"
+> "Explain that RUL prediction — what are the top drivers?"
+> "Show mean remaining useful life by machine_type"
+> "Evaluate the RUL model on the held-out set"
+
+### Predictive Maintenance — Maintenance Required
+
+> "Predict maintenance required for TOOL_010 as of 2026-06-02T05:30:00"
+> "Which machines are flagged for maintenance in the latest week?"
+> "Evaluate the maintenance required model on the held-out set"
+
+### Bay Area Home Prices
+
+> "Predict the price of a 2000 sqft, 4-bedroom home in Saratoga"
+> "Explain that price prediction — what are the top drivers?"
+> "Show me 5 homes in Saratoga sorted by price descending"
+> "Compare average price across city values"
+> "Evaluate the home price model filtered to San Jose only"
+> "Find the populations where the home price model has the worst prediction error"
 
 > Training, dataset registration, and deletion are NOT available via MCP — use REST, Python, CLI, or the Web UI for admin operations.
 
