@@ -28,8 +28,6 @@ performance, and analyze data through **MCP (stdio and Streamable
 HTTP)**. The same runtime is also accessible through **REST/OpenAPI and
 the Anistroph Web UI**.
 
-![Anistroph predictive analytics pipeline](https://raw.githubusercontent.com/vrraj/anistroph/main/docs/images/anistroph-pipeline.png)
-
 ### AI Agent Analysis & Validation
 
 **Discover → Understand → Execute → Validate**
@@ -115,6 +113,11 @@ The agent can then orchestrate prediction, explanation, evaluation, and analysis
 > Anistroph is a reference architecture. The included synthetic datasets
 > and models demonstrate how the components fit together rather than
 > claiming validation across every potential domain.
+
+<p align="center">
+  <img src="https://raw.githubusercontent.com/vrraj/anistroph/main/docs/images/anistroph-pipeline.png" width="100%" />
+</p>
+<p align="center"><em>The Anistroph predictive analytics pipeline — from dataset configuration through shared services to MCP, REST, and Web UI interfaces.</em></p>
 
 ------------------------------------------------------------------------
 

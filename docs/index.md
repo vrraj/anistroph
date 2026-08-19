@@ -26,10 +26,6 @@ Anistroph runtime.
 > **Explore:** [GitHub](https://github.com/vrraj/anistroph) · [Setup &
 > Usage](setup-usage) · [Technical Architecture](technical-architecture)
 
-
-![Anistroph predictive analytics
-pipeline](https://raw.githubusercontent.com/vrraj/anistroph/main/docs/images/anistroph-pipeline.png)
-
 ## Claude in Action
 
 <br><br>
@@ -122,6 +118,11 @@ Claude and other MCP-compatible agents can discover datasets and models,
 inspect required inputs, generate or select source-feature records,
 predict, explain, evaluate, and analyze through domain-agnostic MCP
 tools.
+
+<p align="center">
+  <img src="https://raw.githubusercontent.com/vrraj/anistroph/main/docs/images/anistroph-pipeline.png" width="100%" />
+</p>
+<p align="center"><em>The Anistroph predictive analytics pipeline — from dataset configuration through shared services to MCP, REST, and Web UI interfaces.</em></p>
 
 ## AI Agents as an Interface to Predictive Analytics
 
