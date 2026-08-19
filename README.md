@@ -887,6 +887,15 @@ MCP, and end-to-end workflows.
     page
 -   **[Release Notes](RELEASE_NOTES.md)** --- release history
 
+## Security Notes
+
+Anistroph is a reference architecture using **synthetic data only** — no real PII, credentials, or secrets are stored in the repository. The core application makes **no external API calls**.
+
+-   **MCP stdio** is local subprocess only — no network exposure.
+-   **`make start-native`** binds to `0.0.0.0:9500`, making the server accessible on your local network. For local-only access, use `uvicorn backend.main:app --reload --host 127.0.0.1 --port 9500`.
+-   **`make start-gpt`** starts an **ngrok tunnel** that exposes your local server on a **public URL**. While the tunnel is active, anyone with the URL can access all endpoints — including model training, dataset registration, and deletion. Run **`make stop-gpt`** when you are done to close the tunnel.
+-   CORS is configured as `allow_origins=["*"]` for development convenience. Restrict this before exposing the server beyond your local machine.
+
 ## License
 
 MIT
