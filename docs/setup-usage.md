@@ -135,6 +135,35 @@ Anistroph ships with synthetic reference datasets across four domains. Each can 
 
 > **Temporal datasets & rolling forecasts:** Anistroph supports temporal prediction where rolling features are dynamically reconstructed from entity history at prediction time — the model is static, the features are not. See [Temporal Prediction](#temporal-prediction) for the full explanation.
 
+### Synthetic Data Generation
+
+The reference datasets are produced by four reproducible generators under `scripts/`. Each accepts CLI flags to control scale and seed. The defaults produce the datasets shipped with `make setup`.
+
+| Generator | Key flags (defaults) | Rows | Date range | Temporal? |
+|---|---|---|---|---|
+| `generate_procurement_data.py` | `--weeks 190` `--fabs 8` `--materials 100` `--density 0.78` `--seed 42` | ~118,560 | 2023-01-02 to 2026-08-17 | Yes (weekly) |
+| `generate_sensor_data.py` | `--machines 50` `--days 60` `--interval 5` `--seed 42` | ~86,400 | 2026-06-01 to 2026-07-31 | Yes (5-min) |
+| `generate_semiconductor_yield_data.py` | `--wafers 50000` `--seed 42` | 50,000 | 2025-01-01+ (per-wafer) | No |
+| `generate_home_prices_data.py` | `--homes 40000` `--seed 42` | 40,000 | 2024-06-01+ (per-listing) | No |
+
+**Why date ranges matter for temporal datasets:**
+
+- **Procurement** — the `as_of` timestamp for prediction must fall within 2023-01-02 to 2026-08-17. The example queries use `2026-07-06`, which leaves ~6 weeks of actuals after the prediction point for comparison. The `N_WEEKS` constant in the generator (default 190) controls the end date: `start + N_WEEKS weeks`.
+- **Predictive Maintenance** — the `as_of` timestamp must fall within 2026-06-01 to 2026-07-31. The example queries use `2026-06-02T05:30:00`. The `--days` flag (default 60) controls the end date.
+- **Semiconductor Yield & Home Prices** — non-temporal (per-row, no rolling features). Timestamps are used only for chronological splitting and do not constrain prediction queries.
+
+**Regenerating with different parameters:**
+
+```bash
+# Example: extend procurement to 5 years (~260 weeks)
+python scripts/generate_procurement_data.py --weeks 260 --seed 42
+
+# Then re-register all datasets from the new source data
+python scripts/setup_datasets.py --force
+```
+
+After regenerating, retrain any models that depend on the changed dataset. The `--force` flag on `setup_datasets.py` re-registers all datasets even if they already exist.
+
 ---
 
 ## Configure Your Own Dataset
@@ -499,12 +528,12 @@ For example:
 
 ```text
 entity: FAB_A__MAT_0001
-as_of: 2025-06-09
+as_of: 2026-07-06
 ```
 
 means:
 
-> Make a prediction for this entity using only information available through June 9, 2025.
+> Make a prediction for this entity using only information available through July 6, 2026.
 
 Anistroph can then:
 
@@ -1004,6 +1033,8 @@ The complete endpoint list is in [API Reference](#api-reference).
 
 Claude prompts grouped by dataset. These work with any MCP client — Claude Desktop, Claude CLI, Cursor, etc. Replace model IDs with your own (check with "What models are available?").
 
+> **Date ranges:** The `as_of` timestamps in temporal queries must fall within the generated data's date range. Procurement: 2023-01-02 to 2026-08-17. Predictive Maintenance: 2026-06-01 to 2026-07-31. See [Synthetic Data Generation](#synthetic-data-generation) for how to change these ranges. Non-temporal datasets (semiconductor yield, home prices) do not require `as_of`.
+
 ### Discover (cross-dataset)
 
 > "What datasets and models are available in Anistroph?"
@@ -1012,7 +1043,7 @@ Claude prompts grouped by dataset. These work with any MCP client — Claude Des
 
 ### Semiconductor Procurement — Demand
 
-> "Predict 4-week material demand for FAB_A__MAT_0001 as of 2025-06-09"
+> "Predict 4-week material demand for FAB_A__MAT_0001 as of 2026-07-06"
 > "What inputs does the demand model need?"
 > "Explain that prediction — what are the top drivers?"
 > "Which features are pushing the demand forecast up or down?"
@@ -1022,7 +1053,7 @@ Claude prompts grouped by dataset. These work with any MCP client — Claude Des
 
 ### Semiconductor Procurement — Shortage Risk
 
-> "Predict shortage risk for FAB_A__MAT_0001 as of 2025-06-09"
+> "Predict shortage risk for FAB_A__MAT_0001 as of 2026-07-06"
 > "Which suppliers are associated with the greatest shortage risk?"
 > "Evaluate the shortage risk model on the held-out set"
 > "Where is shortage risk mispredicted — which fab × material category combinations?"

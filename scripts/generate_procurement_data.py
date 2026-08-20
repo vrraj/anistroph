@@ -39,7 +39,7 @@ import polars as pl
 
 N_FABS = 8
 N_MATERIALS = 100
-N_WEEKS = 160  # ~3 years
+N_WEEKS = 190  # ~3.6 years (2023-01-02 through 2026-08-17)
 SPARSE_DENSITY = 0.78  # fraction of (fab, material) pairs that are active
 
 FAB_IDS = [f"FAB_{chr(ord('A') + i)}" for i in range(N_FABS)]

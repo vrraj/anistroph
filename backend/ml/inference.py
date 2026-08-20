@@ -101,7 +101,12 @@ def predict(
         if history_window is not None:
             time_lower = ts_parsed - timedelta(seconds=parse_duration(history_window))
 
-        lazy = pl.scan_parquet(meta.parquet_path)
+        # Use the dataset's full parquet (not the model's training partition)
+        # so that inference can look up entity history at any timestamp,
+        # including dates in the held-out evaluation period.
+        dmeta = dataset_registry.get(spec.dataset_id)
+        inference_parquet = dmeta.parquet_path if dmeta is not None else meta.parquet_path
+        lazy = pl.scan_parquet(inference_parquet)
         base_filters = [
             pl.col(spec.entity_key) == entity_id,
             pl.col(spec.time_key) <= ts_parsed,

@@ -64,9 +64,9 @@ The procurement section follows a hook-first order: lead with the prediction, th
 
 ### Step 1 — The hero prediction
 
-> Use Anistroph to predict the 4-week material demand for series FAB_A__MAT_0001 as of 2025-06-09. Then show me the actual demand for that period from the dataset so we can compare.
+> Use Anistroph to predict the 4-week material demand for series FAB_A__MAT_0001 as of 2026-07-06. Then show me the actual demand for that period from the dataset so we can compare.
 
-Claude calls `anistroph_predict` with `entity_id=FAB_A__MAT_0001` and `timestamp=2025-06-09`. Anistroph loads 13 weeks of history for this series up to June 9th, computes the 4w/8w/13w rolling means, applies the trained XGBoost model, and returns the forecast. Claude then calls `anistroph_sample_rows` to fetch the actual `material_demand_next_4w` value (246.6) for that week so you can compare prediction vs. actual.
+Claude calls `anistroph_predict` with `entity_id=FAB_A__MAT_0001` and `timestamp=2026-07-06`. Anistroph loads 13 weeks of history for this series up to July 6th, computes the 4w/8w/13w rolling means, applies the trained XGBoost model, and returns the forecast. Claude then calls `anistroph_sample_rows` to fetch the actual `material_demand_next_4w` value (221.1) for that week so you can compare prediction vs. actual.
 
 One MCP call produced a temporal forecast with rolling feature reconstruction — no feature pipeline, no manual window calculations.
 

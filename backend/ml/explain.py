@@ -68,7 +68,12 @@ def explain_prediction(
 
     # Temporal lookup with history (entity_id + timestamp both provided).
     if spec.is_temporal() and entity_id is not None and timestamp is not None:
-        df = pl.read_parquet(meta.parquet_path)
+        # Use the dataset's full parquet (not the model's training partition)
+        # so that explain can look up entity history at any timestamp,
+        # including dates in the held-out evaluation period.
+        dmeta = dataset_registry.get(spec.dataset_id)
+        inference_parquet = dmeta.parquet_path if dmeta is not None else meta.parquet_path
+        df = pl.read_parquet(inference_parquet)
         ts_parsed = _parse_timestamp(timestamp)
         entity_df = df.filter(
             (pl.col(spec.entity_key) == entity_id)

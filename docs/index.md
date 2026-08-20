@@ -8,34 +8,21 @@ title: "Anistroph: Multi-Domain Predictive Analytics with AI Agent Access"
 
 # Anistroph
 
-**Anistroph is a multi-domain predictive analytics architecture for
-structured data --- connecting dataset-specific models to shared
-prediction, explainability, evaluation, multidimensional analysis, and
-AI-agent services.**
+## Multi-Domain Predictive Analytics with AI Agent Access
 
-Different domains can have different schemas, features, targets,
-preprocessing, and models without rebuilding the surrounding analytics
-stack.
+What does it look like when an AI agent can discover predictive models, understand how to use them, run predictions, explain results, and analyze the underlying data?
 
-A semiconductor manufacturing team can predict wafer yield at different
-process stages. A maintenance team can predict equipment failure and
-remaining useful life. A procurement team can forecast material demand
-and shortage risk. Each problem is different, but all use the same
-Anistroph runtime.
+### Anistroph through Claude
 
-> **Explore:** [GitHub](https://github.com/vrraj/anistroph) · [Setup &
-> Usage](setup-usage) · [Technical Architecture](technical-architecture)
+> **"What datasets and models are available in Anistroph?"**
 
-## Predictive Analytics — Anistroph Through Claude MCP
+> **"Predict the 4-week material demand for `FAB_A__MAT_0001` as of `2026-07-06`. Then show me the actual demand so we can compare."**
 
-<br><br>
+> **"Explain the prediction. What's driving the demand forecast up or down?"**
 
-<p align="center">
-  <img src="https://raw.githubusercontent.com/vrraj/anistroph/main/docs/images/anistroph-predict-material-demand-claude.png" width="70%" />
-</p>
-<p align="center"><em>Predicting 4-week material demand with temporal as_of inference — rolling features reconstructed from 13 weeks of entity history.</em></p>
+> **"Find a fab-material series that experienced a demand spike or inventory crisis, predict demand at that point, and explain what drove the spike."**
 
-<br><br>
+<br>
 
 <table style="width:100%; border:none; table-layout:fixed;">
   <tr>
@@ -63,6 +50,19 @@ Anistroph runtime.
     </td>
   </tr>
 </table>
+
+> **MCP access:** Anistroph includes an MCP server that can run locally or be deployed with the application. Users can connect Claude and other MCP-compatible clients to their own Anistroph environment through stdio or Streamable HTTP.
+
+## Behind the Queries
+
+**Anistroph is a multi-domain predictive analytics architecture for structured data — connecting dataset-specific models to shared prediction, explainability, evaluation, multidimensional analysis, and AI-agent services.**
+
+Different domains can have different schemas, features, targets, preprocessing, and models without rebuilding the surrounding analytics stack.
+
+A semiconductor manufacturing team can predict wafer yield at different process stages. A maintenance team can predict equipment failure and remaining useful life. A procurement team can forecast material demand and shortage risk. Each problem is different, but all use the same Anistroph runtime.
+
+> **Explore:** [GitHub](https://github.com/vrraj/anistroph) · [Setup &
+> Usage](setup-usage) · [Technical Architecture](technical-architecture)
 
 ## Predictive Use Cases
 

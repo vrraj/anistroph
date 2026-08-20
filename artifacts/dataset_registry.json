@@ -734,7 +734,7 @@
     "name": "Semiconductor Procurement \u2014 Demand Forecasting",
     "version": "1",
     "source": "data/semiconductor_procurement/data.parquet",
-    "row_count": 99840,
+    "row_count": 118560,
     "columns": [
       "week",
       "series_id",
@@ -790,9 +790,9 @@
       "consumption_lag_8w",
       "consumption_lag_13w"
     ],
-    "created_at": "2026-08-18T18:16:02.851489+00:00",
+    "created_at": "2026-08-20T18:37:13.378155+00:00",
     "data_start": "2023-01-02 00:00:00",
-    "data_end": "2026-01-19 00:00:00",
+    "data_end": "2026-08-17 00:00:00",
     "parquet_path": "/Users/raj/Documents/Raj/anistroph/data/processed/semiconductor_procurement_demand.parquet",
     "spec_path": "/Users/raj/Documents/Raj/anistroph/datasets/semiconductor_procurement_demand/dataset.yaml",
     "partitioned": true,
@@ -805,7 +805,7 @@
     "name": "Semiconductor Procurement \u2014 Shortage Risk",
     "version": "1",
     "source": "data/semiconductor_procurement/data.parquet",
-    "row_count": 99840,
+    "row_count": 118560,
     "columns": [
       "week",
       "series_id",
@@ -861,9 +861,9 @@
       "consumption_lag_8w",
       "consumption_lag_13w"
     ],
-    "created_at": "2026-08-18T18:16:02.990417+00:00",
+    "created_at": "2026-08-20T18:37:13.485950+00:00",
     "data_start": "2023-01-02 00:00:00",
-    "data_end": "2026-01-19 00:00:00",
+    "data_end": "2026-08-17 00:00:00",
     "parquet_path": "/Users/raj/Documents/Raj/anistroph/data/processed/semiconductor_procurement_shortage.parquet",
     "spec_path": "/Users/raj/Documents/Raj/anistroph/datasets/semiconductor_procurement_shortage/dataset.yaml",
     "partitioned": true,

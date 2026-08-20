@@ -718,15 +718,42 @@ architecture without requiring proprietary datasets.
     conditions, maintenance state, and three regression targets.
 -   **Bay Area Home Prices** --- 40,000 synthetic listings across San
     Jose, Los Gatos, and Saratoga.
--   **Semiconductor Materials Procurement** --- roughly 100,000 weekly
+-   **Semiconductor Materials Procurement** --- roughly 120,000 weekly
     `week × fab × material` rows across 8 fabs, 100 materials, 15
-    suppliers, and 160 weeks, supporting demand and shortage-risk
+    suppliers, and 190 weeks, supporting demand and shortage-risk
     targets.
 
 The generators use a fixed seed by default and intentionally include
 noise and interactions so the datasets are learnable but imperfect. They
 are reference/demo data, not benchmark datasets or evidence of
 real-world model performance.
+
+### Generation Parameters and Date Ranges
+
+Each generator accepts CLI flags to control scale and seed. The defaults
+produce the reference datasets shipped with `make setup`:
+
+| Generator | Key flags | Default | Date range |
+|---|---|---|---|
+| `generate_procurement_data.py` | `--weeks`, `--fabs`, `--materials`, `--density`, `--seed` | 190 weeks, 8 fabs, 100 materials, 0.78 density | 2023-01-02 to 2026-08-17 |
+| `generate_sensor_data.py` | `--machines`, `--days`, `--interval`, `--seed` | 50 machines, 60 days, 5-min interval | 2026-06-01 to 2026-07-31 |
+| `generate_semiconductor_yield_data.py` | `--wafers`, `--seed` | 50,000 wafers | 2025-01-01 onward (per-wafer, non-temporal) |
+| `generate_home_prices_data.py` | `--homes`, `--seed` | 40,000 listings | 2024-06-01 onward (per-listing, non-temporal) |
+
+The procurement and predictive maintenance datasets are **temporal** —
+their date ranges determine which `as_of` timestamps are valid for
+prediction. The semiconductor yield and home price datasets are
+**non-temporal** (per-row, no rolling features), so their timestamps are
+used only for chronological splitting and do not constrain prediction
+queries.
+
+To regenerate with different parameters, run a generator directly then
+re-register the affected datasets:
+
+``` bash
+python scripts/generate_procurement_data.py --weeks 260 --seed 42
+python scripts/setup_datasets.py --force
+```
 
 ------------------------------------------------------------------------
 

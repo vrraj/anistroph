@@ -754,7 +754,7 @@ async function onPredictModelChange() {
     // Timestamp: required for temporal datasets, optional otherwise
     if (r.requires_timestamp) {
       tsField.disabled = false;
-      tsField.placeholder = 'Required — as of date (e.g. 2025-06-09)';
+      tsField.placeholder = 'Required — as of date (e.g. 2026-07-06)';
       tsLabel.innerHTML = 'As of date <i class="tooltip-icon" data-tooltip="Required for this temporal model. The as-of date is the last known point in history — Anistroph loads entity history up to this date, computes rolling features, and applies the fixed model. This is NOT the date being predicted.">i</i> <span style="color:#e53e3e;">*</span>';
     } else {
       tsField.disabled = false;

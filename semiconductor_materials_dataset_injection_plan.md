@@ -26,8 +26,8 @@ Validate that Anistroph can **train → evaluate → predict → explain → sli
 - **80 materials**: MAT_0001 through MAT_0080 across 8 categories:
   - Silicon wafers, Photoresists, Process gases, Wet chemicals,
     Deposition precursors, Sputtering targets, CMP materials, Packaging/assembly
-- **~160 weeks**: ~3 years of weekly history (Jan 2023 – Dec 2025)
-- **Sparse fab×material mapping**: ~78% density → ~99,840 rows
+- **~190 weeks**: ~3.6 years of weekly history (Jan 2023 – Aug 2026)
+- **Sparse fab×material mapping**: ~78% density → ~118,560 rows
 - **~15 suppliers**: SUP_01 through SUP_15, mapped to (fab, material) pairs
 
 ### Columns Generated
@@ -213,16 +213,16 @@ The exercise succeeds if the existing Anistroph architecture can:
 ### Status: COMPLETE ✅
 
 ### Data Generated
-- **99,840 rows** x 26 columns at `data/semiconductor_procurement/data.parquet`
+- **118,560 rows** x 26 columns at `data/semiconductor_procurement/data.parquet`
 - 624 series (fab × material), 8 fabs, 100 materials, 15 suppliers, 8 categories
-- Date range: 2023-01-02 to 2026-01-19 (160 weeks)
-- Shortage risk positive rate: 19.6% (good class balance)
+- Date range: 2023-01-02 to 2026-08-17 (190 weeks)
+- Shortage risk positive rate: 19.7% (good class balance)
 
 ### Datasets Registered
-- `semiconductor_procurement_demand` — 99,840 rows, regression target
-- `semiconductor_procurement_shortage` — 99,840 rows, classification target
-- Both partitioned: train (79,872) / validate (9,984) / eval (9,984)
-- Chronological split: train ends 2025-06-09, eval starts 2025-06-16
+- `semiconductor_procurement_demand` — 118,560 rows, regression target
+- `semiconductor_procurement_shortage` — 118,560 rows, classification target
+- Both partitioned: train (94,848) / validate (11,856) / eval (11,856)
+- Chronological split: train ends 2025-11-24, eval starts 2026-04-13
 
 ### Models Trained
 
