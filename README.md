@@ -49,7 +49,7 @@ materials procurement, and additional domains without rebuilding those shared se
 **MCP, REST/OpenAPI, and the Web UI use the same runtime**, allowing agent-driven
 predictions and analyses to be independently reproduced when validation is required.
 
-## Predictive Analytics — Anistroph Through Claude MCP
+## Predictive Analytics —Claude MCP in Action
 
 <table style="width:100%; border:none; table-layout:fixed;">
   <tr>
