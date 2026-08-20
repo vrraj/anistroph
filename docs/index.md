@@ -32,7 +32,7 @@ What does it look like when an AI agent can discover predictive models, understa
       <img src="https://raw.githubusercontent.com/vrraj/anistroph/main/docs/images/anistroph-discover-models-claude.png" width="100%" />
     </td>
         <td width="50%" align="center" valign="top" style="border:none; padding:8px;">
-      <strong>Deterministic MCP tools</strong>
+      <strong>Predicting material demand</strong>
       <br><br>
       <img src="https://raw.githubusercontent.com/vrraj/anistroph/main/docs/images/anistroph-predict-material-demand-claude.png" width="100%" />
     </td>
@@ -53,9 +53,11 @@ What does it look like when an AI agent can discover predictive models, understa
 </table>
 
 
----
-> **MCP access:** Anistroph includes an MCP server that can run locally or be deployed with the application. Users can connect Claude and other MCP-compatible clients to their own Anistroph environment through stdio or Streamable HTTP.
----
+
+<blockquote>
+  <h4 style="color:#ab6a27" id="mcp-access-anistroph-includes-an-mcp-server-that-can-run-locally-or-be-deployed-with-the-application-users-can-connect-claude-and-other-mcp-compatible-clients-to-their-own-anistroph-environment-through-stdio-or-streamable-http"><strong>MCP access:</strong> Anistroph includes an MCP server that can run locally or be deployed with the application. Users can connect Claude and other MCP-compatible clients to their own Anistroph environment through stdio or Streamable HTTP.</h4>
+</blockquote>
+
 
 ## Behind the Queries
 
