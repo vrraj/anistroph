@@ -14,13 +14,14 @@ What does it look like when an AI agent can discover predictive models, understa
 
 ### Anistroph through Claude
 
-> **What datasets and models** are available in Anistroph?
+<blockquote style="border-left: 0;"> <strong>What datasets and models</strong> are available in Anistroph?</blockquote>
 
-> **Predict the 4-week material demand** for `FAB_A__MAT_0001` as of `2026-07-06`. Then show me the actual demand so we can compare."
 
-> **Explain the prediction**. What's driving the demand forecast up or down?
+<blockquote style="border-left: 0;"> <strong>Predict the 4-week material demand</strong> for `FAB_A__MAT_0001` as of `2026-07-06`. Then show me the actual demand so we can compare.</blockquote>
 
-> **Find a fab-material series that experienced a demand spike or inventory crisis**, predict demand at that point, and explain what drove the spike."
+<blockquote style="border-left: 0;"> <strong>Explain the prediction</strong>. What's driving the demand forecast up or down?</blockquote>
+
+<blockquote style="border-left: 0;"> <strong>Find a fab-material series that experienced a demand spike or inventory crisis</strong>, predict demand at that point, and explain what drove the spike.</blockquote>
 
 <br>
 
@@ -86,6 +87,29 @@ exercise different parts of the architecture.
 The reference datasets are not intended as production benchmarks. They
 provide concrete, reproducible problems for demonstrating how the same
 architecture behaves across different predictive domains.
+
+### Trained Reference Models
+
+Held-out evaluation metrics for the shipped reference models:
+
+| Domain | Target | Task | Held-out metric |
+|--------|--------|------|-----------------|
+| Semiconductor Yield | `wafer_yield` | Regression | R² = 0.81 |
+| Semiconductor CD | `critical_dimension_nm` | Regression | R² = 0.89 |
+| Semiconductor Film Thickness | `film_thickness_nm` | Regression | R² = 0.98 |
+| Predictive Maintenance — Failure | `failure_within_horizon` | Classification | ROC-AUC = 0.85, F1 = 0.61 |
+| Predictive Maintenance — Maintenance | `maintenance_required` | Classification | ROC-AUC = 1.00, F1 = 0.94 |
+| Predictive Maintenance — RUL | `remaining_useful_life_hours` | Regression | MAE = 27.9h |
+| Home Prices | `price` | Regression | R² = 0.97 |
+| Procurement — Demand | `material_demand_next_4w` | Regression | R² = 0.96, MAE = 14.0 |
+| Procurement — Shortage Risk | `shortage_risk_next_4w` | Classification | ROC-AUC = 0.99, F1 = 0.90 |
+
+Models are trained on the train partition and evaluated on the held-out
+evaluation partition (most recent 20% for temporal datasets, random 20%
+for non-temporal). The two never overlap.
+
+For dataset-specific prompts and worked examples, see the [Setup & Usage
+Guide](setup-usage).
 
 ## Core Features
 

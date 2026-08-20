@@ -148,7 +148,7 @@ Held-out evaluation metrics for the shipped reference models:
 | Predictive Maintenance — Maintenance | `maintenance_required` | Classification | ROC-AUC = 1.00, F1 = 0.94 |
 | Predictive Maintenance — RUL | `remaining_useful_life_hours` | Regression | MAE = 27.9h |
 | Home Prices | `price` | Regression | R² = 0.97 |
-| Procurement — Demand | `material_demand_next_4w` | Regression | R² = 0.96, MAE = 11.1 |
+| Procurement — Demand | `material_demand_next_4w` | Regression | R² = 0.96, MAE = 14.0 |
 | Procurement — Shortage Risk | `shortage_risk_next_4w` | Classification | ROC-AUC = 0.99, F1 = 0.90 |
 
 Models are trained on the train partition and evaluated on the held-out
