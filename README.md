@@ -19,21 +19,21 @@ Anistroph connects dataset-specific predictive models to shared services for
 
 ### Anistroph Through Claude
 
-> **"What datasets and models are available in Anistroph?"**
+> **"What datasets and models**  are available in Anistroph?"
 >
-> **"Predict the 4-week material demand for `FAB_A__MAT_0001` as of `2026-07-06`.
-> Then show me the actual demand so we can compare."**
+> **"Predict the 4-week material demand**   for `FAB_A__MAT_0001` as of `2026-07-06`.
+> Then show me the actual demand so we can compare."
 >
-> **"Explain what's driving the demand forecast up or down."**
+> **"Explain** what's driving the demand forecast up or down."
 >
-> **"Find a fab-material series that experienced a demand spike or inventory crisis,
-> predict demand at that point, and explain what drove the spike."**
+> **"Find a fab-material series that experienced a demand spike or inventory crisis**   ,
+> predict demand at that point, and explain what drove the spike."
 
 Claude and other AI agents can **discover → understand → execute** through MCP.
 Anistroph performs the underlying prediction, explanation, evaluation, and analysis
 through its shared runtime.
 
-**MCP access:** Anistroph includes an MCP server that can run locally or be deployed
+> **MCP access:** Anistroph includes an MCP server that can run locally or be deployed
 with the application. MCP-compatible clients can connect to their own Anistroph
 environment through **stdio or Streamable HTTP**.
 
