@@ -12,40 +12,44 @@ Tools](https://img.shields.io/badge/MCP-13%20tools-purple)](https://github.com/v
 [![GitHub
 Pages](https://img.shields.io/badge/docs-GitHub%20Pages-blue)](https://vrraj.github.io/anistroph/)
 
-**Anistroph** (derived from *anisotropy*, reflecting how insights can
-shift with the direction of analysis) is a multi-domain predictive
-analytics architecture for structured data.
+**Multi-Domain Predictive Analytics with AI Agent Access**
 
-Different datasets retain their own **schemas, features, targets,
-preprocessing, and models** while using shared services for **training,
-prediction, explainability, evaluation, and multidimensional analysis**.
-New datasets and prediction problems can be added without rebuilding the
-shared runtime.
+Anistroph connects dataset-specific predictive models to shared services for
+**prediction, explainability, evaluation, multidimensional analysis, and AI-agent access**.
 
-**Claude and AI agents** can discover datasets and models, inspect
-required inputs, run predictions, explain results, evaluate model
-performance, and analyze data through **MCP (stdio and Streamable
-HTTP)**. The same runtime is also accessible through **REST/OpenAPI and
-the Anistroph Web UI**.
+### Anistroph Through Claude
 
-### AI Agent Analysis & Validation
+> **"What datasets and models are available in Anistroph?"**
+>
+> **"Predict the 4-week material demand for `FAB_A__MAT_0001` as of `2026-07-06`.
+> Then show me the actual demand so we can compare."**
+>
+> **"Explain what's driving the demand forecast up or down."**
+>
+> **"Find a fab-material series that experienced a demand spike or inventory crisis,
+> predict demand at that point, and explain what drove the spike."**
 
-**Discover → Understand → Execute → Validate**
+Claude and other AI agents can **discover → understand → execute** through MCP.
+Anistroph performs the underlying prediction, explanation, evaluation, and analysis
+through its shared runtime.
 
-Claude and AI agents first discover the available datasets and models, then inspect the selected model's input contract to determine required inputs, temporal requirements such as `as_of`, and required inference history.
+**MCP access:** Anistroph includes an MCP server that can run locally or be deployed
+with the application. MCP-compatible clients can connect to their own Anistroph
+environment through **stdio or Streamable HTTP**.
 
-The agent can then orchestrate prediction, explanation, evaluation, and analysis through MCP. These operations are executed by Anistroph's shared services and can be independently reproduced through the Web UI or REST API when validation is required.
+### Shared Runtime, Different Prediction Problems
+
+Different datasets retain their own **schemas, features, targets, preprocessing,
+and models** while using the same training, prediction, explanation, evaluation,
+and analytical services.
+
+The same runtime supports semiconductor manufacturing, predictive maintenance,
+materials procurement, and additional domains without rebuilding those shared services.
+
+**MCP, REST/OpenAPI, and the Web UI use the same runtime**, allowing agent-driven
+predictions and analyses to be independently reproduced when validation is required.
 
 ## Predictive Analytics — Anistroph Through Claude MCP
-
-<br><br>
-
-<p align="center">
-  <img src="https://raw.githubusercontent.com/vrraj/anistroph/main/docs/images/anistroph-predict-material-demand-claude.png" width="70%" />
-</p>
-<p align="center"><em>Predicting 4-week material demand with temporal as_of inference — rolling features reconstructed from 13 weeks of entity history.</em></p>
-
-<br><br>
 
 <table style="width:100%; border:none; table-layout:fixed;">
   <tr>
@@ -55,21 +59,21 @@ The agent can then orchestrate prediction, explanation, evaluation, and analysis
       <img src="https://raw.githubusercontent.com/vrraj/anistroph/main/docs/images/anistroph-discover-models-claude.png" width="100%" />
     </td>
     <td width="50%" align="center" valign="top" style="border:none; padding:8px;">
-      <strong>Explaining the prediction with SHAP</strong>
+      <strong>Predicting material demand</strong>
       <br><br>
-      <img src="https://raw.githubusercontent.com/vrraj/anistroph/main/docs/images/anistroph-explain-prediction-claude.png" width="100%" />
+      <img src="https://raw.githubusercontent.com/vrraj/anistroph/main/docs/images/anistroph-predict-material-demand-claude.png" width="100%" />
     </td>
   </tr>
   <tr>
     <td width="50%" align="center" valign="top" style="border:none; padding:8px;">
+      <strong>Explaining the prediction with SHAP</strong>
+      <br><br>
+      <img src="https://raw.githubusercontent.com/vrraj/anistroph/main/docs/images/anistroph-explain-prediction-claude.png" width="100%" />
+    </td>
+    <td width="50%" align="center" valign="top" style="border:none; padding:8px;">
       <strong>Stress-testing a real inventory crisis</strong>
       <br><br>
       <img src="https://raw.githubusercontent.com/vrraj/anistroph/main/docs/images/anistroph-stress-test-claude.png" width="100%" />
-    </td>
-    <td width="50%" align="center" valign="top" style="border:none; padding:8px;">
-      <strong>Deterministic MCP tools</strong>
-      <br><br>
-      <img src="https://raw.githubusercontent.com/vrraj/anistroph/main/docs/images/anistroph-deterministic-tools.png" width="100%" />
     </td>
   </tr>
 </table>

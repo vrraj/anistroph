@@ -14,13 +14,13 @@ What does it look like when an AI agent can discover predictive models, understa
 
 ### Anistroph through Claude
 
-> What **datasets and models** are available in Anistroph?
+> **What datasets and models** are available in Anistroph?
 
 > **Predict the 4-week material demand** for `FAB_A__MAT_0001` as of `2026-07-06`. Then show me the actual demand so we can compare."
 
 > **Explain the prediction**. What's driving the demand forecast up or down?
 
-> Find a fab-material series that **experienced a demand spike or inventory crisis**, predict demand at that point, and explain what drove the spike."
+> **Find a fab-material series that experienced a demand spike or inventory crisis**, predict demand at that point, and explain what drove the spike."
 
 <br>
 
