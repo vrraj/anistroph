@@ -155,6 +155,10 @@ Models are trained on the train partition and evaluated on the held-out
 evaluation partition (most recent 20% for temporal datasets, random 20%
 for non-temporal). The two never overlap.
 
+> Note: These metrics are from synthetic reference datasets designed to
+> exercise Anistroph's architecture and workflows; they are not
+> benchmarks of expected real-world model performance.
+
 For dataset-specific prompts and worked examples, see the [Setup & Usage
 Guide](docs/setup-usage.md).
 
