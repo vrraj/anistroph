@@ -78,41 +78,34 @@ predictions and analyses to be independently reproduced when validation is requi
   </tr>
 </table>
 
-## What the Architecture Supports
+## Core Features
 
--   **Multi-domain datasets** --- datasets from different domains use
-    the same training, prediction, explanation, evaluation, and
-    analytical services while retaining dataset-specific schemas,
-    features, targets, preprocessing, and models.
--   **Declarative dataset configuration** --- YAML defines the dataset
-    schema, model inputs, transforms, target semantics, and split
-    strategy.
--   **Temporal and non-temporal prediction** --- temporal models can
-    reconstruct rolling features from entity history at prediction time;
-    non-temporal models support direct entity or records-based
-    inference.
--   **Multiple targets** --- one source dataset can support independent
-    models for different outcomes.
--   **Multiple model types** --- regression and classification are
-    implemented today through model adapters.
--   **Process-stage prediction** --- separate models can predict the
-    same outcome at different workflow stages using only information
-    available at that point.
--   **Explainability** --- XGBoost predictions use TreeSHAP, with
-    transformed categorical features normalized back to human-readable
-    source features.
--   **Multidimensional analysis** --- discover populations where
-    observed outcomes differ materially across 1-, 2-, and 3-dimensional
-    combinations.
--   **Multidimensional model evaluation** --- identify populations where
-    model error is materially better or worse than the overall baseline.
--   **MCP and agent access** --- Claude and other MCP-compatible agents
-    can discover models, inspect input contracts, predict, explain,
-    evaluate, and analyze.
--   **Cross-interface validation** --- agent-generated predictions,
-    explanations, evaluations, and analyses can be reproduced against
-    the same persisted model and shared runtime through REST or the Web
-    UI.
+-   **Multi-Domain Predictive Runtime** --- Different datasets retain
+    their own schemas, features, targets, preprocessing, and models
+    while sharing prediction, explanation, evaluation, and analysis
+    services.
+-   **AI Agent Access through MCP** --- Claude and other MCP-compatible
+    agents can discover datasets and models, inspect model contracts,
+    and invoke prediction, explanation, evaluation, and analysis through
+    stdio or Streamable HTTP.
+-   **Self-Describing Models** --- Model contracts expose required
+    inputs, prediction mode, and temporal requirements such as `as_of`
+    and inference history.
+-   **Temporal & Records-Based Prediction** --- Supports direct
+    source-record inference and temporal entity lookup with rolling
+    feature reconstruction from historical data.
+-   **Multiple Targets & Process Stages** --- A source dataset can
+    support different prediction targets and task types, or models for
+    the same target at different process stages.
+-   **SHAP Explainability & One-Hot Feature Normalization** --- Maps
+    SHAP contributions from one-hot encoded features back to their
+    original source features and values.
+-   **Multidimensional Analysis & Evaluation** --- Analyzes observed
+    outcomes and model performance across 1-, 2-, and 3-dimensional
+    populations.
+-   **Cross-Interface Validation** --- MCP, REST/OpenAPI, and the Web UI
+    use the same shared runtime, allowing agent-driven operations to be
+    independently reproduced and validated.
 
 > Anistroph is a reference architecture. The included synthetic datasets
 > and models demonstrate how the components fit together rather than

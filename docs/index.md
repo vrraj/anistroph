@@ -87,44 +87,34 @@ The reference datasets are not intended as production benchmarks. They
 provide concrete, reproducible problems for demonstrating how the same
 architecture behaves across different predictive domains.
 
-## What Anistroph Does
+## Core Features
 
-### Predict
-
-Run persisted models against existing entities or new source-feature
-records. The runtime applies the same feature metadata and preprocessing
-used during training.
-
-### Explain
-
-Explain individual predictions using model-specific explainability.
-XGBoost models use TreeSHAP, with transformed categorical features
-normalized back to understandable source fields and values.
-
-### Evaluate
-
-Evaluate persisted models against held-out data using task-appropriate
-metrics. Evaluation can also be scoped to specific populations rather
-than relying only on aggregate model performance.
-
-### Discover
-
-Analyze the underlying data across one, two, or three dimensions to find
-populations where outcomes differ materially from the overall baseline.
-
-### Forecast Over Time
-
-For temporal problems, Anistroph reconstructs rolling and
-history-dependent model inputs as of a prediction point. New
-observations can produce updated forecasts without requiring the model
-to be retrained for every forecast period.
-
-### Work Through AI Agents
-
-Claude and other MCP-compatible agents can discover datasets and models,
-inspect required inputs, generate or select source-feature records,
-predict, explain, evaluate, and analyze through domain-agnostic MCP
-tools.
+-   **Multi-Domain Predictive Runtime** --- Different datasets retain
+    their own schemas, features, targets, preprocessing, and models
+    while sharing prediction, explanation, evaluation, and analysis
+    services.
+-   **AI Agent Access through MCP** --- Claude and other MCP-compatible
+    agents can discover datasets and models, inspect model contracts,
+    and invoke prediction, explanation, evaluation, and analysis through
+    stdio or Streamable HTTP.
+-   **Self-Describing Models** --- Model contracts expose required
+    inputs, prediction mode, and temporal requirements such as `as_of`
+    and inference history.
+-   **Temporal & Records-Based Prediction** --- Supports direct
+    source-record inference and temporal entity lookup with rolling
+    feature reconstruction from historical data.
+-   **Multiple Targets & Process Stages** --- A source dataset can
+    support different prediction targets and task types, or models for
+    the same target at different process stages.
+-   **SHAP Explainability & One-Hot Feature Normalization** --- Maps
+    SHAP contributions from one-hot encoded features back to their
+    original source features and values.
+-   **Multidimensional Analysis & Evaluation** --- Analyzes observed
+    outcomes and model performance across 1-, 2-, and 3-dimensional
+    populations.
+-   **Cross-Interface Validation** --- MCP, REST/OpenAPI, and the Web UI
+    use the same shared runtime, allowing agent-driven operations to be
+    independently reproduced and validated.
 
 <p align="center">
   <img src="https://raw.githubusercontent.com/vrraj/anistroph/main/docs/images/anistroph-pipeline.png" width="100%" />
