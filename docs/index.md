@@ -59,7 +59,7 @@ What does it look like when an AI agent can discover predictive models, understa
 
 ## Behind the Queries
 
-**Anistroph is a multi-domain predictive analytics architecture for structured data — connecting dataset-specific models to shared prediction, explainability, evaluation, multidimensional analysis, and AI-agent services.**
+**Anistroph** is a **multi-domain predictive analytics architecture for structured data** — connecting dataset-specific models to **shared prediction, explainability, evaluation, multidimensional analysis, and AI-agent services**.
 
 Different domains can have different schemas, features, targets, preprocessing, and models without rebuilding the surrounding analytics stack.
 
@@ -374,6 +374,8 @@ monitoring/drift detection are natural extension paths.
 -   **[Story on
     Medium](https://medium.com/@vr.rajkumar99/designing-a-multi-domain-predictive-analytics-architecture-with-ai-agent-access-2476009916b2)**
     --- design narrative and architecture walkthrough
+-   **[MCP market listing](https://mcpmarket.com/server/anistroph)**
+    --- MCP marketplace listing
 
 ## License
 
