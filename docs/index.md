@@ -14,13 +14,13 @@ What does it look like when an AI agent can discover predictive models, understa
 
 ### Anistroph through Claude
 
-> **"What datasets and models are available in Anistroph?"**
+> What **datasets and models** are available in Anistroph?
 
-> **"Predict the 4-week material demand for `FAB_A__MAT_0001` as of `2026-07-06`. Then show me the actual demand so we can compare."**
+> **Predict the 4-week material demand** for `FAB_A__MAT_0001` as of `2026-07-06`. Then show me the actual demand so we can compare."
 
-> **"Explain the prediction. What's driving the demand forecast up or down?"**
+> **Explain the prediction**. What's driving the demand forecast up or down?
 
-> **"Find a fab-material series that experienced a demand spike or inventory crisis, predict demand at that point, and explain what drove the spike."**
+> Find a fab-material series that **experienced a demand spike or inventory crisis**, predict demand at that point, and explain what drove the spike."
 
 <br>
 
@@ -31,27 +31,31 @@ What does it look like when an AI agent can discover predictive models, understa
       <br><br>
       <img src="https://raw.githubusercontent.com/vrraj/anistroph/main/docs/images/anistroph-discover-models-claude.png" width="100%" />
     </td>
-    <td width="50%" align="center" valign="top" style="border:none; padding:8px;">
+        <td width="50%" align="center" valign="top" style="border:none; padding:8px;">
+      <strong>Deterministic MCP tools</strong>
+      <br><br>
+      <img src="https://raw.githubusercontent.com/vrraj/anistroph/main/docs/images/anistroph-predict-material-demand-claude.png" width="100%" />
+    </td>
+  </tr>
+  <tr>
+     <td width="50%" align="center" valign="top" style="border:none; padding:8px;">
       <strong>Explaining the prediction with SHAP</strong>
       <br><br>
       <img src="https://raw.githubusercontent.com/vrraj/anistroph/main/docs/images/anistroph-explain-prediction-claude.png" width="100%" />
     </td>
-  </tr>
-  <tr>
     <td width="50%" align="center" valign="top" style="border:none; padding:8px;">
       <strong>Stress-testing a real inventory crisis</strong>
       <br><br>
       <img src="https://raw.githubusercontent.com/vrraj/anistroph/main/docs/images/anistroph-stress-test-claude.png" width="100%" />
     </td>
-    <td width="50%" align="center" valign="top" style="border:none; padding:8px;">
-      <strong>Deterministic MCP tools</strong>
-      <br><br>
-      <img src="https://raw.githubusercontent.com/vrraj/anistroph/main/docs/images/anistroph-deterministic-tools.png" width="100%" />
-    </td>
+
   </tr>
 </table>
 
+
+---
 > **MCP access:** Anistroph includes an MCP server that can run locally or be deployed with the application. Users can connect Claude and other MCP-compatible clients to their own Anistroph environment through stdio or Streamable HTTP.
+---
 
 ## Behind the Queries
 
@@ -59,7 +63,8 @@ What does it look like when an AI agent can discover predictive models, understa
 
 Different domains can have different schemas, features, targets, preprocessing, and models without rebuilding the surrounding analytics stack.
 
-A semiconductor manufacturing team can predict wafer yield at different process stages. A maintenance team can predict equipment failure and remaining useful life. A procurement team can forecast material demand and shortage risk. Each problem is different, but all use the same Anistroph runtime.
+A semiconductor **manufacturing** team can predict wafer yield at different process stages. A **maintenance** team can predict equipment failure and remaining useful life. A **procurement** team can forecast material demand and shortage risk. 
+Each problem is different, but all use the same Anistroph runtime.
 
 > **Explore:** [GitHub](https://github.com/vrraj/anistroph) · [Setup &
 > Usage](setup-usage) · [Technical Architecture](technical-architecture)
