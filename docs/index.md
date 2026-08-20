@@ -372,25 +372,22 @@ monitoring/drift detection are natural extension paths.
 
 ## Explore the Project
 
--   **[GitHub Repository](https://github.com/vrraj/anistroph)** ---
-    source, releases, tests, and full README
--   **[Guided Walkthrough](walkthrough)** --- step-by-step inference
-    lifecycle across three datasets (regression + classification,
-    temporal + non-temporal)
--   **[Setup & Usage Guide](setup-usage)** --- Claude/MCP usage, dataset
+-   [GitHub Repository](https://github.com/vrraj/anistroph) --- source, releases, tests, and full README
+-   [Guided Walkthrough](walkthrough) --- step-by-step inference lifecycle across three datasets (regression + classification, temporal + non-temporal)
+-   [Setup & Usage Guide](setup-usage) --- Claude/MCP usage, dataset
     configuration, temporal prediction, operations, examples, and API
     reference
--   **[Technical Architecture](technical-architecture)** --- deeper
+-   [Technical Architecture](technical-architecture) --- deeper
     implementation and architecture details
--   **[Full README](https://github.com/vrraj/anistroph#readme)** ---
+-   [Full README](https://github.com/vrraj/anistroph#readme) ---
     install, features, temporal prediction, extending, tests
--   **[Release
-    Notes](https://github.com/vrraj/anistroph/blob/main/RELEASE_NOTES.md)**
+-   [Release
+    Notes](https://github.com/vrraj/anistroph/blob/main/RELEASE_NOTES.md)
     --- version history
--   **[Story on
-    Medium](https://medium.com/@vr.rajkumar99/designing-a-multi-domain-predictive-analytics-architecture-with-ai-agent-access-2476009916b2)**
+-   [Story on
+    Medium](https://medium.com/@vr.rajkumar99/designing-a-multi-domain-predictive-analytics-architecture-with-ai-agent-access-2476009916b2)
     --- design narrative and architecture walkthrough
--   **[MCP market listing](https://mcpmarket.com/server/anistroph)**
+-   [MCP market listing](https://mcpmarket.com/server/anistroph)
     --- MCP marketplace listing
 
 ## License
