@@ -761,15 +761,19 @@ python scripts/setup_datasets.py --force
 ## Adding a Dataset
 
 A new dataset does not require changes to the shared prediction,
-explanation, evaluation, or analysis services.
+explanation, evaluation, or analysis services. The path from raw data
+to a usable model is:
 
-1.  Create `datasets/<dataset>/dataset.yaml` defining schema, features,
-    target, and split strategy.
-2.  Provide the source data as CSV or Parquet.
-3.  Add dataset-specific preparation only where the domain requires it.
-4.  Register the dataset.
-5.  Train and evaluate a model.
-6.  Use the same Python, REST, MCP, and Web UI runtime services.
+```
+Create dataset config → Provide source data → Register dataset → Train model → Use via runtime
+```
+
+### 1. Create the dataset config
+
+Create `datasets/<dataset>/dataset.yaml` defining the schema, model
+inputs (features + transforms), target, and split strategy. This is
+the single source of truth the generic ML pipeline consults — no
+domain knowledge lives in the engine itself.
 
 Minimal structure:
 
@@ -798,11 +802,6 @@ split:
   eval: 0.20
 ```
 
-Registration validates the source against the configuration, persists
-the dataset, profiles it, creates train/evaluation partitions, and
-records dataset metadata. Feature transforms and target construction
-occur during training.
-
 **Available transforms:** `current` (passthrough), `categorical`
 (one-hot), `mean` / `min` / `max` / `std` / `median` (rolling
 aggregates), `slope` / `delta` (rolling trend / change), `lag`
@@ -819,6 +818,58 @@ self-describing — an agent asking "what drove the **wafer_yield**
 prediction?" gets back the target name alongside the top positive and
 negative feature drivers. Choose a human-readable name describing the
 outcome (`wafer_yield`, `material_demand_next_4w`, `price`).
+
+### 2. Provide the source data
+
+Place the source data as CSV or Parquet under `data/<dataset>/`. Add
+dataset-specific preparation only where the domain requires it.
+
+### 3. Register the dataset
+
+Registration validates the source against the configuration, persists
+the dataset as Parquet, profiles it, creates train/evaluation
+partitions, and records dataset metadata. Feature transforms and
+target construction occur during training, not registration.
+
+``` python
+from backend.services import get_services
+
+svc = get_services()
+meta = svc.register_dataset_from_config(
+    "datasets/<dataset>/dataset.yaml",
+    "data/<dataset>/data.csv",
+)
+print(f"Registered: {meta.dataset_id}, {meta.row_count} rows")
+```
+
+Registration is available via **Python, REST, and the Web UI** — not
+MCP (admin operations are excluded from MCP by design).
+
+### 4. Train a model
+
+The model type auto-selects from the target type (regression →
+`xgboost_regressor`, classification → `xgboost`). Training uses the
+train partition; the held-out evaluation partition is never seen
+during training.
+
+``` bash
+python scripts/train_model.py --dataset <id> --target <target> --model-id <name>
+```
+
+Or start the server and use the Web UI Training tab:
+
+``` bash
+make start   # http://localhost:9500
+```
+
+Training is available via **Python, REST, CLI, and the Web UI** — not
+MCP (admin operations are excluded from MCP by design).
+
+### 5. Use the model
+
+The trained model is immediately available through all runtime
+interfaces — **Python, REST, MCP, and Web UI** — for prediction,
+explanation, evaluation, and analysis. No per-dataset code is needed.
 
 For the complete YAML schema, transform reference, temporal features,
 registration workflow, and worked examples, see [Setup & Usage →
