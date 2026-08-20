@@ -785,7 +785,7 @@ dataset:
 features:
   <feature>:
     column: <source column>
-    transforms: [current|categorical]
+    transforms: [current|categorical|mean|min|max|std|median|slope|delta|lag|hour_of_day|day_of_week|elapsed_time]
 
 target:
   name: <target name>
@@ -802,6 +802,23 @@ Registration validates the source against the configuration, persists
 the dataset, profiles it, creates train/evaluation partitions, and
 records dataset metadata. Feature transforms and target construction
 occur during training.
+
+**Available transforms:** `current` (passthrough), `categorical`
+(one-hot), `mean` / `min` / `max` / `std` / `median` (rolling
+aggregates), `slope` / `delta` (rolling trend / change), `lag`
+(past offset), `hour_of_day` / `day_of_week` / `elapsed_time`
+(timestamp-derived). Rolling transforms are temporal-only and
+leakage-safe. The transform set is extensible — add a dispatch branch
+in `backend/features/engine.py` and, for rolling transforms, register
+the op in `backend/features/spec.py`. See [Setup & Usage → Extending
+Transforms](docs/setup-usage.md#extending-transforms).
+
+The `target.name` field flows through to every prediction and SHAP
+explanation response as `target_name`, making explanations
+self-describing — an agent asking "what drove the **wafer_yield**
+prediction?" gets back the target name alongside the top positive and
+negative feature drivers. Choose a human-readable name describing the
+outcome (`wafer_yield`, `material_demand_next_4w`, `price`).
 
 For the complete YAML schema, transform reference, temporal features,
 registration workflow, and worked examples, see [Setup & Usage →

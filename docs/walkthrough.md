@@ -55,8 +55,8 @@ The walkthrough runs the full lifecycle on three datasets that together exercise
 **Why this dataset first:** It demonstrates Anistroph's temporal prediction capability — the model uses rolling-window features (4-week, 8-week, 13-week means) that are reconstructed from entity history at prediction time. The model is static; the features are not. This is the case most ML platforms cannot handle without a custom feature pipeline.
 
 - **Dataset:** `semiconductor_procurement_demand` (~100K weekly rows, 624 fab-material series)
-- **Model:** `semiconductor_procurement_demand-xgboost_regressor-20260818111627`
-- **Held-out R²:** 0.96 · MAE: 11.1 · RMSE: 17.8
+- **Model:** `semiconductor_procurement_demand-xgboost_regressor`
+- **Held-out R²:** 0.96 · MAE: 14.0 · RMSE: 17.8
 
 The procurement section follows a hook-first order: lead with the prediction, then reveal how it works, then explore the broader capabilities. This keeps the narrative moving and shows the most impressive capability immediately.
 
@@ -113,7 +113,7 @@ Same source parquet, different target, different task type — now we're predict
 
 > Evaluate the semiconductor_procurement_demand model on its held-out evaluation set. What are the R², MAE, and RMSE? Then find the slices where the demand forecast error is worst — which fab, material category, or supplier combinations does the model struggle on?
 
-Claude calls `anistroph_evaluate_model` (R²=0.96, MAE=11.1, RMSE=17.8) and `anistroph_find_evaluation_slices`. The error-slice search ranks 1/2/3-dimensional combinations (e.g. `fab_id × material_category × supplier_id`) by how much the absolute prediction error deviates from the overall baseline. This tells you not just "the model is good overall" but "here's exactly where it's weak."
+Claude calls `anistroph_evaluate_model` (R²=0.96, MAE=14.0, RMSE=17.8) and `anistroph_find_evaluation_slices`. The error-slice search ranks 1/2/3-dimensional combinations (e.g. `fab_id × material_category × supplier_id`) by how much the absolute prediction error deviates from the overall baseline. This tells you not just "the model is good overall" but "here's exactly where it's weak."
 
 ### Step 8 — Procurement risk analysis
 
@@ -205,7 +205,7 @@ Claude calls `anistroph_predict` four times on the staged model IDs. The predict
 **Why this dataset last:** It demonstrates the classification case — the model returns a probability, not a quantity. It's also temporal (sensor history with rolling features), so prediction requires an `as_of` timestamp. The evaluation metrics and error-slice discovery use classification-specific measures (ROC-AUC, F1, log loss) instead of regression measures (MAE, R²).
 
 - **Dataset:** `predictive_maintenance` (864,000 sensor readings, 50 machines)
-- **Model:** `predictive_maintenance-xgboost-20260817002741`
+- **Model:** `predictive_maintenance-xgboost`
 - **Held-out ROC-AUC:** 0.85 · F1: 0.61 · Precision: 0.48 · Recall: 0.81
 
 ### Step 1 — Discover

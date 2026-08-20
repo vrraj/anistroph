@@ -10,7 +10,7 @@ This guide shows how to set up Anistroph, connect it to Claude through MCP, and 
 
 Start with the quick-start section to get Anistroph running and try it with Claude. The sections that follow explain dataset configuration, temporal prediction, operations, interfaces, and the underlying APIs in more detail.
 
-> **New to Anistroph?** See the [Anistroph project overview](https://vrraj.github.io/anistroph/) for the architecture, capabilities, and design goals.
+> **New to Anistroph?** See the [Anistroph project overview](https://vrraj.github.io/anistroph/) for the architecture, capabilities, and design goals. For a guided end-to-end demo across three datasets, see the [Guided Walkthrough](walkthrough.md).
 
 > **AI Agent Analysis & Validation**
 >
@@ -289,6 +289,49 @@ features:
 
 > **The `features:` block is the inference contract.** For non-temporal datasets, a caller sending `records` to `/predictions` must include every source column listed here. The Feature Engine applies the same transforms using the persisted `FeatureMetadata` from training. The caller never constructs one-hot vectors or rolling aggregates — only raw source values.
 
+### Extending transforms
+
+The built-in transforms cover the common cases above. If you need a custom transform (e.g. EWMA, rolling quantile, Fourier component), the engine is extensible with a small, localized code change — no plugin system to wire up.
+
+**1. Add a dispatch branch in `backend/features/engine.py`**
+
+The transform loop is a simple `if/elif` chain. Add a new branch for your op:
+
+```python
+elif op == "ewma":
+    windows = t.get("windows", [])
+    for w in windows:
+        out_name = f"{source_col}_ewma_{w}"
+        work = _rolling_ewma(
+            work, source_col, spec.entity_key, spec.time_key, w, out_name
+        )
+        feature_cols.append(out_name)
+```
+
+Implement the helper (e.g. `_rolling_ewma`) alongside the existing `_rolling_slope` / `_rolling_delta` helpers in the same file. Use Polars expressions grouped by `entity_key` and ordered by `time_key`, and only use rows up to and including the current timestamp (leakage-safe).
+
+**2. Register as history-dependent (only if your transform is rolling/windowed)**
+
+In `backend/features/spec.py`, add your op to the `history_ops` set so `max_history_window()` correctly reports the inference history the model needs:
+
+```python
+history_ops = {"mean", "min", "max", "std", "median", "slope", "delta", "ewma"}
+```
+
+**3. Use it in YAML — no schema change needed**
+
+The YAML parser (`_parse_transform`) accepts any op name as a bare string or mapping:
+
+```yaml
+material_consumption_qty:
+  column: material_consumption_qty
+  transforms:
+    - current
+    - ewma: {windows: [4w, 8w]}
+```
+
+That's it — training, inference, explanation, evaluation, and all interfaces (Python, REST, MCP, Web UI) consume `feature_cols` generically, so no further changes are required.
+
 ### The `target:` block (top-level)
 
 Declares what the model predicts. Drives automatic model selection and the evaluation metrics reported after training.
@@ -319,6 +362,33 @@ target:
 | `classification` | Binary classification (canonical name) | `xgboost` | ROC-AUC, PR-AUC, F1, precision, recall |
 | `binary` | Alias for `classification` (legacy) | `xgboost` | same as classification |
 | `future_event` | Classification with a time horizon (legacy) | `xgboost` | same as classification |
+
+#### Why the target `name` matters for explainability
+
+The `name` field is not just an internal label — it flows through to every prediction and SHAP explanation response, making the output self-describing. When you explain a prediction, the runtime returns `target_name` alongside the top feature drivers:
+
+```json
+{
+  "model_id": "wafer-yield-xgboost-v002",
+  "entity_id": "WAFER_015000",
+  "target_name": "wafer_yield",
+  "predicted_yield": 0.942,
+  "top_positive": [
+    {"feature": "film_thickness_nm", "value": 512.3, "impact": 0.031},
+    {"feature": "product_id", "value": "PROD_B", "impact": 0.018}
+  ],
+  "top_negative": [
+    {"feature": "etch_chamber", "value": "CH_B", "impact": -0.024}
+  ]
+}
+```
+
+An agent or analyst asking "what drove the **wafer_yield** prediction?" gets a direct answer: film thickness and product pushed it up, etch chamber B pulled it down — all referencing the target name declared in the YAML.
+
+**Choosing a good target name:**
+- Use a human-readable name describing the outcome: `wafer_yield`, `material_demand_next_4w`, `failure_within_horizon`, `price`
+- The name appears in prediction responses, SHAP explanations, evaluation reports, and MCP tool outputs
+- For multi-target datasets sharing the same source parquet, each config's target name distinguishes the models
 
 ### The `split:` block (inside `dataset:`, optional)
 
@@ -1031,7 +1101,7 @@ The complete endpoint list is in [API Reference](#api-reference).
 
 ## Example Queries
 
-Claude prompts grouped by dataset. These work with any MCP client — Claude Desktop, Claude CLI, Cursor, etc. Replace model IDs with your own (check with "What models are available?").
+Claude prompts grouped by dataset. These work with any MCP client — Claude Desktop, Claude CLI, Cursor, etc. Replace model IDs with your own (check with "What models are available?"). For a full guided walkthrough that runs the entire inference lifecycle across three datasets in order, see the [Guided Walkthrough](walkthrough.md).
 
 > **Date ranges:** The `as_of` timestamps in temporal queries must fall within the generated data's date range. Procurement: 2023-01-02 to 2026-08-17. Predictive Maintenance: 2026-06-01 to 2026-07-31. See [Synthetic Data Generation](#synthetic-data-generation) for how to change these ranges. Non-temporal datasets (semiconductor yield, home prices) do not require `as_of`.
 
