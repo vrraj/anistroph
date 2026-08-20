@@ -916,6 +916,8 @@ MCP, and end-to-end workflows.
 -   **[GitHub Pages](docs/index.md)** --- project documentation landing
     page
 -   **[Release Notes](RELEASE_NOTES.md)** --- release history
+-   **[MCP market listing](https://mcpmarket.com/server/anistroph)** ---
+    MCP marketplace listing
 
 ## Security Notes
 
