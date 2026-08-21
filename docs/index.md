@@ -366,6 +366,20 @@ reference implementation.
 Training and dataset administration are intentionally excluded from the
 MCP agent tool surface.
 
+### External A2A Integration
+
+For this reference implementation, [Aina-Veris](https://github.com/vrraj/aina-veris)
+is used as the technical research system. The relevant datasheets and
+technical documents are uploaded and indexed into its semiconductor
+knowledge domain, providing domain-specific retrieval, grounded responses
+and source citations.
+
+Aina-Veris is not a dependency of Anistroph. Another RAG or
+technical-document research system can be used instead, provided it
+exposes an interface that Anistroph can invoke, such as MCP or A2A. The
+external system and endpoint are configured through Anistroph's external
+tool registry.
+
 ## Extending Anistroph
 
 The architecture is designed to extend along several dimensions:

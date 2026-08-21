@@ -1034,6 +1034,18 @@ registry**. This enables cross-system orchestration — for example, Claude
 connects to Anistroph via MCP, Anistroph searches and predicts, then
 forwards technical research questions to Aina-Veris via A2A JSON-RPC.
 
+For this reference implementation, [Aina-Veris](https://github.com/vrraj/aina-veris)
+is used as the technical research system. The relevant datasheets and
+technical documents are uploaded and indexed into its semiconductor
+knowledge domain, providing domain-specific retrieval, grounded responses
+and source citations.
+
+Aina-Veris is not a dependency of Anistroph. Another RAG or
+technical-document research system can be used instead, provided it
+exposes an interface that Anistroph can invoke, such as MCP or A2A. The
+external system and endpoint are configured through Anistroph's external
+tool registry.
+
 ### Architecture
 
 ```text
@@ -1077,7 +1089,7 @@ tools:
     agent_owner: aina-veris
     protocol: A2A_JSONRPC
     base_url: ${AINA_VERIS_BASE_URL}
-    path: /agents/veris-semiconductor-research-agent/
+    path: /agents/aina-veris/
 ```
 
 `<host-name>` is supplied via the `AINA_VERIS_BASE_URL` environment variable —
