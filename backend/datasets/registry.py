@@ -19,6 +19,64 @@ from backend.features.spec import FeatureSpec
 from backend.targets.spec import TargetSpec
 
 
+def _repo_root(registry_path: Path) -> Path:
+    """Derive the repo root from the registry path (artifacts/dataset_registry.json)."""
+    return registry_path.resolve().parent.parent
+
+
+def _resolve_path(path_str: str, repo_root: Path) -> str:
+    """Resolve a stored path that may be a host absolute path.
+
+    The registry may have been created on the host (e.g. /Users/raj/.../datasets/foo/dataset.yaml)
+    but is now being read inside a Docker container with a different filesystem layout
+    (e.g. /app/datasets/foo/dataset.yaml). This function:
+
+    1. Returns the path as-is if it already exists (works on the original host).
+    2. Tries the path relative to ``repo_root`` (handles relative paths stored in the registry).
+    3. If the path is absolute but doesn't exist, tries to find the matching subpath
+       relative to ``repo_root`` (handles host absolute paths read in a container).
+    """
+    p = Path(path_str)
+    # For relative paths, always resolve against repo_root (never CWD).
+    if not p.is_absolute():
+        candidate = repo_root / path_str
+        if candidate.exists():
+            return str(candidate)
+        return str(candidate)  # return resolved path even if it doesn't exist yet
+    # Absolute path: return as-is if it exists (works on the original host).
+    if p.exists():
+        return str(p)
+    # Absolute but doesn't exist: try to strip the host prefix and resolve
+    # relative to repo_root (handles host paths read in a container).
+    # e.g. /Users/raj/Documents/Raj/anistroph/datasets/foo/dataset.yaml
+    #      → repo_root / datasets/foo/dataset.yaml
+    try:
+        rel = p.relative_to(repo_root)
+        candidate = repo_root / rel
+        if candidate.exists():
+            return str(candidate)
+    except ValueError:
+        pass
+    # Walk the path components from the start, looking for the first
+    # segment that exists under repo_root.
+    parts = p.parts
+    for i in range(1, len(parts)):
+        candidate = repo_root / Path(*parts[i:])
+        if candidate.exists():
+            return str(candidate)
+    # Last resort: return the original path (caller will get a clear FileNotFoundError)
+    return path_str
+
+
+_PATH_FIELDS = (
+    "parquet_path",
+    "spec_path",
+    "train_parquet_path",
+    "eval_parquet_path",
+    "validate_parquet_path",
+)
+
+
 class DatasetMeta(BaseModel):
     """Metadata for a registered dataset."""
 
@@ -59,7 +117,13 @@ class DatasetRegistry:
     def _load(self) -> None:
         if self.path.exists():
             raw = json.loads(self.path.read_text())
+            root = _repo_root(self.path)
             for did, meta in raw.items():
+                # Resolve stored paths that may be host absolute paths.
+                for field in _PATH_FIELDS:
+                    val = meta.get(field)
+                    if val:
+                        meta[field] = _resolve_path(val, root)
                 self._datasets[did] = DatasetMeta(**meta)
 
     def _save(self) -> None:

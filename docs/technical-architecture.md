@@ -534,3 +534,53 @@ artifacts/
 The implementation map is intentionally secondary to the architecture:
 source-code modules implement the contracts and service boundaries
 described above rather than defining the architecture themselves.
+
+---
+
+## Testing
+
+The test suite (147 tests) covers unit-level component correctness and
+integration-level interface parity. Tests run against synthetic data
+generated in fixtures, so they are deterministic and do not depend on
+registered datasets or trained models from a prior session.
+
+### Test layout
+
+| File | Tests | Scope |
+|------|-------|-------|
+| `tests/unit/test_datasets.py` | 14 | Config loading, column type/role parsing, split config, validation (missing columns, null entity keys), CSV/Parquet ingestion, profiling, registry register/retrieve/list |
+| `tests/unit/test_features.py` | 8 | Feature engine: shape after building, one-hot encoding, **leakage-safe rolling mean**, metadata persistence, train-inference metadata reuse, `current` and `slope` transforms, no domain assumptions in engine |
+| `tests/unit/test_ml.py` | 23 | Chronological/random splitting, binary evaluation (ROC-AUC, PR-AUC, F1), best-threshold selection, model save/load (logistic, XGBoost), feature importance, training pipeline (train, persist, reload, predict), **train-inference feature parity**, SHAP explanation, task type auto-selection, target type properties |
+| `tests/unit/test_partitioning.py` | 12 | Split percentage resolution (YAML overrides .env), temporal→chronological, non-temporal→random, three-way splits, empty partition schema preservation, percentage normalization, persist (skip empty, all-empty), partition summary |
+| `tests/unit/test_semiconductor.py` | 37 | End-to-end on semiconductor dataset: data integrity (row count, value ranges, required columns, hidden interactions), config validation, regression evaluation, model adapters (XGBoost regressor, linear regression), training (beats baseline, chronological split, persist/reload), filtered evaluation, interesting slices (finds ETCH_02/CH_B), SHAP explainability (sign correctness, contributions sum to prediction, one-hot grouping, backward compat) |
+| `tests/unit/test_targets.py` | 6 | Future event target construction (column exists, positive labels, **entity isolation**, horizon boundary, **no future leakage**), binary target construction |
+| `tests/integration/test_api.py` | 22 | REST endpoints: health, datasets (list, get, profile), analysis (slice, compare), models (train, auto-select, delete), prediction, explanation, evaluation (regression, classification, filtered, unknown filter, error slices, pct error) |
+| `tests/integration/test_mcp.py` | 23 | MCP tool surface: tool discovery + schema validation, all 13 tools (list datasets, profile, slice, compare, list models, get metrics, predict, explain, sample rows with 8 variants, evaluate, find evaluation slices), invalid tool/input handling |
+| `tests/integration/test_e2e.py` | 2 | Full lifecycle (register → train → predict → explain → evaluate) and **REST-MCP service parity** (both interfaces hit the same underlying services) |
+
+### Coverage by purpose
+
+| Purpose | Tests | What it prevents |
+|---------|-------|------------------|
+| Leakage prevention | ~8 | Future data in rolling windows, cross-entity contamination, non-chronological splits on temporal data |
+| Train-inference feature parity | ~5 | Features built differently at inference than training (silent prediction drift) |
+| SHAP explainability | ~12 | Incorrect impact signs, ungrouped one-hot columns, contributions not summing to prediction |
+| Evaluation & error slices | ~12 | Wrong metrics, missing filtered metrics, slice discovery returning unranked or unfiltered results |
+| API/MCP surface coverage | ~45 | Any endpoint or tool breaking silently after a change |
+| Data integrity | ~10 | Missing columns, out-of-range values, absent hidden interactions that models depend on |
+| Partitioning | ~12 | Overlapping train/eval, empty partitions crashing the pipeline, wrong split percentages |
+| Config/validation | ~14 | Malformed YAML, missing columns, null entity keys, invalid column types |
+| Model adapters | ~10 | Save/load failures, wrong task type mapping, fit/predict mismatches |
+
+### Running the tests
+
+```bash
+# Full suite
+pytest tests/ -q
+
+# Unit only
+pytest tests/unit/ -q
+
+# Integration only
+pytest tests/integration/ -q
+```

@@ -21,6 +21,7 @@ from typing import Any, Optional
 
 from pydantic import BaseModel, Field
 
+from backend.datasets.registry import _resolve_path
 from backend.features.engine import FeatureMetadata
 from backend.features.spec import FeatureSpec
 from backend.targets.spec import TargetSpec
@@ -60,7 +61,13 @@ class ModelRegistry:
     def _load(self) -> None:
         if self._index_path.exists():
             raw = json.loads(self._index_path.read_text())
+            root = self.artifacts_dir.resolve().parent.parent
             for mid, meta in raw.items():
+                # Resolve stored paths that may be host absolute paths.
+                for field in ("artifact_path", "parquet_path"):
+                    val = meta.get(field)
+                    if val:
+                        meta[field] = _resolve_path(val, root)
                 self._models[mid] = ModelMetadata(**meta)
 
     def _save(self) -> None:
