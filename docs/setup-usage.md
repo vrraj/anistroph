@@ -1224,6 +1224,124 @@ is a 50,000-row weekly time series (2,000 products × 25 weeks).
 
 > Training, dataset registration, and deletion are NOT available via MCP — use REST, Python, CLI, or the Web UI for admin operations.
 
+### Semiconductor Memory (Full Pipeline — Search → Predict → A2A RAG)
+
+The complete agent workflow chains four stages: dataset discovery, search
+contract inspection, parametric search with supply-risk ranking, and
+datasheet-grounded RAG via the external Aina-Veris A2A agent. The queries
+below use the three reference datasheet products in
+`product-specifications/sample-data/`:
+
+| Product ID | Datasheet ID | Density | Speed | Width | Temp | Supply Risk |
+|---|---|---|---|---|---|---|
+| ANM-D5C-0001 | DS-ANM-D5C-0001 | 32 Gb | 4800 MT/s | x4 | -40..95°C | High |
+| ANM-D5C-0002 | DS-ANM-D5C-0002 | 32 Gb | 7200 MT/s | x4 | -40..95°C | Low |
+| ANM-D5C-0003 | DS-ANM-D5C-0003 | 32 Gb | 4800 MT/s | x16 | 0..95°C | High |
+
+**Step 1 — Discover available datasets:**
+
+> "List all available datasets"
+> "What datasets are registered in Anistroph?"
+
+**Step 2 — Inspect the search contract:**
+
+> "Get the search contract for the semiconductor_memory dataset"
+> "What fields, operators, and semantic filters are available for semiconductor memory search?"
+
+**Step 3 — Search and rank by supply risk (broad query that includes all datasheet products):**
+
+> "Find production DDR5 components with at least 24 Gb density that support 55°C, and rank them by predicted four-week supply risk"
+> "Search for production DDR5 components with at least 24 Gb supporting 55°C, then predict supply risk for each match"
+
+This returns all matching products sorted by risk probability (highest
+first). The three lowest-risk products are candidates for the A2A handoff.
+
+**Step 4 — Send the lowest-risk products to Aina-Veris for datasheet RAG:**
+
+> "Compare the three lowest-risk DDR5 components for power-management behavior and initialization requirements using their datasheets"
+> "Ask Aina-Veris to compare ANM-D5C-0002, and the other two lowest-risk DDR5 components, for power-on initialization sequencing and thermal management"
+
+Aina-Veris receives the product IDs and datasheet IDs, retrieves the
+relevant sections from its indexed datasheet corpus, and returns a grounded
+answer with source citations. Anistroph does not perform RAG itself — it
+constructs the prompt with product/datasheet context and invokes the
+external A2A agent.
+
+**Step 4 (alternative) — Strict parametric query:**
+
+> "Find production DDR5 x8 components with at least 24 Gb and 6400 MT/s or faster, ranked by supply risk"
+
+The strict query (x8 + ≥6400 MT/s) filters more aggressively. Not all
+datasheet products satisfy it — only ANM-D5C-0002 meets the speed
+threshold, and none have x8 organization. Use the broad query above when
+you need all three datasheet-backed products in the results.
+
+**REST equivalent (Steps 3 + 4):**
+
+```bash
+# Step 3: Search + predict
+curl -X POST http://localhost:8000/datasets/semiconductor_memory/predict-on-search \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model_id": "mem-supply-risk-xgb",
+    "filters": [
+      {"field": "product_family", "op": "eq", "value": "DDR5_COMPONENT"},
+      {"field": "component_density_gb", "op": "gte", "value": 24},
+      {"field": "part_status", "op": "eq", "value": "Production"},
+      {"field": "operating_temperature", "op": "semantic", "value": 55}
+    ],
+    "limit": 500,
+    "columns": ["product_id", "datasheet_id", "component_density_gb", "data_rate_mt_s"]
+  }'
+
+# Step 4: A2A invoke (pick the 3 lowest-risk from the results above)
+curl -X POST http://localhost:8000/integrations/tools/call_veris_semiconductor_research_agent/invoke \
+  -H "Content-Type: application/json" \
+  -d '{
+    "arguments": {
+      "prompt": "Compare ANM-D5C-0002 (DS-ANM-D5C-0002) and the other two lowest-risk DDR5 components for power-management behavior and initialization requirements using their datasheets"
+    }
+  }'
+```
+
+**Python equivalent (full pipeline):**
+
+```python
+from backend.services import get_services
+from backend.search.filters import FilterExpression
+from backend.integrations.a2a import invoke_external_tool
+
+svc = get_services()
+
+# Step 3: Search + predict
+result = svc.predict_on_search(
+    search_dataset_id="semiconductor_memory",
+    model_id="mem-supply-risk-xgb",
+    filters=[
+        FilterExpression(field="product_family", op="eq", value="DDR5_COMPONENT"),
+        FilterExpression(field="component_density_gb", op="gte", value=24),
+        FilterExpression(field="part_status", op="eq", value="Production"),
+        FilterExpression(field="operating_temperature", op="semantic", value=55),
+    ],
+    limit=500,
+    columns=["product_id", "datasheet_id"],
+)
+
+# Pick the 3 lowest-risk products (results are sorted by risk descending)
+lowest_risk = result["rows"][-3:]
+prompt = "Compare power-management for: " + ", ".join(
+    f"{r['product_id']} ({r['datasheet_id']})" for r in lowest_risk
+)
+
+# Step 4: A2A invoke
+a2a_result = invoke_external_tool(
+    "call_veris_semiconductor_research_agent",
+    {"prompt": prompt},
+)
+```
+
+> The Aina-Veris A2A endpoint must be configured via `AINA_VERIS_BASE_URL` in `.env`. The agent path is `/agents/aina-veris/`. The invoker uses A2A v1.0 protocol (`SendMessage` method, `A2A-Version: 1.0` header).
+
 ---
 
 ## Testing & Troubleshooting
