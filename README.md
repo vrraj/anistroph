@@ -3,7 +3,7 @@
 [![GitHub
 Release](https://img.shields.io/github/v/release/vrraj/anistroph?label=release&color=orange&logo=github)](https://github.com/vrraj/anistroph/releases)
 [![License:
-MIT](https://img.shields.io/badge/license-MIT-blue.svg)](https://github.com/vrraj/anistroph/blob/main/LICENSE)
+GPLv3](https://img.shields.io/badge/license-GPLv3-blue.svg)](https://github.com/vrraj/anistroph/blob/main/LICENSE)
 [![Python
 3.10+](https://img.shields.io/badge/python-3.10+-blue?logo=python&logoColor=white)](https://www.python.org/downloads/)
 [![Tests](https://img.shields.io/badge/tests-69%20passing-brightgreen)](https://vrraj.github.io/anistroph/setup-usage#testing)
@@ -1121,4 +1121,12 @@ calls dispatch to the same shared A2A invoker as REST.
 
 ## License
 
-MIT
+Anistroph is available under the [GNU GPLv3](LICENSE).
+
+Feel free to clone, explore, modify, and build with Anistroph under the
+terms of GPLv3.
+
+Commercial licensing is also available for organizations interested in
+incorporating Anistroph into proprietary products or custom solutions.
+
+ai-musings99@gmail.com

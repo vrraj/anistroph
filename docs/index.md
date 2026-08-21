@@ -426,4 +426,6 @@ monitoring/drift detection are natural extension paths.
 
 ## License
 
-MIT
+Anistroph is available under the [GNU GPLv3](https://github.com/vrraj/anistroph/blob/main/LICENSE).
+
+Commercial licensing is also available — ai-musings99@gmail.com
