@@ -42,6 +42,20 @@ DEFAULT_TIMEOUT = 120
 class A2AInvocationError(Exception):
     """Raised when an A2A invocation fails."""
 
+    def __init__(self, message: str, *, connection_error: bool = False) -> None:
+        super().__init__(message)
+        self.connection_error = connection_error
+
+
+# Message returned when the external agent is unreachable. This is a
+# soft-fail so the calling agent (Claude) can proceed without the RAG
+# response rather than treating it as a hard error.
+AGENT_UNAVAILABLE_MESSAGE = (
+    "The Aina-Veris document research agent is not available. "
+    "The external A2A service could not be reached. "
+    "Proceed without datasheet-grounded analysis, or retry later."
+)
+
 
 def _build_send_message_params(prompt: str, **extra: Any) -> dict[str, Any]:
     """Build the A2A v1.0 SendMessage parameters for a text prompt."""
@@ -151,6 +165,14 @@ def invoke_external_tool(
 
         # Return the result field (the A2A task object).
         return result.get("result", result)
+    except httpx.ConnectError as e:
+        raise A2AInvocationError(
+            f"A2A connection failed: {e}", connection_error=True
+        ) from e
+    except httpx.TimeoutException as e:
+        raise A2AInvocationError(
+            f"A2A request timed out: {e}", connection_error=True
+        ) from e
     except httpx.HTTPError as e:
         raise A2AInvocationError(f"A2A HTTP request failed: {e}") from e
     finally:

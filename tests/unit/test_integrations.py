@@ -156,12 +156,30 @@ class TestA2AInvoker:
         with pytest.raises(A2AInvocationError, match="unresolved base_url"):
             invoke_external_tool("call_test_agent", {"prompt": "test"})
 
-        # JSON-RPC error
+        # JSON-RPC error (not a connection error)
         tool.base_url = "https://test.example.com"
         mock_response = MagicMock()
         mock_response.json.return_value = {"jsonrpc": "2.0", "error": {"code": -32600, "message": "Bad"}}
         mock_response.raise_for_status = MagicMock()
         mock_client = MagicMock()
         mock_client.post.return_value = mock_response
-        with pytest.raises(A2AInvocationError, match="Bad"):
+        with pytest.raises(A2AInvocationError, match="Bad") as exc_info:
             invoke_external_tool("call_test_agent", {"prompt": "test"}, client=mock_client)
+        assert exc_info.value.connection_error is False
+
+    def test_invoke_connection_error_soft_fails(self, tmp_registry, monkeypatch):
+        """Connection errors are flagged so callers can soft-fail."""
+        from backend.integrations import a2a as a2a_mod
+        import httpx
+        monkeypatch.setattr(a2a_mod, "get_external_tool_registry", lambda: tmp_registry)
+
+        tool = tmp_registry.get("call_test_agent")
+        tool.base_url = "https://test.example.com"
+
+        mock_client = MagicMock()
+        mock_client.post.side_effect = httpx.ConnectError("DNS resolution failed")
+        mock_client.close = MagicMock()
+
+        with pytest.raises(A2AInvocationError, match="connection failed") as exc_info:
+            invoke_external_tool("call_test_agent", {"prompt": "test"}, client=mock_client)
+        assert exc_info.value.connection_error is True

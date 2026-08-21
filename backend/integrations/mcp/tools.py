@@ -427,6 +427,7 @@ async def call_tool(name: str, arguments: dict[str, Any]) -> list[types.TextCont
             # Check if this is an externally-registered tool (A2A agent).
             from backend.integrations.registry import get_external_tool_registry
             from backend.integrations.a2a import (
+                AGENT_UNAVAILABLE_MESSAGE,
                 A2AInvocationError,
                 invoke_external_tool,
                 validate_arguments,
@@ -445,6 +446,16 @@ async def call_tool(name: str, arguments: dict[str, Any]) -> list[types.TextCont
                 try:
                     result = invoke_external_tool(name, arguments)
                 except A2AInvocationError as e:
+                    if e.connection_error:
+                        # Soft-fail: return a message so the calling agent
+                        # can proceed without the RAG response.
+                        return [types.TextContent(
+                            type="text",
+                            text=json.dumps({
+                                "state": "unavailable",
+                                "message": AGENT_UNAVAILABLE_MESSAGE,
+                            }),
+                        )]
                     return [types.TextContent(
                         type="text",
                         text=json.dumps({"error": str(e)}),

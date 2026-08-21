@@ -11,6 +11,7 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
 from backend.integrations.a2a import (
+    AGENT_UNAVAILABLE_MESSAGE,
     A2AInvocationError,
     invoke_external_tool,
     validate_arguments,
@@ -66,4 +67,11 @@ async def invoke_tool(tool_name: str, req: InvokeRequest):
         result = invoke_external_tool(tool_name, req.arguments)
         return result
     except A2AInvocationError as e:
+        if e.connection_error:
+            # Soft-fail: return a 200 with an unavailable message so the
+            # calling agent can proceed without the RAG response.
+            return {
+                "state": "unavailable",
+                "message": AGENT_UNAVAILABLE_MESSAGE,
+            }
         raise HTTPException(status_code=502, detail=str(e))

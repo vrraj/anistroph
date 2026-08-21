@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from unittest.mock import MagicMock
 
 import pytest
 
@@ -187,3 +188,15 @@ class TestExternalToolMCP:
         data = json.loads(result[0].text)
         assert "error" in data
         assert "unresolved" in data["error"]
+
+    async def test_external_tool_connection_error_soft_fails(self, ext_registry, services, monkeypatch):
+        """When the A2A agent is unreachable, return a soft-fail message."""
+        import httpx
+        mock_client = MagicMock()
+        mock_client.post.side_effect = httpx.ConnectError("DNS resolution failed")
+        mock_client.close = MagicMock()
+        monkeypatch.setattr(httpx, "Client", lambda **kw: mock_client)
+        result = await call_tool("call_test_agent", {"prompt": "test"})
+        data = json.loads(result[0].text)
+        assert data["state"] == "unavailable"
+        assert "not available" in data["message"]
