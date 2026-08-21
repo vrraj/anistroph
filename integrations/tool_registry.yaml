@@ -42,4 +42,4 @@ tools:
     agent_owner: aina-veris
     protocol: A2A_JSONRPC
     base_url: ${AINA_VERIS_BASE_URL}
-    path: /agents/veris-semiconductor-research-agent/
+    path: /agents/aina-veris/

@@ -258,12 +258,16 @@ class TestA2AInvoker:
         assert result["id"] == "task-123"
         assert mock_client.post.called
 
-        # Verify the request body was JSON-RPC.
+        # Verify the request body was JSON-RPC with A2A v1.0 format.
         call_args = mock_client.post.call_args
         body = call_args.kwargs["json"]
         assert body["jsonrpc"] == "2.0"
-        assert body["method"] == "tasks/send"
+        assert body["method"] == "SendMessage"
+        assert body["params"]["message"]["role"] == "ROLE_USER"
         assert body["params"]["message"]["parts"][0]["text"] == "Compare DDR5 power management."
+        # Verify the A2A-Version header is present.
+        headers = call_args.kwargs["headers"]
+        assert headers["A2A-Version"] == "1.0"
 
     def test_invoke_jsonrpc_error(self, tmp_registry, monkeypatch):
         from backend.integrations import a2a as a2a_mod

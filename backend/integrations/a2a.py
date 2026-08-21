@@ -4,9 +4,15 @@ Both MCP and REST call this same invoker to reach external A2A agents
 such as Aina-Veris. No Aina-Veris-specific logic lives here — the invoker
 is generic and driven by the external tool registry.
 
-A2A protocol reference: https://github.com/google-a2a/a2a
-The invoker sends a JSON-RPC 2.0 ``tasks/send`` request to the agent's
+A2A protocol v1.0: https://github.com/google-a2a/a2a
+The invoker sends a JSON-RPC 2.0 ``SendMessage`` request to the agent's
 endpoint and returns the resulting task state / artifacts.
+
+Key protocol details:
+- Method: ``SendMessage`` (A2A v1.0)
+- Header: ``A2A-Version: 1.0`` (required; defaults to 0.3 if omitted)
+- Message parts use camelCase field names (``messageId``, not ``message_id``)
+- Parts are plain objects with a ``text`` key (no ``type`` discriminator)
 """
 
 from __future__ import annotations
@@ -22,8 +28,12 @@ from backend.integrations.registry import ExternalToolDef, get_external_tool_reg
 
 logger = logging.getLogger(__name__)
 
-# A2A JSON-RPC method for sending a task to an agent.
-A2A_TASK_SEND_METHOD = "tasks/send"
+# A2A v1.0 JSON-RPC method for sending a message to an agent.
+A2A_SEND_METHOD = "SendMessage"
+
+# A2A protocol version header.
+A2A_VERSION_HEADER = "A2A-Version"
+A2A_PROTOCOL_VERSION = "1.0"
 
 # Default timeout for A2A requests (seconds).
 DEFAULT_TIMEOUT = 120
@@ -33,14 +43,14 @@ class A2AInvocationError(Exception):
     """Raised when an A2A invocation fails."""
 
 
-def _build_task_params(prompt: str, **extra: Any) -> dict[str, Any]:
-    """Build the A2A task/send parameters for a text prompt."""
+def _build_send_message_params(prompt: str, **extra: Any) -> dict[str, Any]:
+    """Build the A2A v1.0 SendMessage parameters for a text prompt."""
     return {
-        "id": str(uuid.uuid4()),
         "message": {
-            "role": "user",
+            "messageId": str(uuid.uuid4()),
+            "role": "ROLE_USER",
             "parts": [
-                {"type": "text", "text": prompt},
+                {"text": prompt},
             ],
         },
         **extra,
@@ -101,9 +111,9 @@ def invoke_external_tool(
             f"tool {tool_name!r} requires a 'prompt' argument"
         )
 
-    # Build the A2A JSON-RPC request.
-    task_params = _build_task_params(prompt)
-    request_body = _build_jsonrpc_request(A2A_TASK_SEND_METHOD, task_params)
+    # Build the A2A v1.0 SendMessage JSON-RPC request.
+    msg_params = _build_send_message_params(prompt)
+    request_body = _build_jsonrpc_request(A2A_SEND_METHOD, msg_params)
 
     url = tool.resolved_url
     if not tool.base_url or "${" in tool.base_url:
@@ -125,6 +135,7 @@ def invoke_external_tool(
             headers={
                 "Content-Type": "application/json",
                 "Accept": "application/json",
+                A2A_VERSION_HEADER: A2A_PROTOCOL_VERSION,
             },
         )
         response.raise_for_status()

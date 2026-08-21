@@ -366,7 +366,7 @@ class TestFullPipelineSearchPredictRAG:
         # Verify the prompt was passed in the A2A request body.
         call_args = mock_client.post.call_args
         body = call_args.kwargs["json"]
-        assert body["method"] == "tasks/send"
+        assert body["method"] == "SendMessage"
         sent_text = body["params"]["message"]["parts"][0]["text"]
         # The prompt should contain all three product IDs and datasheet IDs.
         for pid in lowest_risk_ids:
