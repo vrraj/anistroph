@@ -435,3 +435,79 @@ class TestPredictOnSearchTools:
         })
         data = json.loads(result[0].text)
         assert "error" in data
+
+
+# ---------------------------------------------------------------------------
+# External tool registry (A2A integration)
+# ---------------------------------------------------------------------------
+
+@pytest.fixture
+def ext_registry(tmp_path, monkeypatch):
+    """Create a temp external tool registry and patch the singleton."""
+    from backend.integrations import registry as reg_mod
+    from backend.integrations import a2a as a2a_mod
+    from backend.integrations.mcp import tools as mcp_tools_mod
+    from backend.integrations.registry import ExternalToolRegistry
+
+    registry_path = tmp_path / "tool_registry.yaml"
+    registry_path.write_text("""
+tools:
+  - name: call_test_agent
+    provider: test
+    capability: test_research
+    visibility: always
+    description: Test agent for MCP integration tests.
+    keywords:
+      - test
+    llm_parameters:
+      type: object
+      properties:
+        prompt:
+          type: string
+          description: A test prompt.
+      required:
+        - prompt
+      additionalProperties: false
+    agent_owner: test-owner
+    protocol: A2A_JSONRPC
+    base_url: https://test.example.com
+    path: /agents/test-agent/
+""")
+    temp_reg = ExternalToolRegistry(registry_path)
+    monkeypatch.setattr(reg_mod, "get_external_tool_registry", lambda: temp_reg)
+    monkeypatch.setattr(a2a_mod, "get_external_tool_registry", lambda: temp_reg)
+    monkeypatch.setattr(mcp_tools_mod, "get_external_tool_registry", lambda: temp_reg, raising=False)
+    yield temp_reg
+
+
+class TestExternalToolMCP:
+    async def test_external_tool_discovered(self, ext_registry):
+        """External tools appear in the MCP tool list."""
+        tools = get_tool_list()
+        names = [t.name for t in tools]
+        assert "call_test_agent" in names
+
+    async def test_external_tool_schema(self, ext_registry):
+        """External tool has a valid input schema."""
+        tools = get_tool_list()
+        tool = next(t for t in tools if t.name == "call_test_agent")
+        assert tool.input_schema["type"] == "object"
+        assert "prompt" in tool.input_schema["properties"]
+        assert "prompt" in tool.input_schema["required"]
+
+    async def test_external_tool_validation_error(self, ext_registry, services):
+        """Calling an external tool with missing args returns a validation error."""
+        result = await call_tool("call_test_agent", {})
+        data = json.loads(result[0].text)
+        assert "error" in data
+        assert "validation" in data["error"] or "missing" in str(data.get("details", []))
+
+    async def test_external_tool_unresolved_url(self, ext_registry, services):
+        """Calling an external tool with unresolved URL returns an error."""
+        # Override base_url to have an unresolved env var.
+        tool = ext_registry.get("call_test_agent")
+        tool.base_url = "${UNRESOLVED_HOST}"
+        result = await call_tool("call_test_agent", {"prompt": "test"})
+        data = json.loads(result[0].text)
+        assert "error" in data
+        assert "unresolved" in data["error"]

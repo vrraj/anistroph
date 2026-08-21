@@ -352,9 +352,10 @@ reference implementation.
 
 ### Runtime Interfaces
 
--   **MCP** --- 16 domain-agnostic tools for dataset/model discovery,
-    prediction, explanation, evaluation, analysis, parametric search, and
-    predict-on-search ranking.
+-   **MCP** --- 16 native tools + 1 external A2A tool (17 total) for
+    dataset/model discovery, prediction, explanation, evaluation, analysis,
+    parametric search, predict-on-search ranking, and external A2A agent
+    invocation (Aina-Veris).
 -   **REST / OpenAPI** --- programmatic access to runtime and
     administrative capabilities.
 -   **Web UI** --- exploration, model interaction, and cross-interface

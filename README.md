@@ -6,9 +6,9 @@ Release](https://img.shields.io/github/v/release/vrraj/anistroph?label=release&c
 MIT](https://img.shields.io/badge/license-MIT-blue.svg)](https://github.com/vrraj/anistroph/blob/main/LICENSE)
 [![Python
 3.10+](https://img.shields.io/badge/python-3.10+-blue?logo=python&logoColor=white)](https://www.python.org/downloads/)
-[![Tests](https://img.shields.io/badge/tests-198%20passing-brightgreen)](https://vrraj.github.io/anistroph/setup-usage#testing)
+[![Tests](https://img.shields.io/badge/tests-229%20passing-brightgreen)](https://vrraj.github.io/anistroph/setup-usage#testing)
 [![MCP
-Tools](https://img.shields.io/badge/MCP-16%20tools-purple)](https://github.com/vrraj/anistroph#mcp-and-agent-access)
+Tools](https://img.shields.io/badge/MCP-17%20tools-purple)](https://github.com/vrraj/anistroph#mcp-and-agent-access)
 [![GitHub
 Pages](https://img.shields.io/badge/docs-GitHub%20Pages-blue)](https://vrraj.github.io/anistroph/)
 
@@ -576,9 +576,11 @@ multiple configurations to reference the same underlying data.
 
 ## MCP and Agent Access
 
-Anistroph exposes **16 domain-agnostic MCP tools** over both **stdio**
-and **Streamable HTTP**. The tools operate against registered dataset
-and model metadata rather than being duplicated for each domain.
+Anistroph exposes **16 native MCP tools + 1 external A2A tool** (17 total)
+over both **stdio** and **Streamable HTTP**. Native tools operate against
+registered dataset and model metadata. External tools (e.g. Aina-Veris)
+are loaded from `integrations/tool_registry.yaml` and dispatched through
+a shared A2A JSON-RPC invoker.
 
   -------------------------------------------------------------------------
   Tool                                  Description
@@ -614,6 +616,12 @@ and model metadata rather than being duplicated for each domain.
                                         each matching product using a trained
                                         model; rank results by prediction
                                         (supply risk probability or lead time)
+
+  `call_veris_semiconductor_research_   External A2A tool — query Aina-Veris
+  agent`                                for grounded semiconductor-memory
+                                        datasheet and application-note
+                                        analysis. Loaded from
+                                        integrations/tool_registry.yaml.
 
   `anistroph_list_models`               Discover trained models and
                                         task/model metadata
@@ -989,7 +997,7 @@ example workflows.
 pytest
 ```
 
-The current suite contains **198 tests** spanning dataset
+The current suite contains **229 tests** spanning dataset
 specifications, ingestion, feature transforms and leakage checks, target
 construction, model training/evaluation/persistence/reload, inference,
 feature parity, SHAP explainability, multidimensional discovery, REST,
@@ -1018,6 +1026,80 @@ Anistroph is a reference architecture using **synthetic data only** — no real 
 -   **`make start-native`** binds to `0.0.0.0:9500`, making the server accessible on your local network. For local-only access, use `uvicorn backend.main:app --reload --host 127.0.0.1 --port 9500`.
 -   **`make start-gpt`** starts an **ngrok tunnel** that exposes your local server on a **public URL**. While the tunnel is active, anyone with the URL can access all endpoints — including model training, dataset registration, and deletion. Run **`make stop-gpt`** when you are done to close the tunnel.
 -   CORS is configured as `allow_origins=["*"]` for development convenience. Restrict this before exposing the server beyond your local machine.
+
+## External Integrations (A2A)
+
+Anistroph supports externally-hosted AI agents through an **external tool
+registry**. This enables cross-system orchestration — for example, Claude
+connects to Anistroph via MCP, Anistroph searches and predicts, then
+forwards technical research questions to Aina-Veris via A2A JSON-RPC.
+
+### Architecture
+
+```text
+integrations/tool_registry.yaml
+          |
+          v
+External Tool Registry (backend/integrations/registry.py)
+          |
+          +--------------------+
+          |                    |
+          v                    v
+      MCP Server            REST API
+          |                    |
+          +---------+----------+
+                    |
+                    v
+          Shared A2A Invoker (backend/integrations/a2a.py)
+                    |
+                    v
+              A2A / Aina-Veris
+```
+
+### Configuration
+
+External tools are defined in `integrations/tool_registry.yaml`:
+
+```yaml
+tools:
+  - name: call_veris_semiconductor_research_agent
+    provider: veris
+    capability: semiconductor_memory_research
+    visibility: always
+    description: Query AINA Veris for grounded semiconductor-memory datasheet analysis.
+    llm_parameters:
+      type: object
+      properties:
+        prompt:
+          type: string
+      required: [prompt]
+      additionalProperties: false
+    agent_owner: aina-veris
+    protocol: A2A_JSONRPC
+    base_url: ${VERIS_BASE_URL}
+    path: /agents/veris-semiconductor-research-agent/
+```
+
+`<host-name>` is supplied via the `VERIS_BASE_URL` environment variable —
+the registry substitutes `${VERIS_BASE_URL}` at load time.
+
+### REST
+
+```bash
+# List external tools
+curl localhost:9500/integrations/tools
+
+# Invoke an external tool
+curl -X POST localhost:9500/integrations/tools/call_veris_semiconductor_research_agent/invoke \
+  -H "Content-Type: application/json" \
+  -d '{"arguments": {"prompt": "Compare DDR5 power management for ANM-D5C-0007."}}'
+```
+
+### MCP
+
+External tools appear alongside native tools in `tools/list` and are
+callable via `tools/call`. The MCP wrapper remains thin — external tool
+calls dispatch to the same shared A2A invoker as REST.
 
 ## License
 

@@ -1234,7 +1234,7 @@ is a 50,000-row weekly time series (2,000 products × 25 weeks).
 pytest
 ```
 
-198 tests covering datasets, features, targets, partitioning, training, inference, explanation, MCP, REST API, SHAP grouping, parametric search, and predict-on-search.
+229 tests covering datasets, features, targets, partitioning, training, inference, explanation, MCP, REST API, SHAP grouping, parametric search, predict-on-search, and external A2A tool integration.
 
 ### Unit tests only
 

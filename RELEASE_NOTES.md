@@ -53,8 +53,17 @@ This is the first public release. The complete API surface is documented in [doc
 - Automated interesting-slice discovery ranked by deviation from baseline
 
 ### MCP Runtime Access
-- 16 MCP tools across stdio (local clients: Claude Desktop, Cursor, Cline) and Streamable HTTP at `/mcp` (remote clients, custom agents, tool routers)
+- 16 native MCP tools + 1 external A2A tool (17 total) across stdio (local clients: Claude Desktop, Cursor, Cline) and Streamable HTTP at `/mcp` (remote clients, custom agents, tool routers)
 - Both transports call the same service layer as REST and UI
+- External tools loaded from `integrations/tool_registry.yaml` and dispatched through a shared A2A JSON-RPC invoker
+
+### External Integrations (A2A)
+- External tool registry (`integrations/tool_registry.yaml`) — configuration source for externally hosted capabilities such as Aina-Veris
+- Shared A2A invoker (`backend/integrations/a2a.py`) — JSON-RPC 2.0 `tasks/send` client used by both MCP and REST
+- REST: `GET /integrations/tools`, `POST /integrations/tools/{tool_name}/invoke`
+- MCP: external tools appear in `tools/list` and are callable via `tools/call`
+- Environment variable substitution (`${VERIS_BASE_URL}`) for deployment-portable URLs
+- Aina-Veris semiconductor research agent registered as external A2A capability
 
 ### Web UI
 - Tabs for Datasets, Data, Search, Analysis, Train, Predict & Explain, and Evaluation

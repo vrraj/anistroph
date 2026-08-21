@@ -539,7 +539,7 @@ described above rather than defining the architecture themselves.
 
 ## Testing
 
-The test suite (198 tests) covers unit-level component correctness and
+The test suite (229 tests) covers unit-level component correctness and
 integration-level interface parity. Tests run against synthetic data
 generated in fixtures, so they are deterministic and do not depend on
 registered datasets or trained models from a prior session.
@@ -555,8 +555,8 @@ registered datasets or trained models from a prior session.
 | `tests/unit/test_search.py` | 28 | Parametric search: all operators (eq, in, gte, lte, between, contains_range), semantic filter expansion (range_contains, expands_to), unknown field/semantic errors, AND-combination, limit cap, sort, columns subset, applied_filters audit, search contract enrichment with profile |
 | `tests/unit/test_semiconductor.py` | 37 | End-to-end on semiconductor dataset: data integrity (row count, value ranges, required columns, hidden interactions), config validation, regression evaluation, model adapters (XGBoost regressor, linear regression), training (beats baseline, chronological split, persist/reload), filtered evaluation, interesting slices (finds ETCH_02/CH_B), SHAP explainability (sign correctness, contributions sum to prediction, one-hot grouping, backward compat) |
 | `tests/unit/test_targets.py` | 6 | Future event target construction (column exists, positive labels, **entity isolation**, horizon boundary, **no future leakage**), binary target construction |
-| `tests/integration/test_api.py` | 37 | REST endpoints: health, datasets (list, get, profile), analysis (slice, compare), models (train, auto-select, delete), prediction, explanation, evaluation (regression, classification, filtered, unknown filter, error slices, pct error), **parametric search (contract, 3 acceptance queries, sort, columns, errors), predict-on-search (classification, regression, semantic filter, unknown model, no matches)** |
-| `tests/integration/test_mcp.py` | 33 | MCP tool surface: tool discovery + schema validation, all 16 tools (list datasets, profile, slice, compare, list models, get metrics, predict, explain, sample rows with 8 variants, evaluate, find evaluation slices, **get search contract, search with semantic filters, predict-on-search with classification/regression/acceptance query**), invalid tool/input handling |
+| `tests/integration/test_api.py` | 41 | REST endpoints: health, datasets (list, get, profile), analysis (slice, compare), models (train, auto-select, delete), prediction, explanation, evaluation (regression, classification, filtered, unknown filter, error slices, pct error), **parametric search (contract, 3 acceptance queries, sort, columns, errors), predict-on-search (classification, regression, semantic filter, unknown model, no matches), external integrations (list tools, invoke with validation, unknown tool, mocked A2A)** |
+| `tests/integration/test_mcp.py` | 37 | MCP tool surface: tool discovery + schema validation, all 17 tools (16 native + 1 external A2A), **external tool discovery, schema, validation error, unresolved URL**, invalid tool/input handling |
 | `tests/integration/test_e2e.py` | 2 | Full lifecycle (register → train → predict → explain → evaluate) and **REST-MCP service parity** (both interfaces hit the same underlying services) |
 
 ### Coverage by purpose

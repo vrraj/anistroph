@@ -244,15 +244,71 @@ Dataset configs (multi-target pattern, one source CSV shared):
 
 ## Out of scope (tracked, not actioned now)
 
-- **Phase 3 — Aina-Veris RAG**: datasheet PDFs are in
-  `product-specifications/sample-data/` for Aina-Veris ingestion. Anistroph
-  only hands off `product_id` / `datasheet_id` lists. No RAG code in
-  Anistroph. Document the handoff contract in `docs/setup-usage.md` after
-  Phase 2 if needed.
 - **Phase 4 — Hardening**: pagination, richer semantic aliases, performance
   tests, saved searches, additional memory families, temporal supply history.
 - **Generator script**: per user decision, the supplied CSV is canonical; no
   fixed-seed generator will be written unless the spec is revised.
+
+---
+
+## Commit Point 3 — Phase 3: Aina-Veris A2A Integration ✅ COMPLETE
+
+### 3.1 External tool registry
+- [x] `integrations/tool_registry.yaml` — YAML configuration source for
+      externally hosted capabilities (Aina-Veris semiconductor research agent).
+- [x] `backend/integrations/registry.py` — `ExternalToolRegistry` loader with
+      Pydantic-validated `ExternalToolDef`, env var substitution
+      (`${VERIS_BASE_URL}`), visibility filtering (always/mcp_only/rest_only/hidden).
+- [x] Module-level singleton shared by MCP and REST.
+
+### 3.2 Shared A2A invoker
+- [x] `backend/integrations/a2a.py` — generic A2A JSON-RPC 2.0 `tasks/send`
+      client. No Aina-Veris-specific logic. Both MCP and REST call this same
+      invoker.
+- [x] `validate_arguments()` — validates against the tool's `llm_parameters`
+      schema (required fields, types, additionalProperties).
+- [x] `invoke_external_tool()` — builds JSON-RPC envelope, sends via httpx,
+      returns the A2A task result.
+- [x] Error handling: unresolved URLs, missing prompts, HTTP errors,
+      JSON-RPC errors.
+
+### 3.3 MCP integration
+- [x] `get_tool_list()` now appends MCP-visible external tools alongside
+      native tools.
+- [x] `call_tool()` dispatches external tool calls to the shared A2A invoker
+      with argument validation.
+- [x] No Aina-Veris-specific code in `mcpserver.py` or `tools.py`.
+
+### 3.4 REST integration
+- [x] `backend/api/integrations.py` — `GET /integrations/tools` (list),
+      `POST /integrations/tools/{tool_name}/invoke` (invoke).
+- [x] Same registry and invoker as MCP — no duplicate definitions.
+- [x] Router registered in `backend/main.py`.
+
+### 3.5 Tests
+- [x] `tests/unit/test_integrations.py` (23 tests): registry loading,
+      env var substitution, visibility filtering, argument validation,
+      A2A invoker with mocked HTTP (success, JSON-RPC error, HTTP error,
+      unresolved URL, missing prompt, unknown tool).
+- [x] `tests/integration/test_api.py` (4 new tests): list tools, invoke
+      with validation error, unknown tool, mocked A2A success.
+- [x] `tests/integration/test_mcp.py` (4 new tests): external tool
+      discovery, schema, validation error, unresolved URL.
+- [x] All 229 tests pass (was 198, +31 new tests).
+
+### 3.6 Documentation
+- [x] `README.md`: External Integrations (A2A) section; MCP tools 16→17;
+      tests 198→229; external tool in MCP table.
+- [x] `RELEASE_NOTES.md`: External Integrations section; MCP tools 16→17.
+- [x] `docs/index.md`: MCP tools 16→17.
+- [x] `docs/setup-usage.md`: test count 198→229.
+- [x] `docs/technical-architecture.md`: test count 198→229; test layout
+      updated.
+
+### 3.7 Commit
+- [x] `git commit` — "feat: external A2A tool registry + Aina-Veris
+      integration (Phase 3)".
+  → Commit `7c236f3` on branch `parametric`.
 
 ---
 

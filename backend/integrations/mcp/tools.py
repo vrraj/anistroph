@@ -2,6 +2,10 @@
 
 Each tool calls the same core services as REST. No separate analytical logic
 lives inside MCP. No arbitrary Python execution is exposed.
+
+External tools (e.g. Aina-Veris A2A agents) are loaded from the external
+tool registry and exposed alongside native tools. The MCP wrapper remains
+thin — external tool calls dispatch to the shared A2A invoker.
 """
 
 from __future__ import annotations
@@ -269,7 +273,7 @@ TOOL_DEFS: list[tuple[str, str, dict[str, Any]]] = [
 
 
 def get_tool_list() -> list[types.Tool]:
-    """Return the list of MCP Tool objects."""
+    """Return the list of MCP Tool objects (native + external)."""
     tools = []
     for name, desc, schema in TOOL_DEFS:
         tools.append(
@@ -279,6 +283,19 @@ def get_tool_list() -> list[types.Tool]:
                 input_schema=schema,
             )
         )
+
+    # Append externally-registered tools (e.g. Aina-Veris A2A agents).
+    from backend.integrations.registry import get_external_tool_registry
+    registry = get_external_tool_registry()
+    for ext_tool in registry.list_mcp_visible():
+        tools.append(
+            types.Tool(
+                name=ext_tool.name,
+                description=ext_tool.description,
+                input_schema=ext_tool.llm_parameters,
+            )
+        )
+
     return tools
 
 
@@ -407,7 +424,33 @@ async def call_tool(name: str, arguments: dict[str, Any]) -> list[types.TextCont
                 top_k=arguments.get("top_k", 20),
             )
         else:
-            return [types.TextContent(type="text", text=json.dumps({"error": f"unknown tool: {name}"}))]
+            # Check if this is an externally-registered tool (A2A agent).
+            from backend.integrations.registry import get_external_tool_registry
+            from backend.integrations.a2a import (
+                A2AInvocationError,
+                invoke_external_tool,
+                validate_arguments,
+            )
+            registry = get_external_tool_registry()
+            ext_tool = registry.get(name)
+            if ext_tool is not None and ext_tool.is_mcp_visible:
+                # Validate arguments against the tool's schema.
+                errors = validate_arguments(ext_tool, arguments)
+                if errors:
+                    return [types.TextContent(
+                        type="text",
+                        text=json.dumps({"error": "validation failed", "details": errors}),
+                    )]
+                # Invoke the external A2A agent.
+                try:
+                    result = invoke_external_tool(name, arguments)
+                except A2AInvocationError as e:
+                    return [types.TextContent(
+                        type="text",
+                        text=json.dumps({"error": str(e)}),
+                    )]
+            else:
+                return [types.TextContent(type="text", text=json.dumps({"error": f"unknown tool: {name}"}))]
 
         return [types.TextContent(type="text", text=json.dumps(result, default=str, indent=2))]
     except Exception as e:

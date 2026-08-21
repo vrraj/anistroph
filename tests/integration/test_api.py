@@ -616,3 +616,105 @@ class TestPredictOnSearchAPI:
         assert data["matched"] == 0
         assert data["returned"] == 0
         assert data["rows"] == []
+
+
+class TestIntegrationsAPI:
+    """Tests for the external tool registry REST endpoints."""
+
+    @pytest.fixture
+    def integ_client(self, tmp_artifacts, monkeypatch):
+        """Client with a temp external tool registry."""
+        # Write a temp registry YAML.
+        registry_path = tmp_artifacts / "integrations" / "tool_registry.yaml"
+        registry_path.parent.mkdir(parents=True, exist_ok=True)
+        registry_path.write_text("""
+tools:
+  - name: call_test_agent
+    provider: test
+    capability: test_research
+    visibility: always
+    description: Test agent for integration tests.
+    keywords:
+      - test
+    llm_parameters:
+      type: object
+      properties:
+        prompt:
+          type: string
+          description: A test prompt.
+      required:
+        - prompt
+      additionalProperties: false
+    agent_owner: test-owner
+    protocol: A2A_JSONRPC
+    base_url: https://test.example.com
+    path: /agents/test-agent/
+""")
+        # Patch the registry singleton to use the temp file.
+        from backend.integrations import registry as reg_mod
+        from backend.integrations import a2a as a2a_mod
+        from backend.integrations.registry import ExternalToolRegistry
+        temp_reg = ExternalToolRegistry(registry_path)
+        monkeypatch.setattr(reg_mod, "get_external_tool_registry", lambda: temp_reg)
+        monkeypatch.setattr(a2a_mod, "get_external_tool_registry", lambda: temp_reg)
+        # Also patch the API module (it imports the function directly).
+        from backend.api import integrations as api_integ_mod
+        monkeypatch.setattr(api_integ_mod, "get_external_tool_registry", lambda: temp_reg)
+        monkeypatch.setattr(api_integ_mod, "invoke_external_tool", a2a_mod.invoke_external_tool)
+        # Also patch in the MCP tools module.
+        from backend.integrations.mcp import tools as mcp_tools_mod
+        monkeypatch.setattr(mcp_tools_mod, "get_external_tool_registry", lambda: temp_reg, raising=False)
+
+        services = AnistrophServices(
+            dataset_registry_path=tmp_artifacts / "artifacts" / "dataset_registry.json",
+            model_registry_dir=tmp_artifacts / "artifacts" / "models",
+        )
+        svc_mod._services = services
+        app = create_app()
+        yield TestClient(app)
+        svc_mod._services = None
+
+    def test_list_external_tools(self, integ_client):
+        r = integ_client.get("/integrations/tools")
+        assert r.status_code == 200
+        data = r.json()
+        assert len(data) == 1
+        assert data[0]["name"] == "call_test_agent"
+        assert data[0]["protocol"] == "A2A_JSONRPC"
+
+    def test_invoke_missing_prompt(self, integ_client):
+        r = integ_client.post("/integrations/tools/call_test_agent/invoke", json={})
+        assert r.status_code == 422
+
+    def test_invoke_unknown_tool(self, integ_client):
+        r = integ_client.post("/integrations/tools/nonexistent/invoke", json={"arguments": {}})
+        assert r.status_code == 404
+
+    def test_invoke_with_mocked_a2a(self, integ_client, monkeypatch):
+        """Test successful invocation with a mocked A2A response."""
+        from backend.integrations import a2a as a2a_mod
+        from unittest.mock import MagicMock
+
+        mock_response = MagicMock()
+        mock_response.json.return_value = {
+            "jsonrpc": "2.0",
+            "result": {"id": "task-1", "state": "completed",
+                       "artifacts": [{"type": "text", "text": "Result."}]},
+        }
+        mock_response.raise_for_status = MagicMock()
+
+        mock_client = MagicMock()
+        mock_client.post.return_value = mock_response
+        mock_client.close = MagicMock()
+
+        # Patch httpx.Client to return our mock.
+        import httpx
+        monkeypatch.setattr(httpx, "Client", lambda **kw: mock_client)
+
+        r = integ_client.post("/integrations/tools/call_test_agent/invoke", json={
+            "arguments": {"prompt": "Compare DDR5 power management."},
+        })
+        assert r.status_code == 200
+        data = r.json()
+        assert data["state"] == "completed"
+        assert data["id"] == "task-1"
