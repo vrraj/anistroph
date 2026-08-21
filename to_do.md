@@ -258,7 +258,7 @@ Dataset configs (multi-target pattern, one source CSV shared):
       externally hosted capabilities (Aina-Veris semiconductor research agent).
 - [x] `backend/integrations/registry.py` — `ExternalToolRegistry` loader with
       Pydantic-validated `ExternalToolDef`, env var substitution
-      (`${VERIS_BASE_URL}`), visibility filtering (always/mcp_only/rest_only/hidden).
+      (`${AINA_VERIS_BASE_URL}`), visibility filtering (always/mcp_only/rest_only/hidden).
 - [x] Module-level singleton shared by MCP and REST.
 
 ### 3.2 Shared A2A invoker

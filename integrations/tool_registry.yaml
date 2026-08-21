@@ -4,9 +4,9 @@
 # The MCP server, REST API, and any internal orchestrator consume this same
 # registry rather than duplicating external-tool definitions.
 #
-# <host-name> is supplied through deployment configuration (VERIS_BASE_URL
+# <host-name> is supplied through deployment configuration (AINA_VERIS_BASE_URL
 # environment variable) and must not be hard-coded here. The registry loader
-# substitutes ${VERIS_BASE_URL} at load time.
+# substitutes ${AINA_VERIS_BASE_URL} at load time.
 
 tools:
   - name: call_veris_semiconductor_research_agent
@@ -41,5 +41,5 @@ tools:
       additionalProperties: false
     agent_owner: aina-veris
     protocol: A2A_JSONRPC
-    base_url: ${VERIS_BASE_URL}
+    base_url: ${AINA_VERIS_BASE_URL}
     path: /agents/veris-semiconductor-research-agent/

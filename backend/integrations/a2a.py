@@ -109,7 +109,7 @@ def invoke_external_tool(
     if not tool.base_url or "${" in tool.base_url:
         raise A2AInvocationError(
             f"tool {tool_name!r} has an unresolved base_url "
-            f"({tool.base_url!r}); set the VERIS_BASE_URL environment variable"
+            f"({tool.base_url!r}); set the AINA_VERIS_BASE_URL environment variable"
         )
 
     logger.info("A2A invoke: tool=%s url=%s", tool_name, url)

@@ -5,7 +5,9 @@ objects. The MCP server and REST API consume the same registry instance
 rather than duplicating external-tool definitions.
 
 Environment variable substitution is supported in ``base_url`` and ``path``
-fields using ``${VAR_NAME}`` syntax (e.g. ``${VERIS_BASE_URL}``).
+fields using ``${VAR_NAME}`` syntax (e.g. ``${AINA_VERIS_BASE_URL}``).
+Values are loaded from the repo-root ``.env`` file and/or the process
+environment.
 """
 
 from __future__ import annotations
@@ -20,8 +22,22 @@ from pydantic import BaseModel, Field, field_validator
 
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 DEFAULT_REGISTRY_PATH = REPO_ROOT / "integrations" / "tool_registry.yaml"
+_ENV_FILE = REPO_ROOT / ".env"
 
 _VAR_PATTERN = re.compile(r"\$\{(\w+)\}")
+
+
+def _load_dotenv() -> None:
+    """Load .env into os.environ if python-dotenv is available."""
+    try:
+        from dotenv import load_dotenv
+        load_dotenv(_ENV_FILE, override=False)
+    except ImportError:
+        pass
+
+
+# Load .env once at module import so env vars are available for substitution.
+_load_dotenv()
 
 
 def _substitute_env(value: str) -> str:

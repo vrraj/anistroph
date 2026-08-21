@@ -62,7 +62,7 @@ This is the first public release. The complete API surface is documented in [doc
 - Shared A2A invoker (`backend/integrations/a2a.py`) — JSON-RPC 2.0 `tasks/send` client used by both MCP and REST
 - REST: `GET /integrations/tools`, `POST /integrations/tools/{tool_name}/invoke`
 - MCP: external tools appear in `tools/list` and are callable via `tools/call`
-- Environment variable substitution (`${VERIS_BASE_URL}`) for deployment-portable URLs
+- Environment variable substitution (`${AINA_VERIS_BASE_URL}`) for deployment-portable URLs
 - Aina-Veris semiconductor research agent registered as external A2A capability
 
 ### Web UI

@@ -1076,12 +1076,12 @@ tools:
       additionalProperties: false
     agent_owner: aina-veris
     protocol: A2A_JSONRPC
-    base_url: ${VERIS_BASE_URL}
+    base_url: ${AINA_VERIS_BASE_URL}
     path: /agents/veris-semiconductor-research-agent/
 ```
 
-`<host-name>` is supplied via the `VERIS_BASE_URL` environment variable —
-the registry substitutes `${VERIS_BASE_URL}` at load time.
+`<host-name>` is supplied via the `AINA_VERIS_BASE_URL` environment variable —
+the registry substitutes `${AINA_VERIS_BASE_URL}` at load time.
 
 ### REST
 
