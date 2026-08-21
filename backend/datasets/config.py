@@ -12,6 +12,7 @@ import yaml
 
 from backend.datasets.spec import DatasetSpec, SplitSpec, ColumnSpec, ColumnType, ColumnRole
 from backend.features.spec import FeatureSpec, ColumnFeatureSpec
+from backend.search.spec import SearchConfig, SearchFieldSpec, SemanticFilterSpec
 from backend.targets.spec import TargetSpec
 
 
@@ -22,6 +23,7 @@ class DatasetConfig:
     dataset_spec: DatasetSpec
     feature_spec: Optional[FeatureSpec] = None
     target_spec: Optional[TargetSpec] = None
+    search_config: Optional[SearchConfig] = None
 
     @property
     def dataset_id(self) -> str:
@@ -67,8 +69,45 @@ def load_dataset_config(path: str | Path) -> DatasetConfig:
     if target_raw:
         target_spec = TargetSpec(**target_raw)
 
+    # --- SearchConfig ---
+    search_config = None
+    search_raw = raw.get("search")
+    if search_raw:
+        sf_raw = search_raw.get("searchable_fields", {})
+        searchable_fields: dict[str, SearchFieldSpec] = {}
+        for sf_name, sf_def in sf_raw.items():
+            if not isinstance(sf_def, dict):
+                raise ValueError(f"searchable field {sf_name!r} must be a mapping")
+            field = sf_def.get("field", sf_name)
+            searchable_fields[sf_name] = SearchFieldSpec(
+                field=field,
+                operators=sf_def.get("operators", ["eq", "in"]),
+                unit=sf_def.get("unit"),
+                aliases=sf_def.get("aliases", []),
+                description=sf_def.get("description"),
+            )
+        sem_raw = search_raw.get("semantic_filters", {})
+        semantic_filters: dict[str, SemanticFilterSpec] = {}
+        for sem_name, sem_def in sem_raw.items():
+            if not isinstance(sem_def, dict):
+                raise ValueError(f"semantic filter {sem_name!r} must be a mapping")
+            semantic_filters[sem_name] = SemanticFilterSpec(
+                name=sem_name,
+                type=sem_def["type"],
+                min_field=sem_def.get("min_field"),
+                max_field=sem_def.get("max_field"),
+                expands_to=sem_def.get("expands_to", []),
+                unit=sem_def.get("unit"),
+                description=sem_def.get("description"),
+            )
+        search_config = SearchConfig(
+            searchable_fields=searchable_fields,
+            semantic_filters=semantic_filters,
+        )
+
     return DatasetConfig(
         dataset_spec=dataset_spec,
         feature_spec=feature_spec,
         target_spec=target_spec,
+        search_config=search_config,
     )

@@ -57,6 +57,8 @@ DATASETS = [
     # Semiconductor procurement — 2 targets (demand + shortage risk), one source
     ("datasets/semiconductor_procurement_demand/dataset.yaml", "data/semiconductor_procurement/data.parquet"),
     ("datasets/semiconductor_procurement_shortage/dataset.yaml", "data/semiconductor_procurement/data.parquet"),
+    # Semiconductor memory — catalog (search + analysis, no model trained)
+    ("datasets/semiconductor_memory/dataset.yaml", "data/semiconductor_memory/data.csv"),
 ]
 
 

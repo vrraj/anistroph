@@ -147,6 +147,55 @@ TOOL_DEFS: list[tuple[str, str, dict[str, Any]]] = [
         },
     ),
     (
+        "anistroph_get_search_contract",
+        "Return the self-describing search contract for a dataset that has a 'search:' configuration. Lists searchable fields (with types, units, supported operators, aliases, categorical values or numeric ranges from the live profile) and semantic filters (e.g. operating_temperature, industrial_temperature). Use this before anistroph_search to discover what filters and field names are available for a dataset.",
+        {
+            "type": "object",
+            "properties": {"dataset_id": {"type": "string"}},
+            "required": ["dataset_id"],
+        },
+    ),
+    (
+        "anistroph_search",
+        "Run a deterministic structured search over a dataset. Supports operators eq, in, gte, lte, between, and contains_range. Semantic filter names (from the search contract) can be used as the field — they expand to deterministic predicates (e.g. operating_temperature with value 55 becomes min<=55 AND max>=55). Returns matching rows plus an applied_filters audit of the normalized query. limit is capped at 1000. Use anistroph_get_search_contract first to discover field names, operators, and semantic filters.",
+        {
+            "type": "object",
+            "properties": {
+                "dataset_id": {"type": "string"},
+                "filters": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "field": {"type": "string"},
+                            "op": {"type": "string", "description": "eq, in, gte, lte, between, contains_range, or semantic (references a named semantic filter from the search contract)"},
+                            "value": {"description": "For eq/gte/lte: a scalar. For in: a list. For contains_range: the value the range must contain."},
+                            "min_field": {"type": "string", "description": "Required for contains_range: the min column name."},
+                            "max_field": {"type": "string", "description": "Required for contains_range: the max column name."},
+                            "low": {"type": "number", "description": "Required for between: lower bound (inclusive)."},
+                            "high": {"type": "number", "description": "Required for between: upper bound (inclusive)."},
+                        },
+                        "required": ["field", "op"],
+                    },
+                },
+                "sort": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "field": {"type": "string"},
+                            "descending": {"type": "boolean", "default": False},
+                        },
+                        "required": ["field"],
+                    },
+                },
+                "limit": {"type": "integer", "default": 50},
+                "columns": {"type": "array", "items": {"type": "string"}},
+            },
+            "required": ["dataset_id"],
+        },
+    ),
+    (
         "anistroph_evaluate_model",
         "Evaluate a trained model against the dataset's held-out evaluation partition. Loads evaluation.parquet, runs inference using the persisted model, and compares predictions against known actual target values. Returns aggregate metrics (MAE/MSE/RMSE/R2/MAPE/max_error for regression, AUC/precision/recall/F1 for classification) and a sample of prediction-vs-actual rows. The evaluation set is never used during training. Optional filters allow slice-level evaluation (e.g. metrics for a single city, lot, or zip code) — when filters are provided, the response includes both overall metrics and filtered_metrics for comparison.",
         {
@@ -270,6 +319,21 @@ async def call_tool(name: str, arguments: dict[str, Any]) -> list[types.TextCont
                 arguments.get("columns"),
                 arguments.get("sort_by"),
                 arguments.get("descending", False),
+            )
+        elif name == "anistroph_get_search_contract":
+            result = svc.get_search_contract(arguments["dataset_id"])
+        elif name == "anistroph_search":
+            from backend.search.filters import FilterExpression, SortExpression
+            raw_filters = arguments.get("filters", [])
+            filters = [FilterExpression(**f) for f in raw_filters]
+            raw_sort = arguments.get("sort")
+            sort = [SortExpression(**s) for s in raw_sort] if raw_sort else None
+            result = svc.search(
+                arguments["dataset_id"],
+                filters,
+                sort=sort,
+                limit=arguments.get("limit", 50),
+                columns=arguments.get("columns"),
             )
         elif name == "anistroph_evaluate_model":
             result = svc.evaluate_model(

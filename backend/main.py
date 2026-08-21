@@ -19,6 +19,7 @@ from backend.api.datasets import router as datasets_router
 from backend.api.evaluations import router as evaluations_router
 from backend.api.models import router as models_router
 from backend.api.predictions import router as predictions_router
+from backend.api.search import router as search_router
 from backend.integrations.mcp.http_transport import create_mcp_http_app, lifespan as mcp_lifespan
 from backend.schemas.api import HealthResponse
 from backend.services import get_services
@@ -56,6 +57,7 @@ def create_app() -> FastAPI:
     app.include_router(models_router)
     app.include_router(predictions_router)
     app.include_router(evaluations_router)
+    app.include_router(search_router)
 
     # MCP Streamable HTTP transport — exposes the same 13 MCP tools over
     # HTTP at /mcp so remote clients can discover (tools/list) and execute

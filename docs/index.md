@@ -82,6 +82,7 @@ exercise different parts of the architecture.
 | **Semiconductor Manufacturing** | Wafer yield, critical dimension, film thickness | Multiple targets, process-stage prediction, SHAP explainability, multidimensional evaluation |
 | **Predictive Maintenance** | Equipment failure, remaining useful life, maintenance required | Temporal sensor data, classification + regression, history-based features |
 | **Semiconductor Materials Procurement** | 4-week material demand, 4-week shortage risk | Rolling forecasts, temporal prediction, inventory/supplier signals, multidimensional analysis |
+| **Semiconductor Memory** | Parametric product search | Structured catalog filtering, semantic filters (range-containment), self-describing search contract, catalog analysis |
 | Real estate | Home price prediction | Lightweight cross-domain regression validation |
 
 The reference datasets are not intended as production benchmarks. They
@@ -143,6 +144,11 @@ Guide](setup-usage).
 -   **Cross-Interface Validation** --- MCP, REST/OpenAPI, and the Web UI
     use the same shared runtime, allowing agent-driven operations to be
     independently reproduced and validated.
+-   **Parametric Search** --- Datasets can declare a structured search
+    contract with searchable fields, units, aliases, and semantic filters
+    (e.g. "supports 55°C" → range-containment). Agents discover the
+    contract, normalize natural-language requirements, and apply
+    deterministic filters via the same shared service layer.
 
 <p align="center">
   <img src="https://raw.githubusercontent.com/vrraj/anistroph/main/docs/images/anistroph-pipeline.png" width="100%" />
@@ -344,8 +350,8 @@ reference implementation.
 
 ### Runtime Interfaces
 
--   **MCP** --- 13 domain-agnostic tools for dataset/model discovery,
-    prediction, explanation, evaluation, and analysis.
+-   **MCP** --- 15 domain-agnostic tools for dataset/model discovery,
+    prediction, explanation, evaluation, analysis, and parametric search.
 -   **REST / OpenAPI** --- programmatic access to runtime and
     administrative capabilities.
 -   **Web UI** --- exploration, model interaction, and cross-interface

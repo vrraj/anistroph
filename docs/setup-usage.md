@@ -1189,6 +1189,23 @@ Claude prompts grouped by dataset. These work with any MCP client — Claude Des
 > "Evaluate the home price model filtered to San Jose only"
 > "Find the populations where the home price model has the worst prediction error"
 
+### Semiconductor Memory (Parametric Search)
+
+> "Get the search contract for the semiconductor_memory dataset"
+> "Find production DDR5 components with at least 24 Gb density, x8 organization, and 6400 MT/s or faster"
+> "Find DDR5 products that support operation at 55°C"
+> "Find production DDR5 x8 components with at least 24 Gb and 6400 MT/s, sorted by data rate descending"
+> "Show me all LPDDR5X components with 8533 MT/s"
+> "Profile the semiconductor memory catalog — how is the portfolio distributed across product family and technology?"
+> "Group DDR5 components by density and data rate and show the count in each combination"
+
+The parametric search uses a self-describing contract: ask for the search
+contract first to discover field names, units, operators, and semantic
+filters. Semantic filters like `operating_temperature` expand to
+deterministic range-containment predicates (`min <= value AND max >= value`).
+The `applied_filters` field in the response shows the normalized query for
+audit/debugging.
+
 > Training, dataset registration, and deletion are NOT available via MCP — use REST, Python, CLI, or the Web UI for admin operations.
 
 ---
@@ -1201,7 +1218,7 @@ Claude prompts grouped by dataset. These work with any MCP client — Claude Des
 pytest
 ```
 
-147 tests covering datasets, features, targets, partitioning, training, inference, explanation, MCP, REST API, and SHAP grouping.
+188 tests covering datasets, features, targets, partitioning, training, inference, explanation, MCP, REST API, SHAP grouping, and parametric search.
 
 ### Unit tests only
 

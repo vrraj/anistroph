@@ -33,6 +33,10 @@ from backend.ml.explain import explain_prediction
 from backend.ml.inference import predict
 from backend.ml.registry import ModelRegistry
 from backend.ml.training import available_model_types, train_model
+from backend.search.filters import FilterExpression, SortExpression, from_simple_dict
+from backend.search.service import get_search_contract as _get_search_contract
+from backend.search.service import search_dataset as _search_dataset
+from backend.search.spec import SearchConfig
 from backend.targets.spec import TargetSpec
 
 
@@ -198,42 +202,71 @@ class AnistrophServices:
 
         Returns a dict with dataset_id, row_count (after filtering), columns
         returned, and a list of row dicts.
+
+        Internally delegates to the generic search engine (sample_rows does
+        not use semantic filters or the search contract — it stays a simple
+        row-inspection tool with equality/IN filters only).
         """
-        n = max(1, min(int(n), 1000))
-        meta = self.dataset_registry.get(dataset_id)
-        if meta is None:
-            raise ValueError(f"dataset {dataset_id!r} not registered")
-        df = pl.read_parquet(meta.parquet_path)
-
-        if filters:
-            for col, val in filters.items():
-                if col not in df.columns:
-                    raise ValueError(f"unknown filter column {col!r}")
-                if isinstance(val, list):
-                    df = df.filter(pl.col(col).is_in(val))
-                else:
-                    df = df.filter(pl.col(col) == val)
-
-        matched = df.height
-        if sort_by:
-            if sort_by not in df.columns:
-                raise ValueError(f"unknown sort column {sort_by!r}")
-            df = df.sort(sort_by, descending=descending)
-
-        if columns:
-            missing = [c for c in columns if c not in df.columns]
-            if missing:
-                raise ValueError(f"unknown columns: {missing}")
-            df = df.select(columns)
-
-        df = df.head(n)
+        filter_exprs = from_simple_dict(filters)
+        sort_exprs = [SortExpression(field=sort_by, descending=descending)] if sort_by else None
+        result = _search_dataset(
+            self.dataset_registry, dataset_id, filter_exprs,
+            sort=sort_exprs, limit=n, columns=columns,
+        )
+        # Preserve the original return shape (row_count, not matched).
         return {
-            "dataset_id": dataset_id,
-            "row_count": matched,
-            "returned": df.height,
-            "columns": df.columns,
-            "rows": df.to_dicts(),
+            "dataset_id": result["dataset_id"],
+            "row_count": result["matched"],
+            "returned": result["returned"],
+            "columns": result["columns"],
+            "rows": result["rows"],
         }
+
+    # --- Search operations ---
+
+    def search(self, dataset_id: str,
+               filters: list[FilterExpression],
+               sort: Optional[list[SortExpression]] = None,
+               limit: int = 50,
+               columns: Optional[list[str]] = None) -> dict[str, Any]:
+        """Run a deterministic structured search over a dataset.
+
+        Supports operators eq, in, gte, lte, between, contains_range, plus
+        semantic filter expansion (when the dataset declares a ``search:``
+        config). Reads the full dataset Parquet (all rows), never a partition.
+
+        Returns a dict with dataset_id, matched, returned, columns, rows,
+        and applied_filters (the normalized filter expressions after semantic
+        expansion, for audit/debugging).
+        """
+        config = self.get_config(dataset_id)
+        search_config = config.search_config
+        return _search_dataset(
+            self.dataset_registry, dataset_id, filters,
+            sort=sort, limit=limit, columns=columns,
+            search_config=search_config,
+        )
+
+    def get_search_contract(self, dataset_id: str) -> dict[str, Any]:
+        """Return a self-describing search contract for a dataset.
+
+        Lists searchable fields (with types, units, operators, aliases,
+        categorical values / numeric ranges from the live profile) and
+        semantic filters. Computed on-demand from the YAML ``search:`` config
+        merged with the current dataset profile.
+        """
+        config = self.get_config(dataset_id)
+        if config.search_config is None:
+            raise ValueError(
+                f"dataset {dataset_id!r} has no search configuration "
+                "(no 'search:' section in its dataset.yaml)"
+            )
+        profile = self.profile(dataset_id)
+        return _get_search_contract(
+            self.dataset_registry, dataset_id,
+            search_config=config.search_config,
+            profile=profile,
+        )
 
     # --- Model operations ---
 

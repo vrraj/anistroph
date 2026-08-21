@@ -44,6 +44,8 @@ class TestToolDiscovery:
         assert "anistroph_find_interesting_slices" in names
         assert "anistroph_evaluate_model" in names
         assert "anistroph_find_evaluation_slices" in names
+        assert "anistroph_get_search_contract" in names
+        assert "anistroph_search" in names
 
     def test_tool_schemas(self):
         tools = get_tool_list()
@@ -234,3 +236,93 @@ class TestToolCalls:
             assert "row_count" in s
             assert "metric_value" in s
             assert "overall_baseline" in s
+
+
+# ---------------------------------------------------------------------------
+# Parametric search tools (semiconductor_memory)
+# ---------------------------------------------------------------------------
+
+@pytest.fixture
+def mem_services(tmp_artifacts):
+    """Services with semiconductor_memory dataset registered for search tests."""
+    svc = AnistrophServices(
+        dataset_registry_path=tmp_artifacts / "artifacts" / "dataset_registry.json",
+        model_registry_dir=tmp_artifacts / "artifacts" / "models",
+    )
+    svc.register_dataset_from_config(
+        "datasets/semiconductor_memory/dataset.yaml",
+        "data/semiconductor_memory/data.csv",
+        parquet_path=str(tmp_artifacts / "data" / "processed" / "semiconductor_memory.parquet"),
+    )
+    svc_mod._services = svc
+    yield svc
+    svc_mod._services = None
+
+
+class TestSearchTools:
+    async def test_get_search_contract(self, mem_services):
+        result = await call_tool("anistroph_get_search_contract", {
+            "dataset_id": "semiconductor_memory",
+        })
+        data = json.loads(result[0].text)
+        assert data["dataset_id"] == "semiconductor_memory"
+        assert "semantic" in data["supported_operators"]
+        assert len(data["searchable_fields"]) > 0
+        semantic_names = [s["name"] for s in data["semantic_filters"]]
+        assert "operating_temperature" in semantic_names
+        assert "industrial_temperature" in semantic_names
+
+    async def test_search_acceptance_query_1(self, mem_services):
+        """DDR5_COMPONENT + x8 + >=6400 MT/s."""
+        result = await call_tool("anistroph_search", {
+            "dataset_id": "semiconductor_memory",
+            "filters": [
+                {"field": "product_family", "op": "eq", "value": "DDR5_COMPONENT"},
+                {"field": "bus_width_bits", "op": "eq", "value": 8},
+                {"field": "data_rate_mt_s", "op": "gte", "value": 6400},
+            ],
+            "limit": 10,
+        })
+        data = json.loads(result[0].text)
+        assert data["matched"] > 0
+        for row in data["rows"]:
+            assert row["product_family"] == "DDR5_COMPONENT"
+            assert row["bus_width_bits"] == 8
+            assert row["data_rate_mt_s"] >= 6400
+
+    async def test_search_semantic_temperature(self, mem_services):
+        """supports 55C via semantic operating_temperature filter."""
+        result = await call_tool("anistroph_search", {
+            "dataset_id": "semiconductor_memory",
+            "filters": [
+                {"field": "operating_temperature", "op": "semantic", "value": 55},
+            ],
+            "limit": 5,
+        })
+        data = json.loads(result[0].text)
+        assert data["matched"] > 0
+        for row in data["rows"]:
+            assert row["operating_temp_min_c"] <= 55
+            assert row["operating_temp_max_c"] >= 55
+        # applied_filters should show the expanded contains_range
+        assert len(data["applied_filters"]) == 1
+        assert data["applied_filters"][0]["op"] == "contains_range"
+
+    async def test_search_unknown_semantic_returns_error(self, mem_services):
+        result = await call_tool("anistroph_search", {
+            "dataset_id": "semiconductor_memory",
+            "filters": [
+                {"field": "nonexistent_semantic", "op": "semantic", "value": 1},
+            ],
+            "limit": 5,
+        })
+        data = json.loads(result[0].text)
+        assert "error" in data
+
+    async def test_search_no_config_dataset(self, services):
+        """predictive_maintenance has no search config → error."""
+        result = await call_tool("anistroph_get_search_contract", {
+            "dataset_id": "predictive_maintenance",
+        })
+        data = json.loads(result[0].text)
+        assert "error" in data

@@ -366,3 +366,131 @@ class TestEvaluationAPI:
         assert len(data) > 0
         # pct_error values should be percentages (small for yield 0-1).
         assert all(s["metric_value"] >= 0 for s in data)
+
+
+class TestSearchAPI:
+    """Tests for the parametric search REST endpoints."""
+
+    @pytest.fixture
+    def mem_client(self, tmp_artifacts):
+        """Client with semiconductor_memory dataset registered."""
+        services = AnistrophServices(
+            dataset_registry_path=tmp_artifacts / "artifacts" / "dataset_registry.json",
+            model_registry_dir=tmp_artifacts / "artifacts" / "models",
+        )
+        services.register_dataset_from_config(
+            "datasets/semiconductor_memory/dataset.yaml",
+            "data/semiconductor_memory/data.csv",
+            parquet_path=str(tmp_artifacts / "data" / "processed" / "semiconductor_memory.parquet"),
+        )
+        svc_mod._services = services
+        app = create_app()
+        yield TestClient(app)
+        svc_mod._services = None
+
+    def test_get_search_contract(self, mem_client):
+        r = mem_client.get("/datasets/semiconductor_memory/search-contract")
+        assert r.status_code == 200
+        contract = r.json()
+        assert contract["dataset_id"] == "semiconductor_memory"
+        assert "eq" in contract["supported_operators"]
+        assert "semantic" in contract["supported_operators"]
+        assert len(contract["searchable_fields"]) > 0
+        assert len(contract["semantic_filters"]) >= 2  # operating_temperature, industrial_temperature
+
+    def test_search_contract_no_config_returns_404(self, client):
+        """predictive_maintenance has no search config → 404."""
+        r = client.get("/datasets/predictive_maintenance/search-contract")
+        assert r.status_code == 404
+
+    def test_search_acceptance_query_1(self, mem_client):
+        """DDR5_COMPONENT + x8 + >=6400 MT/s."""
+        r = mem_client.post("/datasets/semiconductor_memory/search", json={
+            "filters": [
+                {"field": "product_family", "op": "eq", "value": "DDR5_COMPONENT"},
+                {"field": "bus_width_bits", "op": "eq", "value": 8},
+                {"field": "data_rate_mt_s", "op": "gte", "value": 6400},
+            ],
+            "limit": 10,
+        })
+        assert r.status_code == 200
+        data = r.json()
+        assert data["matched"] > 0
+        assert data["returned"] <= 10
+        for row in data["rows"]:
+            assert row["product_family"] == "DDR5_COMPONENT"
+            assert row["bus_width_bits"] == 8
+            assert row["data_rate_mt_s"] >= 6400
+
+    def test_search_acceptance_query_2_semantic_temp(self, mem_client):
+        """supports 55C (semantic operating_temperature filter)."""
+        r = mem_client.post("/datasets/semiconductor_memory/search", json={
+            "filters": [
+                {"field": "operating_temperature", "op": "semantic", "value": 55},
+            ],
+            "limit": 5,
+        })
+        assert r.status_code == 200
+        data = r.json()
+        assert data["matched"] > 0
+        # All rows should support 55C (min <= 55 AND max >= 55)
+        for row in data["rows"]:
+            assert row["operating_temp_min_c"] <= 55
+            assert row["operating_temp_max_c"] >= 55
+        # applied_filters should show the expanded contains_range
+        assert len(data["applied_filters"]) == 1
+        assert data["applied_filters"][0]["op"] == "contains_range"
+
+    def test_search_acceptance_query_3(self, mem_client):
+        """Production + >=24Gb + x8 + >=6400 MT/s."""
+        r = mem_client.post("/datasets/semiconductor_memory/search", json={
+            "filters": [
+                {"field": "part_status", "op": "eq", "value": "Production"},
+                {"field": "component_density_gb", "op": "gte", "value": 24},
+                {"field": "bus_width_bits", "op": "eq", "value": 8},
+                {"field": "data_rate_mt_s", "op": "gte", "value": 6400},
+            ],
+            "limit": 10,
+        })
+        assert r.status_code == 200
+        data = r.json()
+        assert data["matched"] > 0
+        for row in data["rows"]:
+            assert row["part_status"] == "Production"
+            assert row["component_density_gb"] >= 24
+            assert row["bus_width_bits"] == 8
+            assert row["data_rate_mt_s"] >= 6400
+
+    def test_search_with_sort(self, mem_client):
+        r = mem_client.post("/datasets/semiconductor_memory/search", json={
+            "filters": [],
+            "sort": [{"field": "data_rate_mt_s", "descending": True}],
+            "limit": 5,
+        })
+        assert r.status_code == 200
+        data = r.json()
+        rates = [row["data_rate_mt_s"] for row in data["rows"]]
+        assert rates == sorted(rates, reverse=True)
+
+    def test_search_with_columns_subset(self, mem_client):
+        r = mem_client.post("/datasets/semiconductor_memory/search", json={
+            "filters": [],
+            "columns": ["product_id", "product_family", "data_rate_mt_s"],
+            "limit": 3,
+        })
+        assert r.status_code == 200
+        data = r.json()
+        assert data["columns"] == ["product_id", "product_family", "data_rate_mt_s"]
+
+    def test_search_unknown_field_returns_400(self, mem_client):
+        r = mem_client.post("/datasets/semiconductor_memory/search", json={
+            "filters": [{"field": "nonexistent_col", "op": "eq", "value": 1}],
+            "limit": 5,
+        })
+        assert r.status_code == 400
+
+    def test_search_unknown_dataset_returns_400(self, mem_client):
+        r = mem_client.post("/datasets/nonexistent/search", json={
+            "filters": [], "limit": 5,
+        })
+        assert r.status_code == 400

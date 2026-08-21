@@ -13,10 +13,18 @@ This is the first public release. The complete API surface is documented in [doc
 ## Core Capabilities
 
 ### Datasets and Targets
-- 11 registered datasets across 3 source domains (predictive maintenance, semiconductor yield, home prices)
+- 14 registered datasets across 4 source domains (predictive maintenance, semiconductor yield, home prices, semiconductor memory)
 - Multi-target architecture — one source parquet can train independent models for different outcomes
 - Process-stage prediction — models predict at different points in a workflow using only features available at that stage (Stage A → D semiconductor yield example)
 - Train/eval partitioning at registration time, leakage-safe feature transforms
+
+### Parametric Search
+- Generic structured search over registered datasets — operators: eq, in, gte, lte, between, contains_range, semantic
+- Self-describing search contract — `anistroph_get_search_contract` returns searchable fields (types, units, operators, aliases, categorical values / numeric ranges) and semantic filters
+- Semantic filter expansion — natural engineering concepts map to deterministic predicates (e.g. "supports 55°C" → `min <= 55 AND max >= 55`; "industrial temperature" → `min <= -40 AND max >= 95`)
+- Applied-filters audit — responses include the normalized query after semantic expansion
+- `sample_rows` refactored to delegate to the search engine internally (API unchanged)
+- Semiconductor Memory reference dataset — 2000-row catalog with DDR5/LPDDR5X components and modules, family-specific parameter rules, synthetic supply fields
 
 ### Inference
 - Dual prediction modes — entity lookup (`entity_id` + optional `timestamp`) or records (raw source feature values as JSON). The caller never constructs engineered features.
@@ -38,11 +46,12 @@ This is the first public release. The complete API surface is documented in [doc
 - Automated interesting-slice discovery ranked by deviation from baseline
 
 ### MCP Runtime Access
-- 13 MCP tools across stdio (local clients: Claude Desktop, Cursor, Cline) and Streamable HTTP at `/mcp` (remote clients, custom agents, tool routers)
+- 15 MCP tools across stdio (local clients: Claude Desktop, Cursor, Cline) and Streamable HTTP at `/mcp` (remote clients, custom agents, tool routers)
 - Both transports call the same service layer as REST and UI
 
 ### Web UI
-- Tabs for Datasets, Data, Analysis, Train, Predict & Explain, and Evaluation
+- Tabs for Datasets, Data, Search, Analysis, Train, Predict & Explain, and Evaluation
+- Parametric Search tab with contract display, dynamic filter form (categorical multi-selects, numeric min/max, semantic temperature input), and applied-filters audit
 - Dataset-driven dropdowns populated from dataset profiles
 - Records-based prediction with "Load Input Schema" prefill
 - Hash-based routing for deep links

@@ -6,9 +6,9 @@ Release](https://img.shields.io/github/v/release/vrraj/anistroph?label=release&c
 MIT](https://img.shields.io/badge/license-MIT-blue.svg)](https://github.com/vrraj/anistroph/blob/main/LICENSE)
 [![Python
 3.10+](https://img.shields.io/badge/python-3.10+-blue?logo=python&logoColor=white)](https://www.python.org/downloads/)
-[![Tests](https://img.shields.io/badge/tests-147%20passing-brightgreen)](https://vrraj.github.io/anistroph/setup-usage#testing)
+[![Tests](https://img.shields.io/badge/tests-188%20passing-brightgreen)](https://vrraj.github.io/anistroph/setup-usage#testing)
 [![MCP
-Tools](https://img.shields.io/badge/MCP-13%20tools-purple)](https://github.com/vrraj/anistroph#mcp-and-agent-access)
+Tools](https://img.shields.io/badge/MCP-15%20tools-purple)](https://github.com/vrraj/anistroph#mcp-and-agent-access)
 [![GitHub
 Pages](https://img.shields.io/badge/docs-GitHub%20Pages-blue)](https://vrraj.github.io/anistroph/)
 
@@ -106,6 +106,11 @@ predictions and analyses to be independently reproduced when validation is requi
 -   **Cross-Interface Validation** --- MCP, REST/OpenAPI, and the Web UI
     use the same shared runtime, allowing agent-driven operations to be
     independently reproduced and validated.
+-   **Parametric Search** --- Datasets can declare a structured search
+    contract with searchable fields, units, aliases, and semantic filters
+    (e.g. "supports 55°C" → range-containment). Agents discover the
+    contract, normalize natural-language requirements, and apply
+    deterministic filters via the same shared service layer.
 
 > Anistroph is a reference architecture. The included synthetic datasets
 > and models demonstrate how the components fit together rather than
@@ -120,13 +125,14 @@ predictions and analyses to be independently reproduced when validation is requi
 
 ## Reference Datasets
 
-Anistroph includes synthetic reference datasets across multiple domains to exercise different architectural capabilities. The primary reference implementations cover **semiconductor manufacturing, predictive maintenance, and semiconductor materials procurement**, with a lightweight real-estate dataset providing an additional cross-domain regression test.
+Anistroph includes synthetic reference datasets across multiple domains to exercise different architectural capabilities. The primary reference implementations cover **semiconductor manufacturing, predictive maintenance, semiconductor materials procurement, and semiconductor memory parametric search**, with a lightweight real-estate dataset providing an additional cross-domain regression test.
 
 | Reference domain | What it exercises |
 |---|---|
 | **Semiconductor Manufacturing** | Multiple regression targets, process-stage prediction, explainability, multidimensional analysis and evaluation |
 | **Predictive Maintenance** | Temporal sensor data, classification + regression, rolling features, equipment-health prediction |
 | **Semiconductor Materials Procurement** | Temporal prediction, rolling demand features, 4-week demand forecasting, shortage-risk classification |
+| **Semiconductor Memory** | Parametric product search with semantic filters (range-containment, industrial temperature), search contract discovery, catalog analysis |
 | Real estate | Lightweight non-manufacturing regression example for cross-domain validation |
 
 The same source data can support multiple target configurations. For
@@ -187,7 +193,7 @@ make install
 -   checks for `libomp` on macOS, required by XGBoost;
 -   creates `.venv` and installs Anistroph in editable mode;
 -   creates `.env` from `.env.example`;
--   generates and registers the thirteen reference dataset
+-   generates and registers the fourteen reference dataset
     configurations;
 -   prints a ready-to-paste Claude Desktop MCP configuration with
     absolute paths.
@@ -568,7 +574,7 @@ multiple configurations to reference the same underlying data.
 
 ## MCP and Agent Access
 
-Anistroph exposes **13 domain-agnostic MCP tools** over both **stdio**
+Anistroph exposes **15 domain-agnostic MCP tools** over both **stdio**
 and **Streamable HTTP**. The tools operate against registered dataset
 and model metadata rather than being duplicated for each domain.
 
@@ -592,6 +598,15 @@ and model metadata rather than being duplicated for each domain.
 
   `anistroph_sample_rows`               Retrieve filtered/sample source
                                         rows
+
+  `anistroph_get_search_contract`       Discover searchable fields, units,
+                                        aliases, and semantic filters for
+                                        parametric search
+
+  `anistroph_search`                    Run a deterministic structured
+                                        search with eq/in/gte/lte/between/
+                                        contains_range operators and
+                                        semantic filter expansion
 
   `anistroph_list_models`               Discover trained models and
                                         task/model metadata
@@ -967,7 +982,7 @@ example workflows.
 pytest
 ```
 
-The current suite contains **147 tests** spanning dataset
+The current suite contains **188 tests** spanning dataset
 specifications, ingestion, feature transforms and leakage checks, target
 construction, model training/evaluation/persistence/reload, inference,
 feature parity, SHAP explainability, multidimensional discovery, REST,
