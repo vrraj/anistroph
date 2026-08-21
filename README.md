@@ -111,6 +111,12 @@ predictions and analyses to be independently reproduced when validation is requi
     (e.g. "supports 55°C" → range-containment). Agents discover the
     contract, normalize natural-language requirements, and apply
     deterministic filters via the same shared service layer.
+-   **External A2A Integration** --- Anistroph can hand off context to
+    externally-hosted AI agents (e.g. Aina-Veris for datasheet RAG) via
+    A2A JSON-RPC. External tools are defined in a tool registry and
+    exposed through both MCP and REST. Aina-Veris is used as the
+    reference implementation but is not a hard dependency — any
+    A2A-compatible system can be configured.
 
 > Anistroph is a reference architecture. The included synthetic datasets
 > and models demonstrate how the components fit together rather than
