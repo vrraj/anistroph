@@ -539,7 +539,7 @@ described above rather than defining the architecture themselves.
 
 ## Testing
 
-The test suite (242 tests) covers unit-level component correctness and
+The test suite (69 tests) covers unit-level component correctness and
 integration-level interface parity. Tests run against synthetic data
 generated in fixtures, so they are deterministic and do not depend on
 registered datasets or trained models from a prior session.

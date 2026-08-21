@@ -6,7 +6,7 @@ Release](https://img.shields.io/github/v/release/vrraj/anistroph?label=release&c
 MIT](https://img.shields.io/badge/license-MIT-blue.svg)](https://github.com/vrraj/anistroph/blob/main/LICENSE)
 [![Python
 3.10+](https://img.shields.io/badge/python-3.10+-blue?logo=python&logoColor=white)](https://www.python.org/downloads/)
-[![Tests](https://img.shields.io/badge/tests-242%20passing-brightgreen)](https://vrraj.github.io/anistroph/setup-usage#testing)
+[![Tests](https://img.shields.io/badge/tests-69%20passing-brightgreen)](https://vrraj.github.io/anistroph/setup-usage#testing)
 [![MCP
 Tools](https://img.shields.io/badge/MCP-17%20tools-purple)](https://github.com/vrraj/anistroph#mcp-and-agent-access)
 [![GitHub
@@ -997,7 +997,7 @@ example workflows.
 pytest
 ```
 
-The current suite contains **242 tests** spanning dataset
+The current suite contains **69 tests** spanning dataset
 specifications, ingestion, feature transforms and leakage checks, target
 construction, model training/evaluation/persistence/reload, inference,
 feature parity, SHAP explainability, multidimensional discovery, REST,
