@@ -1206,6 +1206,22 @@ deterministic range-containment predicates (`min <= value AND max >= value`).
 The `applied_filters` field in the response shows the normalized query for
 audit/debugging.
 
+### Semiconductor Memory (Predict-on-Search)
+
+> "Find matching DDR5 parts and rank them by predicted four-week supply risk"
+> "Search for DDR5 x8 components with at least 6400 MT/s and rank by predicted lead time"
+> "Find production DDR5 components with at least 24 Gb and rank by supply risk probability"
+
+Predict-on-search combines parametric search with prediction: it runs a
+structured search on the catalog, then for each matching product_id invokes
+a trained supply model (entity-lookup prediction against the temporal supply
+history dataset). Results are enriched with the prediction (probability for
+classifiers, predicted value for regressors) and ranked by prediction outcome
+(highest risk probability or longest lead time first). The catalog dataset
+and the model's training dataset share the same `product_id` entity key but
+are separate datasets — the catalog is a fixed snapshot, the supply history
+is a 50,000-row weekly time series (2,000 products × 25 weeks).
+
 > Training, dataset registration, and deletion are NOT available via MCP — use REST, Python, CLI, or the Web UI for admin operations.
 
 ---
@@ -1218,7 +1234,7 @@ audit/debugging.
 pytest
 ```
 
-188 tests covering datasets, features, targets, partitioning, training, inference, explanation, MCP, REST API, SHAP grouping, and parametric search.
+198 tests covering datasets, features, targets, partitioning, training, inference, explanation, MCP, REST API, SHAP grouping, parametric search, and predict-on-search.
 
 ### Unit tests only
 

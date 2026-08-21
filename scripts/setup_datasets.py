@@ -1,9 +1,9 @@
 """One-shot dataset setup for Anistroph.
 
-Generates all three synthetic source datasets and registers all eleven
-dataset configs (multi-target + staged-prediction configs share source
-parquet files). Idempotent: skips generation/registration for datasets
-that are already present in the registry.
+Generates all synthetic source datasets and registers all dataset configs
+(multi-target + staged-prediction configs share source parquet files).
+Idempotent: skips generation/registration for datasets that are already
+present in the registry.
 
 Usage:
     python scripts/setup_datasets.py            # generate + register all
@@ -33,6 +33,7 @@ GENERATORS = [
     ("scripts/generate_semiconductor_yield_data.py", "data/semiconductor_yield/data.parquet"),
     ("scripts/generate_home_prices_data.py", "data/home_prices/data.parquet"),
     ("scripts/generate_procurement_data.py", "data/semiconductor_procurement/data.parquet"),
+    ("scripts/generate_semiconductor_memory_supply.py", "data/semiconductor_memory_supply/data.parquet"),
 ]
 
 # --- Dataset configs -----------------------------------------------------
@@ -59,6 +60,9 @@ DATASETS = [
     ("datasets/semiconductor_procurement_shortage/dataset.yaml", "data/semiconductor_procurement/data.parquet"),
     # Semiconductor memory — catalog (search + analysis, no model trained)
     ("datasets/semiconductor_memory/dataset.yaml", "data/semiconductor_memory/data.csv"),
+    # Semiconductor memory supply — 2 targets (risk + lead time), one source
+    ("datasets/semiconductor_memory_supply_risk/dataset.yaml", "data/semiconductor_memory_supply/data.parquet"),
+    ("datasets/semiconductor_memory_supply_lead_time/dataset.yaml", "data/semiconductor_memory_supply/data.parquet"),
 ]
 
 
@@ -87,7 +91,7 @@ def generate_all(skip_gen: bool) -> None:
 
 
 def register_all(force: bool) -> None:
-    """Register all 11 dataset configs."""
+    """Register all dataset configs."""
     print("[2/2] Registering datasets...")
     svc = get_services()
     existing = {d.dataset_id for d in svc.list_datasets()}

@@ -268,6 +268,138 @@ class AnistrophServices:
             profile=profile,
         )
 
+    def predict_on_search(
+        self,
+        search_dataset_id: str,
+        model_id: str,
+        filters: list[FilterExpression],
+        sort: Optional[list[SortExpression]] = None,
+        limit: int = 50,
+        columns: Optional[list[str]] = None,
+        timestamp: Optional[str] = None,
+    ) -> dict[str, Any]:
+        """Search a catalog dataset, then predict for each matching product.
+
+        Runs a parametric search on ``search_dataset_id`` (e.g. the
+        semiconductor_memory catalog), then for each matching product_id
+        invokes the given model (trained on a temporal supply dataset that
+        shares the same product_id entity key) using entity-lookup prediction.
+
+        Results are enriched with the prediction (probability for classifiers,
+        predicted value for regressors) and ranked by the prediction outcome.
+
+        Args:
+            search_dataset_id: catalog dataset to search (e.g. semiconductor_memory).
+            model_id: trained model to apply (e.g. mem-supply-risk-xgb).
+            filters: search filters to apply to the catalog.
+            sort: optional sort for the search results (applied BEFORE ranking
+                by prediction — set to None to rank purely by prediction).
+            limit: max products to return (capped at 1000).
+            columns: optional catalog column subset to include in each row.
+            timestamp: optional as-of timestamp for temporal models. If None,
+                uses the latest week in the supply dataset.
+
+        Returns a dict with:
+            - search_dataset_id, model_id, matched, returned
+            - rows: list of {catalog columns..., prediction, prediction_label?}
+            - applied_filters: the normalized search filters
+            - model_type: classification or regression
+        """
+        # 1. Run the search on the catalog dataset.
+        search_config = None
+        try:
+            search_config = self.get_config(search_dataset_id).search_config
+        except Exception:
+            pass
+
+        search_result = _search_dataset(
+            self.dataset_registry, search_dataset_id,
+            filters=filters,
+            sort=sort,
+            limit=limit,
+            columns=columns,
+            search_config=search_config,
+        )
+
+        product_ids = [r.get("product_id") for r in search_result["rows"]
+                       if r.get("product_id") is not None]
+        if not product_ids:
+            return {
+                "search_dataset_id": search_dataset_id,
+                "model_id": model_id,
+                "matched": search_result["matched"],
+                "returned": 0,
+                "rows": [],
+                "applied_filters": search_result["applied_filters"],
+                "model_type": None,
+            }
+
+        # 2. Determine the model type.
+        mmeta = self.model_registry.get(model_id)
+        if mmeta is None:
+            raise ValueError(f"model {model_id!r} not found")
+        model_type = mmeta.target_type  # "classification" or "regression"
+
+        # 3. Determine the timestamp for entity lookup.
+        # If not provided, use the latest week from the model's dataset.
+        if timestamp is None:
+            dmeta = self.dataset_registry.get(mmeta.dataset_id)
+            if dmeta is not None and dmeta.parquet_path:
+                supply_df = pl.scan_parquet(dmeta.parquet_path)
+                latest = supply_df.select(pl.col("week").max()).collect()
+                if latest.height > 0 and latest["week"][0] is not None:
+                    timestamp = str(latest["week"][0])
+
+        # 4. Predict for each product.
+        enriched_rows = []
+        for row in search_result["rows"]:
+            pid = row.get("product_id")
+            if pid is None:
+                continue
+            try:
+                pred = self.predict(
+                    model_id=model_id,
+                    entity_id=str(pid),
+                    timestamp=timestamp,
+                )
+                if model_type == "classification":
+                    row["prediction"] = pred.get("probability")
+                    row["prediction_label"] = "risk" if pred.get("probability", 0) >= 0.5 else "safe"
+                else:
+                    # Regression predictions may be under "predicted_yield"
+                    # (generic key from the inference pipeline) or "prediction".
+                    row["prediction"] = pred.get("predicted_yield",
+                                                pred.get("prediction"))
+                    row["prediction_label"] = None
+            except Exception as e:
+                row["prediction"] = None
+                row["prediction_label"] = None
+                row["prediction_error"] = str(e)
+            enriched_rows.append(row)
+
+        # 5. Rank by prediction (descending for risk probability / lead time).
+        if model_type == "classification":
+            enriched_rows.sort(
+                key=lambda r: r.get("prediction") if r.get("prediction") is not None else -1,
+                reverse=True,
+            )
+        else:
+            enriched_rows.sort(
+                key=lambda r: r.get("prediction") if r.get("prediction") is not None else float("inf"),
+                reverse=True,
+            )
+
+        return {
+            "search_dataset_id": search_dataset_id,
+            "model_id": model_id,
+            "model_type": model_type,
+            "matched": search_result["matched"],
+            "returned": len(enriched_rows),
+            "rows": enriched_rows,
+            "applied_filters": search_result["applied_filters"],
+            "timestamp": timestamp,
+        }
+
     # --- Model operations ---
 
     def list_model_types(self) -> list[str]:

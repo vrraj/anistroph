@@ -13,7 +13,7 @@ This is the first public release. The complete API surface is documented in [doc
 ## Core Capabilities
 
 ### Datasets and Targets
-- 14 registered datasets across 4 source domains (predictive maintenance, semiconductor yield, home prices, semiconductor memory)
+- 16 registered datasets across 4 source domains (predictive maintenance, semiconductor yield, home prices, semiconductor memory)
 - Multi-target architecture — one source parquet can train independent models for different outcomes
 - Process-stage prediction — models predict at different points in a workflow using only features available at that stage (Stage A → D semiconductor yield example)
 - Train/eval partitioning at registration time, leakage-safe feature transforms
@@ -25,6 +25,13 @@ This is the first public release. The complete API surface is documented in [doc
 - Applied-filters audit — responses include the normalized query after semantic expansion
 - `sample_rows` refactored to delegate to the search engine internally (API unchanged)
 - Semiconductor Memory reference dataset — 2000-row catalog with DDR5/LPDDR5X components and modules, family-specific parameter rules, synthetic supply fields
+
+### Predict-on-Search
+- Search a catalog, then predict for each matching product using a trained supply model
+- `anistroph_predict_on_search` — runs parametric search, then entity-lookup prediction for each product_id, ranks by prediction outcome
+- Semiconductor Memory Supply dataset — 50,000 rows (2,000 products × 25 weeks) of synthetic weekly supply history with inventory, demand, backlog, PO, lead time, OTD, and allocation status
+- Two trained models: supply_risk_next_4w (classification, ROC-AUC = 0.999) and lead_time_next_4w_days (regression, R² = 0.996)
+- Available via REST, MCP, and Web UI
 
 ### Inference
 - Dual prediction modes — entity lookup (`entity_id` + optional `timestamp`) or records (raw source feature values as JSON). The caller never constructs engineered features.
@@ -46,7 +53,7 @@ This is the first public release. The complete API surface is documented in [doc
 - Automated interesting-slice discovery ranked by deviation from baseline
 
 ### MCP Runtime Access
-- 15 MCP tools across stdio (local clients: Claude Desktop, Cursor, Cline) and Streamable HTTP at `/mcp` (remote clients, custom agents, tool routers)
+- 16 MCP tools across stdio (local clients: Claude Desktop, Cursor, Cline) and Streamable HTTP at `/mcp` (remote clients, custom agents, tool routers)
 - Both transports call the same service layer as REST and UI
 
 ### Web UI

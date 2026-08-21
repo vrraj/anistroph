@@ -1,10 +1,10 @@
-"""Search API routes — parametric search and search contract."""
+"""Search API routes — parametric search, search contract, and predict-on-search."""
 
 from __future__ import annotations
 
 from fastapi import APIRouter, HTTPException
 
-from backend.schemas.api import SearchRequest
+from backend.schemas.api import PredictOnSearchRequest, SearchRequest
 from backend.search.filters import FilterExpression, SortExpression
 from backend.services import get_services
 
@@ -40,6 +40,34 @@ async def search(dataset_id: str, req: SearchRequest):
         sort = [SortExpression(**s.model_dump()) for s in req.sort] if req.sort else None
         return svc.search(
             dataset_id, filters, sort=sort, limit=req.limit, columns=req.columns,
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/{dataset_id}/predict-on-search")
+async def predict_on_search(dataset_id: str, req: PredictOnSearchRequest):
+    """Search a catalog dataset, then predict for each matching product.
+
+    Runs a parametric search on the catalog dataset, then for each matching
+    product_id invokes the specified model using entity-lookup prediction.
+    Results are enriched with the prediction and ranked by prediction outcome
+    (descending: highest risk probability or longest lead time first).
+    """
+    svc = get_services()
+    try:
+        filters = [FilterExpression(**f.model_dump()) for f in req.filters]
+        sort = [SortExpression(**s.model_dump()) for s in req.sort] if req.sort else None
+        return svc.predict_on_search(
+            search_dataset_id=dataset_id,
+            model_id=req.model_id,
+            filters=filters,
+            sort=sort,
+            limit=req.limit,
+            columns=req.columns,
+            timestamp=req.timestamp,
         )
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))

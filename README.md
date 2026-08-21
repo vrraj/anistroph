@@ -6,9 +6,9 @@ Release](https://img.shields.io/github/v/release/vrraj/anistroph?label=release&c
 MIT](https://img.shields.io/badge/license-MIT-blue.svg)](https://github.com/vrraj/anistroph/blob/main/LICENSE)
 [![Python
 3.10+](https://img.shields.io/badge/python-3.10+-blue?logo=python&logoColor=white)](https://www.python.org/downloads/)
-[![Tests](https://img.shields.io/badge/tests-188%20passing-brightgreen)](https://vrraj.github.io/anistroph/setup-usage#testing)
+[![Tests](https://img.shields.io/badge/tests-198%20passing-brightgreen)](https://vrraj.github.io/anistroph/setup-usage#testing)
 [![MCP
-Tools](https://img.shields.io/badge/MCP-15%20tools-purple)](https://github.com/vrraj/anistroph#mcp-and-agent-access)
+Tools](https://img.shields.io/badge/MCP-16%20tools-purple)](https://github.com/vrraj/anistroph#mcp-and-agent-access)
 [![GitHub
 Pages](https://img.shields.io/badge/docs-GitHub%20Pages-blue)](https://vrraj.github.io/anistroph/)
 
@@ -132,7 +132,7 @@ Anistroph includes synthetic reference datasets across multiple domains to exerc
 | **Semiconductor Manufacturing** | Multiple regression targets, process-stage prediction, explainability, multidimensional analysis and evaluation |
 | **Predictive Maintenance** | Temporal sensor data, classification + regression, rolling features, equipment-health prediction |
 | **Semiconductor Materials Procurement** | Temporal prediction, rolling demand features, 4-week demand forecasting, shortage-risk classification |
-| **Semiconductor Memory** | Parametric product search with semantic filters (range-containment, industrial temperature), search contract discovery, catalog analysis |
+| **Semiconductor Memory** | Parametric product search with semantic filters (range-containment, industrial temperature), search contract discovery, predict-on-search ranking by supply risk / lead time |
 | Real estate | Lightweight non-manufacturing regression example for cross-domain validation |
 
 The same source data can support multiple target configurations. For
@@ -156,6 +156,8 @@ Held-out evaluation metrics for the shipped reference models:
 | Home Prices | `price` | Regression | R² = 0.97 |
 | Procurement — Demand | `material_demand_next_4w` | Regression | R² = 0.96, MAE = 14.0 |
 | Procurement — Shortage Risk | `shortage_risk_next_4w` | Classification | ROC-AUC = 0.99, F1 = 0.90 |
+| Memory Supply Risk | `supply_risk_next_4w` | Classification | ROC-AUC = 0.999, F1 = 0.979 |
+| Memory Supply Lead Time | `lead_time_next_4w_days` | Regression | R² = 0.996, MAE = 1.1d |
 
 Models are trained on the train partition and evaluated on the held-out
 evaluation partition (most recent 20% for temporal datasets, random 20%
@@ -193,7 +195,7 @@ make install
 -   checks for `libomp` on macOS, required by XGBoost;
 -   creates `.venv` and installs Anistroph in editable mode;
 -   creates `.env` from `.env.example`;
--   generates and registers the fourteen reference dataset
+-   generates and registers the sixteen reference dataset
     configurations;
 -   prints a ready-to-paste Claude Desktop MCP configuration with
     absolute paths.
@@ -574,7 +576,7 @@ multiple configurations to reference the same underlying data.
 
 ## MCP and Agent Access
 
-Anistroph exposes **15 domain-agnostic MCP tools** over both **stdio**
+Anistroph exposes **16 domain-agnostic MCP tools** over both **stdio**
 and **Streamable HTTP**. The tools operate against registered dataset
 and model metadata rather than being duplicated for each domain.
 
@@ -607,6 +609,11 @@ and model metadata rather than being duplicated for each domain.
                                         search with eq/in/gte/lte/between/
                                         contains_range operators and
                                         semantic filter expansion
+
+  `anistroph_predict_on_search`         Search a catalog, then predict for
+                                        each matching product using a trained
+                                        model; rank results by prediction
+                                        (supply risk probability or lead time)
 
   `anistroph_list_models`               Discover trained models and
                                         task/model metadata
@@ -982,7 +989,7 @@ example workflows.
 pytest
 ```
 
-The current suite contains **188 tests** spanning dataset
+The current suite contains **198 tests** spanning dataset
 specifications, ingestion, feature transforms and leakage checks, target
 construction, model training/evaluation/persistence/reload, inference,
 feature parity, SHAP explainability, multidimensional discovery, REST,

@@ -494,3 +494,125 @@ class TestSearchAPI:
             "filters": [], "limit": 5,
         })
         assert r.status_code == 400
+
+
+class TestPredictOnSearchAPI:
+    """Tests for the predict-on-search REST endpoint."""
+
+    @pytest.fixture
+    def supply_client(self, tmp_artifacts):
+        """Client with semiconductor_memory catalog + supply models registered."""
+        services = AnistrophServices(
+            dataset_registry_path=tmp_artifacts / "artifacts" / "dataset_registry.json",
+            model_registry_dir=tmp_artifacts / "artifacts" / "models",
+        )
+        # Register catalog
+        services.register_dataset_from_config(
+            "datasets/semiconductor_memory/dataset.yaml",
+            "data/semiconductor_memory/data.csv",
+            parquet_path=str(tmp_artifacts / "data" / "processed" / "semiconductor_memory.parquet"),
+        )
+        # Register supply datasets
+        services.register_dataset_from_config(
+            "datasets/semiconductor_memory_supply_risk/dataset.yaml",
+            "data/semiconductor_memory_supply/data.parquet",
+            parquet_path=str(tmp_artifacts / "data" / "processed" / "supply_risk.parquet"),
+        )
+        services.register_dataset_from_config(
+            "datasets/semiconductor_memory_supply_lead_time/dataset.yaml",
+            "data/semiconductor_memory_supply/data.parquet",
+            parquet_path=str(tmp_artifacts / "data" / "processed" / "supply_lt.parquet"),
+        )
+        # Train both models
+        services.train("semiconductor_memory_supply_risk", "supply_risk_next_4w",
+                       "xgboost", model_id="test-mem-risk")
+        services.train("semiconductor_memory_supply_lead_time", "lead_time_next_4w_days",
+                       "xgboost_regressor", model_id="test-mem-lt")
+        svc_mod._services = services
+        app = create_app()
+        yield TestClient(app)
+        svc_mod._services = None
+
+    def test_predict_on_search_classification(self, supply_client):
+        """Search DDR5 components and rank by supply risk."""
+        r = supply_client.post("/datasets/semiconductor_memory/predict-on-search", json={
+            "model_id": "test-mem-risk",
+            "filters": [
+                {"field": "product_family", "op": "eq", "value": "DDR5_COMPONENT"},
+            ],
+            "limit": 5,
+            "columns": ["product_id", "product_family", "data_rate_mt_s"],
+        })
+        assert r.status_code == 200
+        data = r.json()
+        assert data["model_type"] == "classification"
+        assert data["matched"] > 0
+        assert data["returned"] <= 5
+        # Each row should have a prediction (probability)
+        for row in data["rows"]:
+            assert "prediction" in row
+            assert row["prediction"] is not None
+            assert "prediction_label" in row
+        # Rows should be sorted by prediction descending
+        preds = [row["prediction"] for row in data["rows"] if row["prediction"] is not None]
+        assert preds == sorted(preds, reverse=True)
+
+    def test_predict_on_search_regression(self, supply_client):
+        """Search DDR5 components and rank by lead time."""
+        r = supply_client.post("/datasets/semiconductor_memory/predict-on-search", json={
+            "model_id": "test-mem-lt",
+            "filters": [
+                {"field": "product_family", "op": "eq", "value": "DDR5_COMPONENT"},
+            ],
+            "limit": 5,
+            "columns": ["product_id", "data_rate_mt_s"],
+        })
+        assert r.status_code == 200
+        data = r.json()
+        assert data["model_type"] == "regression"
+        assert data["matched"] > 0
+        for row in data["rows"]:
+            assert "prediction" in row
+            assert row["prediction"] is not None
+        # Rows should be sorted by prediction descending
+        preds = [row["prediction"] for row in data["rows"] if row["prediction"] is not None]
+        assert preds == sorted(preds, reverse=True)
+
+    def test_predict_on_search_with_semantic_filter(self, supply_client):
+        """Search with semantic temperature filter + predict."""
+        r = supply_client.post("/datasets/semiconductor_memory/predict-on-search", json={
+            "model_id": "test-mem-risk",
+            "filters": [
+                {"field": "operating_temperature", "op": "semantic", "value": 55},
+            ],
+            "limit": 3,
+            "columns": ["product_id"],
+        })
+        assert r.status_code == 200
+        data = r.json()
+        assert data["matched"] > 0
+        assert len(data["applied_filters"]) == 1
+        assert data["applied_filters"][0]["op"] == "contains_range"
+
+    def test_predict_on_search_unknown_model_returns_400(self, supply_client):
+        r = supply_client.post("/datasets/semiconductor_memory/predict-on-search", json={
+            "model_id": "nonexistent",
+            "filters": [],
+            "limit": 5,
+        })
+        assert r.status_code == 400
+
+    def test_predict_on_search_no_matches(self, supply_client):
+        """Search with filters that match nothing → empty result."""
+        r = supply_client.post("/datasets/semiconductor_memory/predict-on-search", json={
+            "model_id": "test-mem-risk",
+            "filters": [
+                {"field": "product_family", "op": "eq", "value": "NONEXISTENT_FAMILY"},
+            ],
+            "limit": 5,
+        })
+        assert r.status_code == 200
+        data = r.json()
+        assert data["matched"] == 0
+        assert data["returned"] == 0
+        assert data["rows"] == []

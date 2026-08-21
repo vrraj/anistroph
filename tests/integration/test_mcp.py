@@ -46,6 +46,7 @@ class TestToolDiscovery:
         assert "anistroph_find_evaluation_slices" in names
         assert "anistroph_get_search_contract" in names
         assert "anistroph_search" in names
+        assert "anistroph_predict_on_search" in names
 
     def test_tool_schemas(self):
         tools = get_tool_list()
@@ -323,6 +324,114 @@ class TestSearchTools:
         """predictive_maintenance has no search config → error."""
         result = await call_tool("anistroph_get_search_contract", {
             "dataset_id": "predictive_maintenance",
+        })
+        data = json.loads(result[0].text)
+        assert "error" in data
+
+
+# ---------------------------------------------------------------------------
+# Predict-on-search tools (semiconductor_memory + supply models)
+# ---------------------------------------------------------------------------
+
+@pytest.fixture
+def supply_services(tmp_artifacts):
+    """Services with catalog + supply datasets and trained models."""
+    svc = AnistrophServices(
+        dataset_registry_path=tmp_artifacts / "artifacts" / "dataset_registry.json",
+        model_registry_dir=tmp_artifacts / "artifacts" / "models",
+    )
+    svc.register_dataset_from_config(
+        "datasets/semiconductor_memory/dataset.yaml",
+        "data/semiconductor_memory/data.csv",
+        parquet_path=str(tmp_artifacts / "data" / "processed" / "semiconductor_memory.parquet"),
+    )
+    svc.register_dataset_from_config(
+        "datasets/semiconductor_memory_supply_risk/dataset.yaml",
+        "data/semiconductor_memory_supply/data.parquet",
+        parquet_path=str(tmp_artifacts / "data" / "processed" / "supply_risk.parquet"),
+    )
+    svc.register_dataset_from_config(
+        "datasets/semiconductor_memory_supply_lead_time/dataset.yaml",
+        "data/semiconductor_memory_supply/data.parquet",
+        parquet_path=str(tmp_artifacts / "data" / "processed" / "supply_lt.parquet"),
+    )
+    svc.train("semiconductor_memory_supply_risk", "supply_risk_next_4w",
+              "xgboost", model_id="mcp-mem-risk")
+    svc.train("semiconductor_memory_supply_lead_time", "lead_time_next_4w_days",
+              "xgboost_regressor", model_id="mcp-mem-lt")
+    svc_mod._services = svc
+    yield svc
+    svc_mod._services = None
+
+
+class TestPredictOnSearchTools:
+    async def test_predict_on_search_discovery(self, supply_services):
+        """The anistroph_predict_on_search tool is listed."""
+        tools = get_tool_list()
+        names = [t.name for t in tools]
+        assert "anistroph_predict_on_search" in names
+
+    async def test_predict_on_search_classification(self, supply_services):
+        """Search DDR5 components and rank by supply risk via MCP."""
+        result = await call_tool("anistroph_predict_on_search", {
+            "dataset_id": "semiconductor_memory",
+            "model_id": "mcp-mem-risk",
+            "filters": [
+                {"field": "product_family", "op": "eq", "value": "DDR5_COMPONENT"},
+            ],
+            "limit": 5,
+            "columns": ["product_id", "product_family", "data_rate_mt_s"],
+        })
+        data = json.loads(result[0].text)
+        assert data["model_type"] == "classification"
+        assert data["matched"] > 0
+        assert data["returned"] <= 5
+        for row in data["rows"]:
+            assert "prediction" in row
+            assert row["prediction"] is not None
+
+    async def test_predict_on_search_regression(self, supply_services):
+        """Search DDR5 components and rank by lead time via MCP."""
+        result = await call_tool("anistroph_predict_on_search", {
+            "dataset_id": "semiconductor_memory",
+            "model_id": "mcp-mem-lt",
+            "filters": [
+                {"field": "product_family", "op": "eq", "value": "DDR5_COMPONENT"},
+            ],
+            "limit": 3,
+            "columns": ["product_id"],
+        })
+        data = json.loads(result[0].text)
+        assert data["model_type"] == "regression"
+        assert data["matched"] > 0
+        for row in data["rows"]:
+            assert row["prediction"] is not None
+
+    async def test_predict_on_search_with_acceptance_query(self, supply_services):
+        """Phase 2 acceptance: DDR5 x8 >=6400 ranked by supply risk."""
+        result = await call_tool("anistroph_predict_on_search", {
+            "dataset_id": "semiconductor_memory",
+            "model_id": "mcp-mem-risk",
+            "filters": [
+                {"field": "product_family", "op": "eq", "value": "DDR5_COMPONENT"},
+                {"field": "bus_width_bits", "op": "eq", "value": 8},
+                {"field": "data_rate_mt_s", "op": "gte", "value": 6400},
+            ],
+            "limit": 5,
+            "columns": ["product_id", "data_rate_mt_s", "component_density_gb"],
+        })
+        data = json.loads(result[0].text)
+        assert data["matched"] > 0
+        # All results should match the search filters
+        for row in data["rows"]:
+            assert row["data_rate_mt_s"] >= 6400
+
+    async def test_predict_on_search_unknown_model(self, supply_services):
+        result = await call_tool("anistroph_predict_on_search", {
+            "dataset_id": "semiconductor_memory",
+            "model_id": "nonexistent",
+            "filters": [],
+            "limit": 5,
         })
         data = json.loads(result[0].text)
         assert "error" in data

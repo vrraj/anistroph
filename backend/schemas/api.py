@@ -102,6 +102,16 @@ class SearchRequest(BaseModel):
     columns: Optional[list[str]] = None
 
 
+class PredictOnSearchRequest(BaseModel):
+    """Request body for POST /datasets/{dataset_id}/predict-on-search."""
+    model_id: str
+    filters: list[FilterExpressionRequest] = Field(default_factory=list)
+    sort: Optional[list[SortExpressionRequest]] = None
+    limit: int = 50
+    columns: Optional[list[str]] = None
+    timestamp: Optional[str] = None
+
+
 class EvaluateRequest(BaseModel):
     sample_size: int = 50
     filters: Optional[dict[str, Any]] = None

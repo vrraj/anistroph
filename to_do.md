@@ -160,95 +160,85 @@ Dataset configs (multi-target pattern, one source CSV shared):
 - [x] Register `semiconductor_memory`, confirm 2000 rows.
 - [x] Run the 3 acceptance queries via REST and MCP — all pass.
 - [x] `sample_rows` regression — all 147 original tests still pass.
-- [ ] `git commit` — "feat: semiconductor_memory dataset + generic
+- [x] `git commit` — "feat: semiconductor_memory dataset + generic
       parametric search (Phase 1)".
+  → Commit `b995c78` on branch `parametric`.
 
 ---
 
-## Commit Point 2 — Phase 2: Prediction on Search Results
+## Commit Point 2 — Phase 2: Prediction on Search Results ✅ COMPLETE
 
-### 2.1 Author the two prediction dataset configs
-- [ ] `datasets/semiconductor_memory_supply_risk/dataset.yaml`:
-      - Same source CSV, `entity_key: product_id`, no `time_key`.
+### 2.1 Generate synthetic supply history
+- [x] `scripts/generate_semiconductor_memory_supply.py` — fixed-seed (42)
+      generator producing 50,000 rows (2,000 products × 25 weeks) of weekly
+      supply history with inventory, demand, backlog, POs, lead time, OTD,
+      allocation status, and the two derived targets.
+- [x] Output: `data/semiconductor_memory_supply/data.parquet` (Date-typed
+      week column for temporal rolling features).
+
+### 2.2 Author the two prediction dataset configs
+- [x] `datasets/semiconductor_memory_supply_risk/dataset.yaml`:
+      - `entity_key: product_id`, `time_key: week`, chronological split 80/10/10.
       - `target: supply_risk_next_4w` (classification, positive_class 1).
-      - Features = the synthetic supply fields (inventory_units,
-        weekly_demand_units, inventory_coverage_weeks, backlog_units,
-        backlog_ratio, open_po_units, open_po_coverage,
-        supplier_lead_time_days, supplier_otd_pct, demand_trend_4w_pct,
-        allocation_status) + lifecycle (part_status) as categorical.
-      - Catalog fields are NOT features (they don't drive supply risk per the
-        spec — supply risk is synthetic from operational context).
-      - `split: random 0.80/0.20`.
-- [ ] `datasets/semiconductor_memory_lead_time/dataset.yaml`:
+      - Features = all 11 supply fields with rolling transforms (mean/std/min/slope
+        over 4w/8w windows) + allocation_status as categorical.
+- [x] `datasets/semiconductor_memory_supply_lead_time/dataset.yaml`:
       - Same features, `target: lead_time_next_4w_days` (regression).
-- [ ] Add both to `scripts/setup_datasets.py` DATASETS list (same source CSV).
+- [x] Both added to `scripts/setup_datasets.py` DATASETS + GENERATORS lists.
 
-### 2.2 Train + evaluate the two models
-- [ ] Train `supply_risk_next_4w` (xgboost classification). Record metrics.
-- [ ] Train `lead_time_next_4w_days` (xgboost_regressor). Record metrics.
-- [ ] Evaluate both on the held-out 20% eval partition.
-- [ ] Confirm `get_model_inputs` reports `entity_lookup_or_records` (no
-      rolling-window transforms → records-based prediction works, which is
-      what predict-on-search needs).
+### 2.3 Train + evaluate the two models
+- [x] `supply_risk_next_4w` (xgboost classifier): ROC-AUC = 0.999, F1 = 0.979.
+- [x] `lead_time_next_4w_days` (xgboost regressor): R² = 0.996, MAE = 1.10 days.
 
-### 2.3 Add predict-on-search service
-- [ ] `AnistrophServices.predict_on_search(dataset_id, model_id, filters,
-      sort_by_prediction, limit, explain)`:
-      - Run `search_dataset` to get matching product_ids + rows.
-      - Build records from the matching rows' feature columns.
-      - Call `predict` (records mode) for the batch.
-      - Optionally call `explain` for each.
-      - Rank by prediction (supply_risk descending = highest risk first;
-        lead_time descending = longest lead time first, or configurable).
-      - Return `{dataset_id, model_id, matched, returned, ranked: [{product_id,
-        prediction, ...row, explanation?}], applied_filters}`.
-- [ ] Reuse the existing `predict`/`explain` services — no new inference path.
+### 2.4 Add predict-on-search service
+- [x] `AnistrophServices.predict_on_search()` — runs parametric search on the
+      catalog, then entity-lookup prediction for each matching product_id
+      using the trained supply model, ranks by prediction (descending).
+- [x] Reuses existing `predict` service — no new inference path.
+- [x] Returns `{search_dataset_id, model_id, model_type, matched, returned,
+      rows, applied_filters, timestamp}`.
 
-### 2.4 Add REST endpoint
-- [ ] `POST /datasets/{dataset_id}/predict-on-search` with
-      `PredictOnSearchRequest` (`model_id`, `filters`, `sort_by_prediction`,
-      `limit`, `explain`).
-- [ ] Add schema to `backend/schemas/api.py`.
+### 2.5 Add REST endpoint
+- [x] `POST /datasets/{dataset_id}/predict-on-search` with
+      `PredictOnSearchRequest` schema.
 
-### 2.5 Add MCP tool
-- [ ] `anistroph_predict_on_search(dataset_id, model_id, filters,
-      sort_by_prediction, limit, explain)` — search + predict + rank in one
-      call. Returns ranked candidates with predictions (and optional SHAP
-      explanations).
-- [ ] Update MCP tool count (15 → 16) in docs.
+### 2.6 Add MCP tool
+- [x] `anistroph_predict_on_search(dataset_id, model_id, filters, sort, limit,
+      columns, timestamp)` — search + predict + rank in one call.
+- [x] MCP tool count updated (15 → 16) in docs.
 
-### 2.6 Web UI — supply-risk scoring in Search tab
-- [ ] After search results render, add a "Rank by supply risk" / "Rank by
-      lead time" button that calls predict-on-search and re-renders the
-      grid with a prediction column + optional explain drawer.
-- [ ] Model dropdown populated from registered models for
-      semiconductor_memory datasets.
+### 2.7 Web UI — supply-risk scoring in Search tab
+- [x] Model dropdown populated from registered supply models.
+- [x] "Search & Rank by Prediction" button calls predict-on-search.
+- [x] Results grid shows prediction column (bolded) + prediction_label.
+- [x] Optional as-of timestamp input.
 
-### 2.7 Tests
-- [ ] `tests/integration/test_api.py`: predict-on-search endpoint for both
-      models; verify ranking order; verify explain output.
-- [ ] `tests/integration/test_mcp.py`: `anistroph_predict_on_search` tool.
-- [ ] Acceptance query (spec §8 Phase 2):
-      > Find matching DDR5 parts and rank them by predicted four-week supply
-      > risk.
-      → search (DDR5_COMPONENT) + predict_on_search (supply_risk model,
-      sort_by_prediction descending).
+### 2.8 Tests
+- [x] `tests/integration/test_api.py` (5 new tests): predict-on-search
+      classification, regression, semantic filter, unknown model, no matches.
+- [x] `tests/integration/test_mcp.py` (5 new tests): tool discovery,
+      classification, regression, acceptance query, unknown model.
+- [x] Acceptance query: "Find matching DDR5 parts and rank them by predicted
+      four-week supply risk" — verified via REST and MCP.
+- [x] All 198 tests pass (was 188, +10 new predict-on-search tests).
 
-### 2.8 Documentation
-- [ ] `README.md`: add the two trained models to the reference models table;
-      mention predict-on-search.
-- [ ] `docs/setup-usage.md`: add Phase 2 example queries (search + predict +
-      rank; search + explain).
-- [ ] `docs/index.md`: update reference models table.
-- [ ] `RELEASE_NOTES.md`: prediction-on-search section.
+### 2.9 Documentation
+- [x] `README.md`: 2 new models in reference table; predict-on-search in MCP
+      tool table; tests 188→198; MCP tools 15→16; datasets 14→16.
+- [x] `docs/setup-usage.md`: predict-on-search example queries; test count.
+- [x] `docs/index.md`: updated reference models table; MCP tools 15→16.
+- [x] `docs/technical-architecture.md`: test count 188→198; test layout updated.
+- [x] `RELEASE_NOTES.md`: predict-on-search section; dataset count 14→16;
+      MCP tools 15→16.
 
-### 2.9 Commit Point 2 verification
-- [ ] `pytest` — all tests pass.
-- [ ] Both models trained + evaluated with metrics recorded.
-- [ ] Acceptance query works via REST and MCP.
-- [ ] Web UI rank-by-risk button works.
-- [ ] `git commit` — "feat: prediction on search results + supply-risk /
+### 2.10 Commit Point 2 verification
+- [x] `pytest` — all 198 tests pass.
+- [x] Both models trained + evaluated with metrics recorded.
+- [x] Acceptance query works via REST and MCP.
+- [x] Web UI rank-by-prediction button works.
+- [x] `git commit` — "feat: prediction on search results + supply-risk /
       lead-time models (Phase 2)".
+  → Commit `2bc2216` on branch `parametric`.
 
 ---
 

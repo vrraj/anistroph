@@ -82,7 +82,7 @@ exercise different parts of the architecture.
 | **Semiconductor Manufacturing** | Wafer yield, critical dimension, film thickness | Multiple targets, process-stage prediction, SHAP explainability, multidimensional evaluation |
 | **Predictive Maintenance** | Equipment failure, remaining useful life, maintenance required | Temporal sensor data, classification + regression, history-based features |
 | **Semiconductor Materials Procurement** | 4-week material demand, 4-week shortage risk | Rolling forecasts, temporal prediction, inventory/supplier signals, multidimensional analysis |
-| **Semiconductor Memory** | Parametric product search | Structured catalog filtering, semantic filters (range-containment), self-describing search contract, catalog analysis |
+| **Semiconductor Memory** | Parametric product search, supply risk prediction | Structured catalog filtering, semantic filters (range-containment), self-describing search contract, predict-on-search ranking by supply risk / lead time |
 | Real estate | Home price prediction | Lightweight cross-domain regression validation |
 
 The reference datasets are not intended as production benchmarks. They
@@ -104,6 +104,8 @@ Held-out evaluation metrics for the shipped reference models:
 | Home Prices | `price` | Regression | R² = 0.97 |
 | Procurement — Demand | `material_demand_next_4w` | Regression | R² = 0.96, MAE = 14.0 |
 | Procurement — Shortage Risk | `shortage_risk_next_4w` | Classification | ROC-AUC = 0.99, F1 = 0.90 |
+| Memory Supply Risk | `supply_risk_next_4w` | Classification | ROC-AUC = 0.999, F1 = 0.979 |
+| Memory Supply Lead Time | `lead_time_next_4w_days` | Regression | R² = 0.996, MAE = 1.1d |
 
 Models are trained on the train partition and evaluated on the held-out
 evaluation partition (most recent 20% for temporal datasets, random 20%
@@ -350,8 +352,9 @@ reference implementation.
 
 ### Runtime Interfaces
 
--   **MCP** --- 15 domain-agnostic tools for dataset/model discovery,
-    prediction, explanation, evaluation, analysis, and parametric search.
+-   **MCP** --- 16 domain-agnostic tools for dataset/model discovery,
+    prediction, explanation, evaluation, analysis, parametric search, and
+    predict-on-search ranking.
 -   **REST / OpenAPI** --- programmatic access to runtime and
     administrative capabilities.
 -   **Web UI** --- exploration, model interaction, and cross-interface

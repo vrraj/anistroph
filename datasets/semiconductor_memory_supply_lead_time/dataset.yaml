@@ -1,0 +1,136 @@
+# Anistroph — Semiconductor Memory Supply Lead Time (Regression)
+#
+# One row = one week x product_id. The model predicts lead_time_next_4w_days
+# (regression) — the expected replenishment lead time over the next 4 weeks,
+# driven by supplier lead time, OTD, and allocation pressure.
+#
+# Shares the same source parquet as semiconductor_memory_supply_risk.
+# Same temporal structure, same features, different target.
+#
+# Chronological split: earliest 80% → train, most recent 20% → evaluation.
+
+dataset:
+  dataset_id: semiconductor_memory_supply_lead_time
+  name: Semiconductor Memory Supply Lead Time
+  entity_key: product_id
+  time_key: week
+
+  columns:
+    week:
+      type: timestamp
+      role: identifier
+    product_id:
+      type: categorical
+      role: identifier
+    inventory_units:
+      type: numeric
+      role: feature
+    weekly_demand_units:
+      type: numeric
+      role: feature
+    inventory_coverage_weeks:
+      type: numeric
+      role: feature
+    backlog_units:
+      type: numeric
+      role: feature
+    backlog_ratio:
+      type: numeric
+      role: feature
+    open_po_units:
+      type: numeric
+      role: feature
+    open_po_coverage:
+      type: numeric
+      role: feature
+    supplier_lead_time_days:
+      type: numeric
+      role: feature
+    supplier_otd_pct:
+      type: numeric
+      role: feature
+    demand_trend_4w_pct:
+      type: numeric
+      role: feature
+    allocation_status:
+      type: categorical
+      role: feature
+    supply_risk_next_4w:
+      type: boolean
+      role: target
+    lead_time_next_4w_days:
+      type: numeric
+      role: target
+
+  split:
+    strategy: chronological
+    train: 0.80
+    validation: 0.10
+    test: 0.10
+
+features:
+  inventory_units:
+    column: inventory_units
+    transforms:
+      - current
+      - mean:
+          windows: [4w, 8w]
+      - std:
+          windows: [4w]
+  weekly_demand_units:
+    column: weekly_demand_units
+    transforms:
+      - current
+      - mean:
+          windows: [4w, 8w]
+      - slope:
+          windows: [4w]
+  inventory_coverage_weeks:
+    column: inventory_coverage_weeks
+    transforms:
+      - current
+      - min:
+          windows: [4w]
+  backlog_units:
+    column: backlog_units
+    transforms:
+      - current
+      - mean:
+          windows: [4w]
+  backlog_ratio:
+    column: backlog_ratio
+    transforms:
+      - current
+  open_po_units:
+    column: open_po_units
+    transforms:
+      - current
+  open_po_coverage:
+    column: open_po_coverage
+    transforms:
+      - current
+  supplier_lead_time_days:
+    column: supplier_lead_time_days
+    transforms:
+      - current
+      - mean:
+          windows: [4w]
+  supplier_otd_pct:
+    column: supplier_otd_pct
+    transforms:
+      - current
+      - mean:
+          windows: [4w]
+  demand_trend_4w_pct:
+    column: demand_trend_4w_pct
+    transforms:
+      - current
+  allocation_status:
+    column: allocation_status
+    transforms:
+      - categorical
+
+target:
+  name: lead_time_next_4w_days
+  type: regression
+  source_column: lead_time_next_4w_days

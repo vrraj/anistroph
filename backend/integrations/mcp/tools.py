@@ -196,6 +196,48 @@ TOOL_DEFS: list[tuple[str, str, dict[str, Any]]] = [
         },
     ),
     (
+        "anistroph_predict_on_search",
+        "Search a catalog dataset, then predict for each matching product using a trained model. Runs a parametric search (same as anistroph_search) on the catalog dataset, then for each matching product_id invokes the specified model using entity-lookup prediction against the model's temporal supply dataset. Results are enriched with the prediction (probability for classifiers, predicted value for regressors) and ranked by prediction outcome (descending: highest risk probability or longest lead time first). This enables queries like 'find DDR5 x8 components with >=6400 MT/s and rank them by predicted 4-week supply risk'. The catalog dataset (search_dataset_id) and the model's training dataset share the same product_id entity key but are separate datasets.",
+        {
+            "type": "object",
+            "properties": {
+                "dataset_id": {"type": "string", "description": "The catalog dataset to search (e.g. semiconductor_memory)."},
+                "model_id": {"type": "string", "description": "The trained model to apply (e.g. mem-supply-risk-xgb for supply risk classification, mem-lead-time-xgb for lead time regression)."},
+                "filters": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "field": {"type": "string"},
+                            "op": {"type": "string", "description": "eq, in, gte, lte, between, contains_range, or semantic"},
+                            "value": {},
+                            "min_field": {"type": "string"},
+                            "max_field": {"type": "string"},
+                            "low": {"type": "number"},
+                            "high": {"type": "number"},
+                        },
+                        "required": ["field", "op"],
+                    },
+                },
+                "sort": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "field": {"type": "string"},
+                            "descending": {"type": "boolean", "default": False},
+                        },
+                        "required": ["field"],
+                    },
+                },
+                "limit": {"type": "integer", "default": 50},
+                "columns": {"type": "array", "items": {"type": "string"}},
+                "timestamp": {"type": "string", "description": "Optional as-of timestamp for temporal models (e.g. '2025-06-23'). If omitted, uses the latest week in the supply dataset."},
+            },
+            "required": ["dataset_id", "model_id"],
+        },
+    ),
+    (
         "anistroph_evaluate_model",
         "Evaluate a trained model against the dataset's held-out evaluation partition. Loads evaluation.parquet, runs inference using the persisted model, and compares predictions against known actual target values. Returns aggregate metrics (MAE/MSE/RMSE/R2/MAPE/max_error for regression, AUC/precision/recall/F1 for classification) and a sample of prediction-vs-actual rows. The evaluation set is never used during training. Optional filters allow slice-level evaluation (e.g. metrics for a single city, lot, or zip code) — when filters are provided, the response includes both overall metrics and filtered_metrics for comparison.",
         {
@@ -334,6 +376,21 @@ async def call_tool(name: str, arguments: dict[str, Any]) -> list[types.TextCont
                 sort=sort,
                 limit=arguments.get("limit", 50),
                 columns=arguments.get("columns"),
+            )
+        elif name == "anistroph_predict_on_search":
+            from backend.search.filters import FilterExpression, SortExpression
+            raw_filters = arguments.get("filters", [])
+            filters = [FilterExpression(**f) for f in raw_filters]
+            raw_sort = arguments.get("sort")
+            sort = [SortExpression(**s) for s in raw_sort] if raw_sort else None
+            result = svc.predict_on_search(
+                search_dataset_id=arguments["dataset_id"],
+                model_id=arguments["model_id"],
+                filters=filters,
+                sort=sort,
+                limit=arguments.get("limit", 50),
+                columns=arguments.get("columns"),
+                timestamp=arguments.get("timestamp"),
             )
         elif name == "anistroph_evaluate_model":
             result = svc.evaluate_model(
