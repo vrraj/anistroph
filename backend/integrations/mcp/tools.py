@@ -2,6 +2,10 @@
 
 Each tool calls the same core services as REST. No separate analytical logic
 lives inside MCP. No arbitrary Python execution is exposed.
+
+External tools (e.g. Aina-Veris A2A agents) are loaded from the external
+tool registry and exposed alongside native tools. The MCP wrapper remains
+thin — external tool calls dispatch to the shared A2A invoker.
 """
 
 from __future__ import annotations
@@ -147,6 +151,97 @@ TOOL_DEFS: list[tuple[str, str, dict[str, Any]]] = [
         },
     ),
     (
+        "anistroph_get_search_contract",
+        "Return the self-describing search contract for a dataset that has a 'search:' configuration. Lists searchable fields (with types, units, supported operators, aliases, categorical values or numeric ranges from the live profile) and semantic filters (e.g. operating_temperature, industrial_temperature). Use this before anistroph_search to discover what filters and field names are available for a dataset.",
+        {
+            "type": "object",
+            "properties": {"dataset_id": {"type": "string"}},
+            "required": ["dataset_id"],
+        },
+    ),
+    (
+        "anistroph_search",
+        "Run a deterministic structured search over a dataset. Supports operators eq, in, gte, lte, between, and contains_range. Semantic filter names (from the search contract) can be used as the field — they expand to deterministic predicates (e.g. operating_temperature with value 55 becomes min<=55 AND max>=55). Returns matching rows plus an applied_filters audit of the normalized query. limit is capped at 1000. Use anistroph_get_search_contract first to discover field names, operators, and semantic filters.",
+        {
+            "type": "object",
+            "properties": {
+                "dataset_id": {"type": "string"},
+                "filters": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "field": {"type": "string"},
+                            "op": {"type": "string", "description": "eq, in, gte, lte, between, contains_range, or semantic (references a named semantic filter from the search contract)"},
+                            "value": {"description": "For eq/gte/lte: a scalar. For in: a list. For contains_range: the value the range must contain."},
+                            "min_field": {"type": "string", "description": "Required for contains_range: the min column name."},
+                            "max_field": {"type": "string", "description": "Required for contains_range: the max column name."},
+                            "low": {"type": "number", "description": "Required for between: lower bound (inclusive)."},
+                            "high": {"type": "number", "description": "Required for between: upper bound (inclusive)."},
+                        },
+                        "required": ["field", "op"],
+                    },
+                },
+                "sort": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "field": {"type": "string"},
+                            "descending": {"type": "boolean", "default": False},
+                        },
+                        "required": ["field"],
+                    },
+                },
+                "limit": {"type": "integer", "default": 50},
+                "columns": {"type": "array", "items": {"type": "string"}},
+            },
+            "required": ["dataset_id"],
+        },
+    ),
+    (
+        "anistroph_predict_on_search",
+        "Search a catalog dataset, then predict for each matching product using a trained model. Runs a parametric search (same as anistroph_search) on the catalog dataset, then for each matching product_id invokes the specified model using entity-lookup prediction against the model's temporal supply dataset. Results are enriched with the prediction (probability for classifiers, predicted value for regressors) and ranked by prediction outcome (descending: highest risk probability or longest lead time first). This enables queries like 'find DDR5 x8 components with >=6400 MT/s and rank them by predicted 4-week supply risk'. The catalog dataset (search_dataset_id) and the model's training dataset share the same product_id entity key but are separate datasets.",
+        {
+            "type": "object",
+            "properties": {
+                "dataset_id": {"type": "string", "description": "The catalog dataset to search (e.g. semiconductor_memory)."},
+                "model_id": {"type": "string", "description": "The trained model to apply (e.g. mem-supply-risk-xgb for supply risk classification, mem-lead-time-xgb for lead time regression)."},
+                "filters": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "field": {"type": "string"},
+                            "op": {"type": "string", "description": "eq, in, gte, lte, between, contains_range, or semantic"},
+                            "value": {},
+                            "min_field": {"type": "string"},
+                            "max_field": {"type": "string"},
+                            "low": {"type": "number"},
+                            "high": {"type": "number"},
+                        },
+                        "required": ["field", "op"],
+                    },
+                },
+                "sort": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "field": {"type": "string"},
+                            "descending": {"type": "boolean", "default": False},
+                        },
+                        "required": ["field"],
+                    },
+                },
+                "limit": {"type": "integer", "default": 50},
+                "columns": {"type": "array", "items": {"type": "string"}},
+                "timestamp": {"type": "string", "description": "Optional as-of timestamp for temporal models (e.g. '2025-06-23'). If omitted, uses the latest week in the supply dataset."},
+            },
+            "required": ["dataset_id", "model_id"],
+        },
+    ),
+    (
         "anistroph_evaluate_model",
         "Evaluate a trained model against the dataset's held-out evaluation partition. Loads evaluation.parquet, runs inference using the persisted model, and compares predictions against known actual target values. Returns aggregate metrics (MAE/MSE/RMSE/R2/MAPE/max_error for regression, AUC/precision/recall/F1 for classification) and a sample of prediction-vs-actual rows. The evaluation set is never used during training. Optional filters allow slice-level evaluation (e.g. metrics for a single city, lot, or zip code) — when filters are provided, the response includes both overall metrics and filtered_metrics for comparison.",
         {
@@ -178,7 +273,7 @@ TOOL_DEFS: list[tuple[str, str, dict[str, Any]]] = [
 
 
 def get_tool_list() -> list[types.Tool]:
-    """Return the list of MCP Tool objects."""
+    """Return the list of MCP Tool objects (native + external)."""
     tools = []
     for name, desc, schema in TOOL_DEFS:
         tools.append(
@@ -188,6 +283,19 @@ def get_tool_list() -> list[types.Tool]:
                 input_schema=schema,
             )
         )
+
+    # Append externally-registered tools (e.g. Aina-Veris A2A agents).
+    from backend.integrations.registry import get_external_tool_registry
+    registry = get_external_tool_registry()
+    for ext_tool in registry.list_mcp_visible():
+        tools.append(
+            types.Tool(
+                name=ext_tool.name,
+                description=ext_tool.description,
+                input_schema=ext_tool.llm_parameters,
+            )
+        )
+
     return tools
 
 
@@ -271,6 +379,36 @@ async def call_tool(name: str, arguments: dict[str, Any]) -> list[types.TextCont
                 arguments.get("sort_by"),
                 arguments.get("descending", False),
             )
+        elif name == "anistroph_get_search_contract":
+            result = svc.get_search_contract(arguments["dataset_id"])
+        elif name == "anistroph_search":
+            from backend.search.filters import FilterExpression, SortExpression
+            raw_filters = arguments.get("filters", [])
+            filters = [FilterExpression(**f) for f in raw_filters]
+            raw_sort = arguments.get("sort")
+            sort = [SortExpression(**s) for s in raw_sort] if raw_sort else None
+            result = svc.search(
+                arguments["dataset_id"],
+                filters,
+                sort=sort,
+                limit=arguments.get("limit", 50),
+                columns=arguments.get("columns"),
+            )
+        elif name == "anistroph_predict_on_search":
+            from backend.search.filters import FilterExpression, SortExpression
+            raw_filters = arguments.get("filters", [])
+            filters = [FilterExpression(**f) for f in raw_filters]
+            raw_sort = arguments.get("sort")
+            sort = [SortExpression(**s) for s in raw_sort] if raw_sort else None
+            result = svc.predict_on_search(
+                search_dataset_id=arguments["dataset_id"],
+                model_id=arguments["model_id"],
+                filters=filters,
+                sort=sort,
+                limit=arguments.get("limit", 50),
+                columns=arguments.get("columns"),
+                timestamp=arguments.get("timestamp"),
+            )
         elif name == "anistroph_evaluate_model":
             result = svc.evaluate_model(
                 arguments["model_id"],
@@ -286,7 +424,44 @@ async def call_tool(name: str, arguments: dict[str, Any]) -> list[types.TextCont
                 top_k=arguments.get("top_k", 20),
             )
         else:
-            return [types.TextContent(type="text", text=json.dumps({"error": f"unknown tool: {name}"}))]
+            # Check if this is an externally-registered tool (A2A agent).
+            from backend.integrations.registry import get_external_tool_registry
+            from backend.integrations.a2a import (
+                AGENT_UNAVAILABLE_MESSAGE,
+                A2AInvocationError,
+                invoke_external_tool,
+                validate_arguments,
+            )
+            registry = get_external_tool_registry()
+            ext_tool = registry.get(name)
+            if ext_tool is not None and ext_tool.is_mcp_visible:
+                # Validate arguments against the tool's schema.
+                errors = validate_arguments(ext_tool, arguments)
+                if errors:
+                    return [types.TextContent(
+                        type="text",
+                        text=json.dumps({"error": "validation failed", "details": errors}),
+                    )]
+                # Invoke the external A2A agent.
+                try:
+                    result = invoke_external_tool(name, arguments)
+                except A2AInvocationError as e:
+                    if e.connection_error:
+                        # Soft-fail: return a message so the calling agent
+                        # can proceed without the RAG response.
+                        return [types.TextContent(
+                            type="text",
+                            text=json.dumps({
+                                "state": "unavailable",
+                                "message": AGENT_UNAVAILABLE_MESSAGE,
+                            }),
+                        )]
+                    return [types.TextContent(
+                        type="text",
+                        text=json.dumps({"error": str(e)}),
+                    )]
+            else:
+                return [types.TextContent(type="text", text=json.dumps({"error": f"unknown tool: {name}"}))]
 
         return [types.TextContent(type="text", text=json.dumps(result, default=str, indent=2))]
     except Exception as e:

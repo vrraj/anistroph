@@ -37,6 +37,7 @@ artifacts/models/*
 *.local.json
 backend/.runtime/
 registry.json
+artifacts/dataset_registry.json
 
 # Caches
 .DuckDB/

@@ -33,6 +33,10 @@ from backend.ml.explain import explain_prediction
 from backend.ml.inference import predict
 from backend.ml.registry import ModelRegistry
 from backend.ml.training import available_model_types, train_model
+from backend.search.filters import FilterExpression, SortExpression, from_simple_dict
+from backend.search.service import get_search_contract as _get_search_contract
+from backend.search.service import search_dataset as _search_dataset
+from backend.search.spec import SearchConfig
 from backend.targets.spec import TargetSpec
 
 
@@ -198,41 +202,202 @@ class AnistrophServices:
 
         Returns a dict with dataset_id, row_count (after filtering), columns
         returned, and a list of row dicts.
+
+        Internally delegates to the generic search engine (sample_rows does
+        not use semantic filters or the search contract — it stays a simple
+        row-inspection tool with equality/IN filters only).
         """
-        n = max(1, min(int(n), 1000))
-        meta = self.dataset_registry.get(dataset_id)
-        if meta is None:
-            raise ValueError(f"dataset {dataset_id!r} not registered")
-        df = pl.read_parquet(meta.parquet_path)
-
-        if filters:
-            for col, val in filters.items():
-                if col not in df.columns:
-                    raise ValueError(f"unknown filter column {col!r}")
-                if isinstance(val, list):
-                    df = df.filter(pl.col(col).is_in(val))
-                else:
-                    df = df.filter(pl.col(col) == val)
-
-        matched = df.height
-        if sort_by:
-            if sort_by not in df.columns:
-                raise ValueError(f"unknown sort column {sort_by!r}")
-            df = df.sort(sort_by, descending=descending)
-
-        if columns:
-            missing = [c for c in columns if c not in df.columns]
-            if missing:
-                raise ValueError(f"unknown columns: {missing}")
-            df = df.select(columns)
-
-        df = df.head(n)
+        filter_exprs = from_simple_dict(filters)
+        sort_exprs = [SortExpression(field=sort_by, descending=descending)] if sort_by else None
+        result = _search_dataset(
+            self.dataset_registry, dataset_id, filter_exprs,
+            sort=sort_exprs, limit=n, columns=columns,
+        )
+        # Preserve the original return shape (row_count, not matched).
         return {
-            "dataset_id": dataset_id,
-            "row_count": matched,
-            "returned": df.height,
-            "columns": df.columns,
-            "rows": df.to_dicts(),
+            "dataset_id": result["dataset_id"],
+            "row_count": result["matched"],
+            "returned": result["returned"],
+            "columns": result["columns"],
+            "rows": result["rows"],
+        }
+
+    # --- Search operations ---
+
+    def search(self, dataset_id: str,
+               filters: list[FilterExpression],
+               sort: Optional[list[SortExpression]] = None,
+               limit: int = 50,
+               columns: Optional[list[str]] = None) -> dict[str, Any]:
+        """Run a deterministic structured search over a dataset.
+
+        Supports operators eq, in, gte, lte, between, contains_range, plus
+        semantic filter expansion (when the dataset declares a ``search:``
+        config). Reads the full dataset Parquet (all rows), never a partition.
+
+        Returns a dict with dataset_id, matched, returned, columns, rows,
+        and applied_filters (the normalized filter expressions after semantic
+        expansion, for audit/debugging).
+        """
+        config = self.get_config(dataset_id)
+        search_config = config.search_config
+        return _search_dataset(
+            self.dataset_registry, dataset_id, filters,
+            sort=sort, limit=limit, columns=columns,
+            search_config=search_config,
+        )
+
+    def get_search_contract(self, dataset_id: str) -> dict[str, Any]:
+        """Return a self-describing search contract for a dataset.
+
+        Lists searchable fields (with types, units, operators, aliases,
+        categorical values / numeric ranges from the live profile) and
+        semantic filters. Computed on-demand from the YAML ``search:`` config
+        merged with the current dataset profile.
+        """
+        config = self.get_config(dataset_id)
+        if config.search_config is None:
+            raise ValueError(
+                f"dataset {dataset_id!r} has no search configuration "
+                "(no 'search:' section in its dataset.yaml)"
+            )
+        profile = self.profile(dataset_id)
+        return _get_search_contract(
+            self.dataset_registry, dataset_id,
+            search_config=config.search_config,
+            profile=profile,
+        )
+
+    def predict_on_search(
+        self,
+        search_dataset_id: str,
+        model_id: str,
+        filters: list[FilterExpression],
+        sort: Optional[list[SortExpression]] = None,
+        limit: int = 50,
+        columns: Optional[list[str]] = None,
+        timestamp: Optional[str] = None,
+    ) -> dict[str, Any]:
+        """Search a catalog dataset, then predict for each matching product.
+
+        Runs a parametric search on ``search_dataset_id`` (e.g. the
+        semiconductor_memory catalog), then for each matching product_id
+        invokes the given model (trained on a temporal supply dataset that
+        shares the same product_id entity key) using entity-lookup prediction.
+
+        Results are enriched with the prediction (probability for classifiers,
+        predicted value for regressors) and ranked by the prediction outcome.
+
+        Args:
+            search_dataset_id: catalog dataset to search (e.g. semiconductor_memory).
+            model_id: trained model to apply (e.g. mem-supply-risk-xgb).
+            filters: search filters to apply to the catalog.
+            sort: optional sort for the search results (applied BEFORE ranking
+                by prediction — set to None to rank purely by prediction).
+            limit: max products to return (capped at 1000).
+            columns: optional catalog column subset to include in each row.
+            timestamp: optional as-of timestamp for temporal models. If None,
+                uses the latest week in the supply dataset.
+
+        Returns a dict with:
+            - search_dataset_id, model_id, matched, returned
+            - rows: list of {catalog columns..., prediction, prediction_label?}
+            - applied_filters: the normalized search filters
+            - model_type: classification or regression
+        """
+        # 1. Run the search on the catalog dataset.
+        search_config = None
+        try:
+            search_config = self.get_config(search_dataset_id).search_config
+        except Exception:
+            pass
+
+        search_result = _search_dataset(
+            self.dataset_registry, search_dataset_id,
+            filters=filters,
+            sort=sort,
+            limit=limit,
+            columns=columns,
+            search_config=search_config,
+        )
+
+        product_ids = [r.get("product_id") for r in search_result["rows"]
+                       if r.get("product_id") is not None]
+        if not product_ids:
+            return {
+                "search_dataset_id": search_dataset_id,
+                "model_id": model_id,
+                "matched": search_result["matched"],
+                "returned": 0,
+                "rows": [],
+                "applied_filters": search_result["applied_filters"],
+                "model_type": None,
+            }
+
+        # 2. Determine the model type.
+        mmeta = self.model_registry.get(model_id)
+        if mmeta is None:
+            raise ValueError(f"model {model_id!r} not found")
+        model_type = mmeta.target_type  # "classification" or "regression"
+
+        # 3. Determine the timestamp for entity lookup.
+        # If not provided, use the latest week from the model's dataset.
+        if timestamp is None:
+            dmeta = self.dataset_registry.get(mmeta.dataset_id)
+            if dmeta is not None and dmeta.parquet_path:
+                supply_df = pl.scan_parquet(dmeta.parquet_path)
+                latest = supply_df.select(pl.col("week").max()).collect()
+                if latest.height > 0 and latest["week"][0] is not None:
+                    timestamp = str(latest["week"][0])
+
+        # 4. Predict for each product.
+        enriched_rows = []
+        for row in search_result["rows"]:
+            pid = row.get("product_id")
+            if pid is None:
+                continue
+            try:
+                pred = self.predict(
+                    model_id=model_id,
+                    entity_id=str(pid),
+                    timestamp=timestamp,
+                )
+                if model_type == "classification":
+                    row["prediction"] = pred.get("probability")
+                    row["prediction_label"] = "risk" if pred.get("probability", 0) >= 0.5 else "safe"
+                else:
+                    # Regression predictions may be under "predicted_yield"
+                    # (generic key from the inference pipeline) or "prediction".
+                    row["prediction"] = pred.get("predicted_yield",
+                                                pred.get("prediction"))
+                    row["prediction_label"] = None
+            except Exception as e:
+                row["prediction"] = None
+                row["prediction_label"] = None
+                row["prediction_error"] = str(e)
+            enriched_rows.append(row)
+
+        # 5. Rank by prediction (descending for risk probability / lead time).
+        if model_type == "classification":
+            enriched_rows.sort(
+                key=lambda r: r.get("prediction") if r.get("prediction") is not None else -1,
+                reverse=True,
+            )
+        else:
+            enriched_rows.sort(
+                key=lambda r: r.get("prediction") if r.get("prediction") is not None else float("inf"),
+                reverse=True,
+            )
+
+        return {
+            "search_dataset_id": search_dataset_id,
+            "model_id": model_id,
+            "model_type": model_type,
+            "matched": search_result["matched"],
+            "returned": len(enriched_rows),
+            "rows": enriched_rows,
+            "applied_filters": search_result["applied_filters"],
+            "timestamp": timestamp,
         }
 
     # --- Model operations ---

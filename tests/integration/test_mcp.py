@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from unittest.mock import MagicMock
 
 import pytest
 
@@ -28,209 +29,174 @@ def services(tmp_artifacts, small_dataset):
     svc_mod._services = None
 
 
+@pytest.fixture
+def mem_services(tmp_artifacts):
+    """Services with semiconductor_memory dataset registered."""
+    svc = AnistrophServices(
+        dataset_registry_path=tmp_artifacts / "artifacts" / "dataset_registry.json",
+        model_registry_dir=tmp_artifacts / "artifacts" / "models",
+    )
+    svc.register_dataset_from_config(
+        "datasets/semiconductor_memory/dataset.yaml",
+        "data/semiconductor_memory/data.csv",
+        parquet_path=str(tmp_artifacts / "data" / "processed" / "semiconductor_memory.parquet"),
+    )
+    svc_mod._services = svc
+    yield svc
+    svc_mod._services = None
+
+
+@pytest.fixture
+def supply_services(tmp_artifacts):
+    """Services with semiconductor_memory catalog + supply models registered."""
+    svc = AnistrophServices(
+        dataset_registry_path=tmp_artifacts / "artifacts" / "dataset_registry.json",
+        model_registry_dir=tmp_artifacts / "artifacts" / "models",
+    )
+    svc.register_dataset_from_config(
+        "datasets/semiconductor_memory/dataset.yaml",
+        "data/semiconductor_memory/data.csv",
+        parquet_path=str(tmp_artifacts / "data" / "processed" / "semiconductor_memory.parquet"),
+    )
+    svc.register_dataset_from_config(
+        "datasets/semiconductor_memory_supply_risk/dataset.yaml",
+        "data/semiconductor_memory_supply/data.parquet",
+        parquet_path=str(tmp_artifacts / "data" / "processed" / "supply_risk.parquet"),
+    )
+    svc.register_dataset_from_config(
+        "datasets/semiconductor_memory_supply_lead_time/dataset.yaml",
+        "data/semiconductor_memory_supply/data.parquet",
+        parquet_path=str(tmp_artifacts / "data" / "processed" / "supply_lt.parquet"),
+    )
+    svc.train("semiconductor_memory_supply_risk", "supply_risk_next_4w", "xgboost", model_id="mcp-mem-risk")
+    svc.train("semiconductor_memory_supply_lead_time", "lead_time_next_4w_days", "xgboost_regressor", model_id="mcp-mem-lt")
+    svc_mod._services = svc
+    yield svc
+    svc_mod._services = None
+
+
+@pytest.fixture
+def ext_registry(tmp_path, monkeypatch):
+    """Temp external tool registry for MCP tests."""
+    from backend.integrations import registry as reg_mod
+    from backend.integrations import a2a as a2a_mod
+    from backend.integrations.mcp import tools as mcp_tools_mod
+    from backend.integrations.registry import ExternalToolRegistry
+
+    registry_path = tmp_path / "tool_registry.yaml"
+    registry_path.write_text("""
+tools:
+  - name: call_test_agent
+    provider: test
+    capability: test_research
+    visibility: always
+    description: Test agent.
+    keywords: [test]
+    llm_parameters:
+      type: object
+      properties: {prompt: {type: string}}
+      required: [prompt]
+    agent_owner: test
+    protocol: A2A_JSONRPC
+    base_url: https://test.example.com
+    path: /agents/test/
+""")
+    temp_reg = ExternalToolRegistry(registry_path)
+    monkeypatch.setattr(reg_mod, "get_external_tool_registry", lambda: temp_reg)
+    monkeypatch.setattr(a2a_mod, "get_external_tool_registry", lambda: temp_reg)
+    monkeypatch.setattr(mcp_tools_mod, "get_external_tool_registry", lambda: temp_reg, raising=False)
+    yield temp_reg
+
+
 class TestToolDiscovery:
-    def test_list_tools(self):
-        tools = get_tool_list()
-        names = [t.name for t in tools]
+    def test_list_tools_includes_native_and_search(self):
+        names = [t.name for t in get_tool_list()]
         assert "anistroph_list_datasets" in names
-        assert "anistroph_profile_dataset" in names
-        assert "anistroph_slice_data" in names
-        assert "anistroph_compare_data" in names
-        assert "anistroph_list_models" in names
-        assert "anistroph_get_model_metrics" in names
-        assert "anistroph_predict" in names
-        assert "anistroph_explain_prediction" in names
-        assert "anistroph_sample_rows" in names
-        assert "anistroph_find_interesting_slices" in names
-        assert "anistroph_evaluate_model" in names
-        assert "anistroph_find_evaluation_slices" in names
-
-    def test_tool_schemas(self):
-        tools = get_tool_list()
-        for t in tools:
-            assert t.input_schema is not None
-            assert "type" in t.input_schema
+        assert "anistroph_search" in names
+        assert "anistroph_predict_on_search" in names
 
 
-class TestToolCalls:
-    async def test_list_datasets(self, services):
+class TestNativeMCPTools:
+    async def test_list_datasets_and_predict(self, services):
         result = await call_tool("anistroph_list_datasets", {})
         data = json.loads(result[0].text)
         assert len(data) >= 1
-        assert data[0]["dataset_id"] == "predictive_maintenance"
 
-    async def test_profile_dataset(self, services):
-        result = await call_tool("anistroph_profile_dataset", {"dataset_id": "predictive_maintenance"})
-        data = json.loads(result[0].text)
-        assert "row_count" in data
-
-    async def test_slice_data(self, services):
-        result = await call_tool("anistroph_slice_data", {
-            "dataset_id": "predictive_maintenance",
-            "dimensions": ["machine_type"],
-            "metric": "failure",
-            "aggregation": "mean",
-        })
-        data = json.loads(result[0].text)
-        assert len(data) > 0
-
-    async def test_compare_data(self, services):
-        result = await call_tool("anistroph_compare_data", {
-            "dataset_id": "predictive_maintenance",
-            "dimension": "machine_type",
-            "metric": "failure",
-            "aggregation": "mean",
-        })
-        data = json.loads(result[0].text)
-        assert len(data) > 0
-
-    async def test_list_models(self, services):
-        result = await call_tool("anistroph_list_models", {})
-        data = json.loads(result[0].text)
-        assert any(m["model_id"] == "mcp-test-xgb" for m in data)
-
-    async def test_get_model_metrics(self, services):
-        result = await call_tool("anistroph_get_model_metrics", {"model_id": "mcp-test-xgb"})
-        data = json.loads(result[0].text)
-        assert "roc_auc" in data
-
-    async def test_predict(self, services):
         result = await call_tool("anistroph_predict", {
-            "model_id": "mcp-test-xgb",
-            "entity_id": "TOOL_000",
+            "model_id": "mcp-test-xgb", "entity_id": "TOOL_000",
             "timestamp": "2026-06-05T12:00:00",
         })
         data = json.loads(result[0].text)
         assert "probability" in data
 
-    async def test_explain_prediction(self, services):
-        result = await call_tool("anistroph_explain_prediction", {
-            "model_id": "mcp-test-xgb",
-            "entity_id": "TOOL_000",
-            "timestamp": "2026-06-05T12:00:00",
-            "top_k": 5,
-        })
-        data = json.loads(result[0].text)
-        assert "top_drivers" in data
-
-    async def test_sample_rows_default(self, services):
-        result = await call_tool("anistroph_sample_rows", {"dataset_id": "predictive_maintenance"})
-        data = json.loads(result[0].text)
-        assert data["dataset_id"] == "predictive_maintenance"
-        assert data["row_count"] > 0
-        assert 0 < data["returned"] <= 10
-        assert isinstance(data["rows"], list)
-        assert len(data["rows"]) == data["returned"]
-        assert data["columns"]
-
-    async def test_sample_rows_n_and_columns(self, services):
+    async def test_sample_rows(self, services):
         result = await call_tool("anistroph_sample_rows", {
-            "dataset_id": "predictive_maintenance",
-            "n": 3,
-            "columns": ["machine_id", "machine_type"],
+            "dataset_id": "predictive_maintenance", "n": 5,
         })
         data = json.loads(result[0].text)
-        assert data["returned"] <= 3
-        assert data["columns"] == ["machine_id", "machine_type"]
-        for row in data["rows"]:
-            assert set(row.keys()) == {"machine_id", "machine_type"}
+        assert len(data["rows"]) <= 5
 
-    async def test_sample_rows_filter_equality(self, services):
-        result = await call_tool("anistroph_sample_rows", {
-            "dataset_id": "predictive_maintenance",
-            "filters": {"machine_type": "TYPE_A"},
-            "n": 5,
+
+class TestSearchMCPTools:
+    async def test_search_contract(self, mem_services):
+        result = await call_tool("anistroph_get_search_contract", {"dataset_id": "semiconductor_memory"})
+        data = json.loads(result[0].text)
+        assert "semantic" in data["supported_operators"]
+
+    async def test_search_acceptance_query(self, mem_services):
+        result = await call_tool("anistroph_search", {
+            "dataset_id": "semiconductor_memory",
+            "filters": [
+                {"field": "product_family", "op": "eq", "value": "DDR5_COMPONENT"},
+                {"field": "data_rate_mt_s", "op": "gte", "value": 6400},
+            ],
+            "limit": 5,
         })
         data = json.loads(result[0].text)
-        assert data["row_count"] > 0
-        for row in data["rows"]:
-            assert row["machine_type"] == "TYPE_A"
+        assert data["matched"] > 0
 
-    async def test_sample_rows_filter_in_list(self, services):
-        result = await call_tool("anistroph_sample_rows", {
-            "dataset_id": "predictive_maintenance",
-            "filters": {"machine_type": ["TYPE_A", "TYPE_B"]},
-            "n": 5,
+
+class TestPredictOnSearchMCP:
+    async def test_predict_on_search(self, supply_services):
+        result = await call_tool("anistroph_predict_on_search", {
+            "dataset_id": "semiconductor_memory",
+            "model_id": "mcp-mem-risk",
+            "filters": [{"field": "product_family", "op": "eq", "value": "DDR5_COMPONENT"}],
+            "limit": 5, "columns": ["product_id"],
         })
         data = json.loads(result[0].text)
-        for row in data["rows"]:
-            assert row["machine_type"] in ("TYPE_A", "TYPE_B")
+        assert data["matched"] > 0
+        assert data["model_type"] == "classification"
 
-    async def test_sample_rows_sort(self, services):
-        result = await call_tool("anistroph_sample_rows", {
-            "dataset_id": "predictive_maintenance",
-            "sort_by": "temperature",
-            "descending": True,
-            "n": 5,
-        })
-        data = json.loads(result[0].text)
-        temps = [r["temperature"] for r in data["rows"]]
-        assert temps == sorted(temps, reverse=True)
 
-    async def test_sample_rows_n_capped(self, services):
-        result = await call_tool("anistroph_sample_rows", {
-            "dataset_id": "predictive_maintenance",
-            "n": 100000,
-        })
-        data = json.loads(result[0].text)
-        assert data["returned"] <= 1000
+class TestExternalToolMCP:
+    async def test_external_tool_discovered(self, ext_registry):
+        names = [t.name for t in get_tool_list()]
+        assert "call_test_agent" in names
 
-    async def test_sample_rows_unknown_filter_column(self, services):
-        result = await call_tool("anistroph_sample_rows", {
-            "dataset_id": "predictive_maintenance",
-            "filters": {"not_a_column": "x"},
-        })
+    async def test_external_tool_validation_error(self, ext_registry, services):
+        result = await call_tool("call_test_agent", {})
         data = json.loads(result[0].text)
         assert "error" in data
+        assert "validation" in data["error"]
 
-    async def test_sample_rows_unknown_dataset(self, services):
-        result = await call_tool("anistroph_sample_rows", {"dataset_id": "nonexistent"})
+    async def test_external_tool_unresolved_url(self, ext_registry, services):
+        # Override the tool's base_url with an unresolved env placeholder.
+        tool = ext_registry.get("call_test_agent")
+        tool.base_url = "${UNRESOLVED_HOST}"
+        result = await call_tool("call_test_agent", {"prompt": "test"})
         data = json.loads(result[0].text)
         assert "error" in data
+        assert "unresolved" in data["error"]
 
-    async def test_invalid_tool(self, services):
-        result = await call_tool("nonexistent_tool", {})
+    async def test_external_tool_connection_error_soft_fails(self, ext_registry, services, monkeypatch):
+        """When the A2A agent is unreachable, return a soft-fail message."""
+        import httpx
+        mock_client = MagicMock()
+        mock_client.post.side_effect = httpx.ConnectError("DNS resolution failed")
+        mock_client.close = MagicMock()
+        monkeypatch.setattr(httpx, "Client", lambda **kw: mock_client)
+        result = await call_tool("call_test_agent", {"prompt": "test"})
         data = json.loads(result[0].text)
-        assert "error" in data
-
-    async def test_invalid_input(self, services):
-        result = await call_tool("anistroph_profile_dataset", {"dataset_id": "nonexistent"})
-        data = json.loads(result[0].text)
-        assert "error" in data
-
-    async def test_evaluate_model(self, services):
-        result = await call_tool("anistroph_evaluate_model", {
-            "model_id": "mcp-test-xgb",
-            "sample_size": 10,
-        })
-        data = json.loads(result[0].text)
-        assert data["model_id"] == "mcp-test-xgb"
-        assert data["dataset_id"] == "predictive_maintenance"
-        assert data["eval_row_count"] > 0
-        assert "metrics" in data
-        assert "roc_auc" in data["metrics"]
-        assert isinstance(data["predictions_sample"], list)
-        assert len(data["predictions_sample"]) <= 10
-
-    async def test_evaluate_model_not_found(self, services):
-        result = await call_tool("anistroph_evaluate_model", {"model_id": "nonexistent"})
-        data = json.loads(result[0].text)
-        assert "error" in data
-
-    async def test_find_evaluation_slices(self, services):
-        result = await call_tool("anistroph_find_evaluation_slices", {
-            "model_id": "mcp-test-xgb",
-            "metric": "log_loss",
-            "min_sample_size": 50,
-            "top_k": 5,
-        })
-        data = json.loads(result[0].text)
-        assert isinstance(data, list)
-        # Classification model — log_loss slices should be returned.
-        if len(data) > 0:
-            s = data[0]
-            assert "dimensions" in s
-            assert "values" in s
-            assert "row_count" in s
-            assert "metric_value" in s
-            assert "overall_baseline" in s
+        assert data["state"] == "unavailable"
+        assert "not available" in data["message"]

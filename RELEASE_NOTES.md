@@ -13,10 +13,25 @@ This is the first public release. The complete API surface is documented in [doc
 ## Core Capabilities
 
 ### Datasets and Targets
-- 11 registered datasets across 3 source domains (predictive maintenance, semiconductor yield, home prices)
+- 16 registered datasets across 4 source domains (predictive maintenance, semiconductor yield, home prices, semiconductor memory)
 - Multi-target architecture — one source parquet can train independent models for different outcomes
 - Process-stage prediction — models predict at different points in a workflow using only features available at that stage (Stage A → D semiconductor yield example)
 - Train/eval partitioning at registration time, leakage-safe feature transforms
+
+### Parametric Search
+- Generic structured search over registered datasets — operators: eq, in, gte, lte, between, contains_range, semantic
+- Self-describing search contract — `anistroph_get_search_contract` returns searchable fields (types, units, operators, aliases, categorical values / numeric ranges) and semantic filters
+- Semantic filter expansion — natural engineering concepts map to deterministic predicates (e.g. "supports 55°C" → `min <= 55 AND max >= 55`; "industrial temperature" → `min <= -40 AND max >= 95`)
+- Applied-filters audit — responses include the normalized query after semantic expansion
+- `sample_rows` refactored to delegate to the search engine internally (API unchanged)
+- Semiconductor Memory reference dataset — 2000-row catalog with DDR5/LPDDR5X components and modules, family-specific parameter rules, synthetic supply fields
+
+### Predict-on-Search
+- Search a catalog, then predict for each matching product using a trained supply model
+- `anistroph_predict_on_search` — runs parametric search, then entity-lookup prediction for each product_id, ranks by prediction outcome
+- Semiconductor Memory Supply dataset — 50,000 rows (2,000 products × 25 weeks) of synthetic weekly supply history with inventory, demand, backlog, PO, lead time, OTD, and allocation status
+- Two trained models: supply_risk_next_4w (classification, ROC-AUC = 0.999) and lead_time_next_4w_days (regression, R² = 0.996)
+- Available via REST, MCP, and Web UI
 
 ### Inference
 - Dual prediction modes — entity lookup (`entity_id` + optional `timestamp`) or records (raw source feature values as JSON). The caller never constructs engineered features.
@@ -38,11 +53,21 @@ This is the first public release. The complete API surface is documented in [doc
 - Automated interesting-slice discovery ranked by deviation from baseline
 
 ### MCP Runtime Access
-- 13 MCP tools across stdio (local clients: Claude Desktop, Cursor, Cline) and Streamable HTTP at `/mcp` (remote clients, custom agents, tool routers)
+- 16 native MCP tools + 1 external A2A tool (17 total) across stdio (local clients: Claude Desktop, Cursor, Cline) and Streamable HTTP at `/mcp` (remote clients, custom agents, tool routers)
 - Both transports call the same service layer as REST and UI
+- External tools loaded from `integrations/tool_registry.yaml` and dispatched through a shared A2A JSON-RPC invoker
+
+### External Integrations (A2A)
+- External tool registry (`integrations/tool_registry.yaml`) — configuration source for externally hosted capabilities such as Aina-Veris
+- Shared A2A invoker (`backend/integrations/a2a.py`) — JSON-RPC 2.0 `tasks/send` client used by both MCP and REST
+- REST: `GET /integrations/tools`, `POST /integrations/tools/{tool_name}/invoke`
+- MCP: external tools appear in `tools/list` and are callable via `tools/call`
+- Environment variable substitution (`${AINA_VERIS_BASE_URL}`) for deployment-portable URLs
+- Aina-Veris semiconductor research agent registered as external A2A capability
 
 ### Web UI
-- Tabs for Datasets, Data, Analysis, Train, Predict & Explain, and Evaluation
+- Tabs for Datasets, Data, Search, Analysis, Train, Predict & Explain, and Evaluation
+- Parametric Search tab with contract display, dynamic filter form (categorical multi-selects, numeric min/max, semantic temperature input), and applied-filters audit
 - Dataset-driven dropdowns populated from dataset profiles
 - Records-based prediction with "Load Input Schema" prefill
 - Hash-based routing for deep links

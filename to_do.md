@@ -1,0 +1,378 @@
+# To-Do: Semiconductor Memory Parametric Search Extension
+
+Reference spec: `product-specifications/ANISTROPH_SEMICONDUCTOR_MEMORY_SPEC.md`
+Reference data: `product-specifications/sample-data/semiconductor_memory_2000.csv` (2000 rows, 35 columns)
+
+## Decisions locked with user
+
+- **Data source**: Use the supplied `semiconductor_memory_2000.csv` directly as the
+  reference source dataset. Do NOT regenerate, replace, or independently
+  synthesize the catalog. The CSV will be committed to the repo on GitHub for
+  cross-clone reproducibility.
+- **Search vs sample_rows**: The new `search_dataset` engine extends
+  `sample_rows`. `sample_rows` keeps its simple equality/IN API but delegates
+  internally to the new filter engine. `search_dataset` is the full-featured
+  version (eq/in/gte/lte/between/contains_range + semantic filters + contract).
+- **Scope**: Phase 1 (dataset + deterministic search) = Commit Point 1.
+  Phase 2 (prediction on search results) = Commit Point 2.
+  Phase 3 (Aina-Veris RAG) is out of Anistroph scope (separate MCP server);
+  datasheet PDFs live in `product-specifications/sample-data/` for Aina-Veris
+  ingestion, not Anistroph.
+
+## Architecture summary
+
+New `backend/search/` package (generic, not memory-specific):
+- `spec.py` — `SearchFieldSpec`, `SemanticFilterSpec`, `SearchConfig` (loaded
+  from a new `search:` YAML section in dataset.yaml).
+- `filters.py` — `FilterExpression`, `SortExpression`, operator application
+  via Polars, semantic-filter expansion.
+- `service.py` — `search_dataset()` and `get_search_contract()`.
+
+`sample_rows` in `backend/services.py` is refactored to convert its simple
+equality/IN dict filters into `FilterExpression` objects and delegate to the
+new engine. Its public API and return shape are unchanged.
+
+New MCP tools: `anistroph_get_search_contract`, `anistroph_search`.
+New REST endpoints: `GET /datasets/{id}/search-contract`,
+`POST /datasets/{id}/search`.
+
+Dataset configs (multi-target pattern, one source CSV shared):
+- `datasets/semiconductor_memory/dataset.yaml` — catalog config (all columns,
+  no target, for search + analysis). Phase 1.
+- `datasets/semiconductor_memory_supply_risk/dataset.yaml` — classification
+  target `supply_risk_next_4w`. Phase 2.
+- `datasets/semiconductor_memory_lead_time/dataset.yaml` — regression target
+  `lead_time_next_4w_days`. Phase 2.
+
+---
+
+## Commit Point 1 — Phase 1: Dataset + Deterministic Search ✅ COMPLETE
+
+### 1.1 Ingest the reference CSV as a dataset source
+- [x] Copy `product-specifications/sample-data/semiconductor_memory_2000.csv`
+      to `data/semiconductor_memory/data.csv` (canonical source location).
+- [x] Verify column types against the spec §3.3 / §3.4 (note: empty strings
+      for `module_density_gb` on components and `component_density_gb` on
+      modules → nulls; `ecc` is empty/FALSE/TRUE → treat as categorical with
+      nulls; `supply_risk_next_4w` is 0/1 int; `allocation_status` includes
+      literal string `None`).
+- [x] Add `data/semiconductor_memory/data.csv` to `scripts/setup_datasets.py`
+      DATASETS list (config + source). Do NOT add a generator script.
+
+### 1.2 Author the catalog dataset.yaml
+- [x] Create `datasets/semiconductor_memory/dataset.yaml`:
+      - `dataset_id: semiconductor_memory`, `entity_key: product_id`,
+        no `time_key` (non-temporal snapshot).
+      - All 35 columns declared with type + role. Catalog/search fields =
+        `feature` or `metadata`; supply fields = `feature`; the two targets
+        = `target` (declared so they're carried, but no `target:` section so
+        no model is trained on this config).
+      - `split: random 0.80/0.20` (non-temporal).
+      - New `search:` section (see 1.4).
+- [x] Register the dataset and confirm 2000 rows, profile, partitions.
+
+### 1.3 Build the search config model (`backend/search/spec.py`)
+- [x] `SearchFieldSpec`: `field`, `operators` (list), `unit` (optional),
+      `aliases` (list, optional), `description` (optional).
+- [x] `SemanticFilterSpec`: `name`, `type` (`range_contains` | `expands_to`),
+      `min_field`/`max_field` (for range_contains), `expands_to` (list of
+      FilterExpression dicts, for expands_to), `unit`, `description`.
+- [x] `SearchConfig`: `searchable_fields` (dict), `semantic_filters` (dict).
+- [x] Loader: parse the `search:` YAML section into `SearchConfig`.
+
+### 1.4 Build the filter engine (`backend/search/filters.py`)
+- [x] `Operator` enum: `eq`, `in`, `gte`, `lte`, `between`, `contains_range`,
+      `semantic`.
+- [x] `FilterExpression` pydantic model: `field`, `op`, `value`,
+      `min_field`/`max_field` (required for `contains_range`), `low`/`high`
+      (required for `between`).
+- [x] `SortExpression`: `field`, `descending`.
+- [x] `apply_filter(df, expr) -> df` — Polars predicate per operator.
+- [x] `apply_filters(df, filters) -> df` — AND-combine all filters.
+- [x] `expand_semantic(filters, search_config) -> filters` — resolve semantic
+      filter names into deterministic FilterExpression(s).
+- [x] Validate filter fields against the dataset columns; unknown field →
+      ValueError.
+
+### 1.5 Build the search service (`backend/search/service.py`)
+- [x] `search_dataset()` — loads full parquet, expands semantic filters,
+      applies filters, sort, head(limit), returns applied_filters audit.
+- [x] `get_search_contract()` — merges YAML config with live profile data.
+
+### 1.6 Refactor `sample_rows` to delegate to the search engine
+- [x] Convert equality/IN dict filters to FilterExpression, delegate to
+      `search_dataset`. Public API and return shape unchanged.
+- [x] `sample_rows` does NOT use semantic filters or the search contract.
+
+### 1.7 Wire the search config into DatasetConfig
+- [x] `load_dataset_config` parses the `search:` section into `SearchConfig`.
+- [x] `search_config: Optional[SearchConfig]` added to `DatasetConfig`.
+
+### 1.8 Add service methods
+- [x] `AnistrophServices.search(dataset_id, filters, sort, limit, columns)`
+- [x] `AnistrophServices.get_search_contract(dataset_id)`
+
+### 1.9 Add REST endpoints (`backend/api/search.py`)
+- [x] `GET /datasets/{dataset_id}/search-contract`
+- [x] `POST /datasets/{dataset_id}/search` with `SearchRequest` schema.
+- [x] `SearchRequest`, `FilterExpressionRequest`, `SortExpressionRequest`
+      added to `backend/schemas/api.py`.
+
+### 1.10 Add MCP tools (`backend/integrations/mcp/tools.py`)
+- [x] `anistroph_get_search_contract(dataset_id)`
+- [x] `anistroph_search(dataset_id, filters, sort, limit, columns)`
+- [x] MCP tool count updated (13 → 15) in docs.
+
+### 1.11 Add Web UI Search tab
+- [x] New "Search" tab in `frontend/index.html` (between Data and Analysis).
+- [x] Dynamic filter form from search contract (categorical multi-selects,
+      numeric min fields, semantic temperature input).
+- [x] Search/Reset buttons.
+- [x] Results grid with applied-filters audit collapsible.
+- [x] Search contract display (collapsible details).
+
+### 1.12 Tests
+- [x] `tests/unit/test_search.py` (28 tests): all operators, semantic
+      expansion, unknown field/semantic errors, AND-combination, limit cap,
+      sort, columns subset, applied_filters audit, contract enrichment.
+- [x] `tests/integration/test_api.py` (10 new tests): search-contract GET,
+      search POST (3 acceptance queries, sort, columns, errors).
+- [x] `tests/integration/test_mcp.py` (5 new tests): tool discovery,
+      get_search_contract, search (acceptance + semantic), error handling.
+- [x] All 3 acceptance queries pass via REST and MCP.
+- [x] All 188 tests pass (was 147; +41 new search tests).
+
+### 1.13 Documentation
+- [x] `README.md`: semiconductor_memory in reference datasets; parametric
+      search in Core Features; MCP tools 13→15; tests 147→188; tool table
+      updated with 2 new tools.
+- [x] `docs/setup-usage.md`: semiconductor_memory example queries; test
+      count updated.
+- [x] `docs/index.md`: semiconductor_memory in reference table; parametric
+      search in Core Features; MCP tools 13→15.
+- [x] `docs/technical-architecture.md`: test count 147→188; test layout
+      table updated with test_search.py and updated counts.
+- [x] `RELEASE_NOTES.md`: parametric search section; dataset count 11→14;
+      MCP tools 13→15; Web UI Search tab.
+
+### 1.14 Commit Point 1 verification
+- [x] `pytest` — all 188 tests pass.
+- [x] Register `semiconductor_memory`, confirm 2000 rows.
+- [x] Run the 3 acceptance queries via REST and MCP — all pass.
+- [x] `sample_rows` regression — all 147 original tests still pass.
+- [x] `git commit` — "feat: semiconductor_memory dataset + generic
+      parametric search (Phase 1)".
+  → Commit `b995c78` on branch `parametric`.
+
+---
+
+## Commit Point 2 — Phase 2: Prediction on Search Results ✅ COMPLETE
+
+### 2.1 Generate synthetic supply history
+- [x] `scripts/generate_semiconductor_memory_supply.py` — fixed-seed (42)
+      generator producing 50,000 rows (2,000 products × 25 weeks) of weekly
+      supply history with inventory, demand, backlog, POs, lead time, OTD,
+      allocation status, and the two derived targets.
+- [x] Output: `data/semiconductor_memory_supply/data.parquet` (Date-typed
+      week column for temporal rolling features).
+
+### 2.2 Author the two prediction dataset configs
+- [x] `datasets/semiconductor_memory_supply_risk/dataset.yaml`:
+      - `entity_key: product_id`, `time_key: week`, chronological split 80/10/10.
+      - `target: supply_risk_next_4w` (classification, positive_class 1).
+      - Features = all 11 supply fields with rolling transforms (mean/std/min/slope
+        over 4w/8w windows) + allocation_status as categorical.
+- [x] `datasets/semiconductor_memory_supply_lead_time/dataset.yaml`:
+      - Same features, `target: lead_time_next_4w_days` (regression).
+- [x] Both added to `scripts/setup_datasets.py` DATASETS + GENERATORS lists.
+
+### 2.3 Train + evaluate the two models
+- [x] `supply_risk_next_4w` (xgboost classifier): ROC-AUC = 0.999, F1 = 0.979.
+- [x] `lead_time_next_4w_days` (xgboost regressor): R² = 0.996, MAE = 1.10 days.
+
+### 2.4 Add predict-on-search service
+- [x] `AnistrophServices.predict_on_search()` — runs parametric search on the
+      catalog, then entity-lookup prediction for each matching product_id
+      using the trained supply model, ranks by prediction (descending).
+- [x] Reuses existing `predict` service — no new inference path.
+- [x] Returns `{search_dataset_id, model_id, model_type, matched, returned,
+      rows, applied_filters, timestamp}`.
+
+### 2.5 Add REST endpoint
+- [x] `POST /datasets/{dataset_id}/predict-on-search` with
+      `PredictOnSearchRequest` schema.
+
+### 2.6 Add MCP tool
+- [x] `anistroph_predict_on_search(dataset_id, model_id, filters, sort, limit,
+      columns, timestamp)` — search + predict + rank in one call.
+- [x] MCP tool count updated (15 → 16) in docs.
+
+### 2.7 Web UI — supply-risk scoring in Search tab
+- [x] Model dropdown populated from registered supply models.
+- [x] "Search & Rank by Prediction" button calls predict-on-search.
+- [x] Results grid shows prediction column (bolded) + prediction_label.
+- [x] Optional as-of timestamp input.
+
+### 2.8 Tests
+- [x] `tests/integration/test_api.py` (5 new tests): predict-on-search
+      classification, regression, semantic filter, unknown model, no matches.
+- [x] `tests/integration/test_mcp.py` (5 new tests): tool discovery,
+      classification, regression, acceptance query, unknown model.
+- [x] Acceptance query: "Find matching DDR5 parts and rank them by predicted
+      four-week supply risk" — verified via REST and MCP.
+- [x] All 198 tests pass (was 188, +10 new predict-on-search tests).
+
+### 2.9 Documentation
+- [x] `README.md`: 2 new models in reference table; predict-on-search in MCP
+      tool table; tests 188→198; MCP tools 15→16; datasets 14→16.
+- [x] `docs/setup-usage.md`: predict-on-search example queries; test count.
+- [x] `docs/index.md`: updated reference models table; MCP tools 15→16.
+- [x] `docs/technical-architecture.md`: test count 188→198; test layout updated.
+- [x] `RELEASE_NOTES.md`: predict-on-search section; dataset count 14→16;
+      MCP tools 15→16.
+
+### 2.10 Commit Point 2 verification
+- [x] `pytest` — all 198 tests pass.
+- [x] Both models trained + evaluated with metrics recorded.
+- [x] Acceptance query works via REST and MCP.
+- [x] Web UI rank-by-prediction button works.
+- [x] `git commit` — "feat: prediction on search results + supply-risk /
+      lead-time models (Phase 2)".
+  → Commit `2bc2216` on branch `parametric`.
+
+---
+
+## Out of scope (tracked, not actioned now)
+
+- **Phase 4 — Hardening**: pagination, richer semantic aliases, performance
+  tests, saved searches, additional memory families, temporal supply history.
+- **Generator script**: per user decision, the supplied CSV is canonical; no
+  fixed-seed generator will be written unless the spec is revised.
+
+---
+
+## Commit Point 3 — Phase 3: Aina-Veris A2A Integration ✅ COMPLETE
+
+### 3.1 External tool registry
+- [x] `integrations/tool_registry.yaml` — YAML configuration source for
+      externally hosted capabilities (Aina-Veris semiconductor research agent).
+- [x] `backend/integrations/registry.py` — `ExternalToolRegistry` loader with
+      Pydantic-validated `ExternalToolDef`, env var substitution
+      (`${AINA_VERIS_BASE_URL}`), visibility filtering (always/mcp_only/rest_only/hidden).
+- [x] Module-level singleton shared by MCP and REST.
+
+### 3.2 Shared A2A invoker
+- [x] `backend/integrations/a2a.py` — generic A2A JSON-RPC 2.0 `tasks/send`
+      client. No Aina-Veris-specific logic. Both MCP and REST call this same
+      invoker.
+- [x] `validate_arguments()` — validates against the tool's `llm_parameters`
+      schema (required fields, types, additionalProperties).
+- [x] `invoke_external_tool()` — builds JSON-RPC envelope, sends via httpx,
+      returns the A2A task result.
+- [x] Error handling: unresolved URLs, missing prompts, HTTP errors,
+      JSON-RPC errors.
+
+### 3.3 MCP integration
+- [x] `get_tool_list()` now appends MCP-visible external tools alongside
+      native tools.
+- [x] `call_tool()` dispatches external tool calls to the shared A2A invoker
+      with argument validation.
+- [x] No Aina-Veris-specific code in `mcpserver.py` or `tools.py`.
+
+### 3.4 REST integration
+- [x] `backend/api/integrations.py` — `GET /integrations/tools` (list),
+      `POST /integrations/tools/{tool_name}/invoke` (invoke).
+- [x] Same registry and invoker as MCP — no duplicate definitions.
+- [x] Router registered in `backend/main.py`.
+
+### 3.5 Tests
+- [x] `tests/unit/test_integrations.py` (23 tests): registry loading,
+      env var substitution, visibility filtering, argument validation,
+      A2A invoker with mocked HTTP (success, JSON-RPC error, HTTP error,
+      unresolved URL, missing prompt, unknown tool).
+- [x] `tests/integration/test_api.py` (4 new tests): list tools, invoke
+      with validation error, unknown tool, mocked A2A success.
+- [x] `tests/integration/test_mcp.py` (4 new tests): external tool
+      discovery, schema, validation error, unresolved URL.
+- [x] All 229 tests pass (was 198, +31 new tests).
+
+### 3.6 Documentation
+- [x] `README.md`: External Integrations (A2A) section; MCP tools 16→17;
+      tests 198→229; external tool in MCP table.
+- [x] `RELEASE_NOTES.md`: External Integrations section; MCP tools 16→17.
+- [x] `docs/index.md`: MCP tools 16→17.
+- [x] `docs/setup-usage.md`: test count 198→229.
+- [x] `docs/technical-architecture.md`: test count 198→229; test layout
+      updated.
+
+### 3.7 Commit
+- [x] `git commit` — "feat: external A2A tool registry + Aina-Veris
+      integration (Phase 3)".
+  → Commit `7c236f3` on branch `parametric`.
+
+---
+
+## Risks
+
+1. **Generic-search over-engineering** — Building a fully generic search
+   service for ALL datasets before validating with one. *Mitigation*: build
+   generic operators + contract, but only configure `search:` + semantic
+   filters for `semiconductor_memory`. Other datasets keep working via
+   `sample_rows` (which now delegates but needs no `search:` section).
+
+2. **`sample_rows` refactor regression** — 147 existing tests depend on
+   `sample_rows`'s exact return shape and equality/IN behavior. *Mitigation*:
+   keep the public signature and return dict identical; convert dict filters
+   to `FilterExpression` internally; run the full suite before Commit Point 1.
+
+3. **`contains_range` boundary semantics** — "supports 55°C" must mean
+   `min <= 55 AND max >= 55` (inclusive). Off-by-one or exclusive bounds
+   would silently drop valid products. *Mitigation*: inclusive on both ends;
+   dedicated unit test with a known product (e.g. a -40..95 product must
+   match 55, -40, 95, but not 96).
+
+4. **Null handling in filters** — `module_density_gb` is null for components,
+   `component_density_gb` null for modules, `ecc` null for some rows. A
+   `gte`/`lte`/`between` on a null column must drop nulls (Polars does this by
+   default for comparisons). An `eq` on null is not expressible via the
+   current operator set (no `is_null` op) — acceptable for Phase 1; document
+   as a Phase 4 gap.
+
+5. **Literal string `"None"` in `allocation_status`** — The CSV has the
+   string `None` (not a true null) for some rows. Must be treated as a
+   categorical value, not a null. *Mitigation*: declare `allocation_status`
+   as `categorical`; Polars reads it as a string; `eq "None"` works.
+
+6. **Search contract staleness** — If the contract caches categorical values
+   from a profile, re-registration could make it stale. *Mitigation*:
+   compute the contract on-demand (merge YAML `search:` config + live
+   profile) on every `get_search_contract` call. No caching.
+
+7. **Search over full dataset vs partition** — Search must run over ALL
+   products (`meta.parquet_path`), not the train/eval partition, or search
+   results won't include every catalog product. *Mitigation*: `search_dataset`
+   reads `meta.parquet_path` explicitly (same as `sample_rows`); partition
+   paths are only for training/evaluation.
+
+8. **Data duplication quirk** — 3 configs (catalog + 2 targets) share one
+   2000-row CSV → 3 parquet copies after registration. Consistent with the
+   existing multi-target pattern (semiconductor_yield has 4+ copies).
+   *Mitigation*: document as a known quirk; 2000 rows × 3 is negligible.
+
+9. **predict-on-search records mode** — Requires the model to support
+   records-based prediction (no rolling-window transforms). The supply
+   features are all `current`/`categorical` transforms, so
+   `entity_lookup_or_records` mode applies. *Mitigation*: verify
+   `get_model_inputs` reports records mode before building predict-on-search;
+   if a future model uses rolling windows, predict-on-search falls back to
+   entity-lookup per product_id.
+
+10. **`ecc` column type** — Mixed empty/`FALSE`/`TRUE`. If declared boolean,
+    empty → null, `FALSE`→0, `TRUE`→1. If declared categorical, all stay as
+    strings. *Mitigation*: declare as `categorical` to preserve the literal
+    values and avoid silent coercion; the search contract lists the distinct
+    values.
+
+11. **MCP tool count drift in docs** — Adding tools changes the documented
+    count in multiple files. *Mitigation*: grep for the old count and update
+    all occurrences as part of each commit point's doc step.

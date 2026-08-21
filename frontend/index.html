@@ -24,6 +24,7 @@
     <div class="tabs">
       <a href="#datasets" class="tab-button active" data-tab-target="datasets">Datasets</a>
       <a href="#data" class="tab-button" data-tab-target="data">Data</a>
+      <a href="#search" class="tab-button" data-tab-target="search">Search</a>
       <a href="#analysis" class="tab-button" data-tab-target="analysis">Analysis</a>
       <a href="#training" class="tab-button" data-tab-target="training">Training</a>
       <a href="#models" class="tab-button" data-tab-target="models">Models</a>
@@ -87,6 +88,46 @@
         <button onclick="loadDataRows()">Load Rows</button>
       </div>
       <div id="dt-result"></div>
+    </div>
+
+    <!-- Search Tab -->
+    <div id="search-panel" data-tab-panel="search" class="panel-hidden">
+      <div class="card">
+        <h2>Parametric Search</h2>
+        <p class="muted" style="margin-bottom:16px;">
+          Deterministic structured filtering over a dataset's catalog. Select a dataset
+          with a search configuration to enable the filters. The operating-temperature
+          input applies range-containment semantics (min &le; T AND max &ge; T).
+        </p>
+        <div class="form-row">
+          <div class="field">
+            <label>Dataset <i class="tooltip-icon" data-tooltip="The registered dataset to search. Only datasets with a 'search:' configuration in their YAML expose the parametric search filters. Selecting a dataset loads its search contract and populates the filter dropdowns.">i</i></label>
+            <select id="sr-dataset" onchange="onSearchDatasetChange()"><option value="">Select a dataset...</option></select>
+          </div>
+          <div class="field field-narrow">
+            <label>Limit <i class="tooltip-icon" data-tooltip="Maximum number of matching rows to return (capped at 1000). Use filters to narrow results.">i</i></label>
+            <input id="sr-limit" type="number" value="50" min="1" max="1000">
+          </div>
+        </div>
+        <div id="sr-filters" style="display:none; margin-bottom:12px;">
+          <!-- filter fields populated dynamically from the search contract -->
+        </div>
+        <button onclick="runSearch()">Search</button>
+        <button onclick="resetSearch()" style="margin-left:8px;">Reset</button>
+        <div class="form-row" style="margin-top:16px;">
+          <div class="field">
+            <label>Rank by prediction <i class="tooltip-icon" data-tooltip="Optional: after searching, predict for each matching product using a trained supply model and rank by the prediction. Classification models rank by risk probability (highest first); regression models rank by predicted lead time (longest first).">i</i></label>
+            <select id="sr-predict-model"><option value="">— none (search only) —</option></select>
+          </div>
+          <div class="field field-narrow">
+            <label>As-of date <i class="tooltip-icon" data-tooltip="Optional as-of timestamp for temporal models. If blank, uses the latest week in the supply dataset.">i</i></label>
+            <input id="sr-predict-timestamp" placeholder="2025-06-23">
+          </div>
+        </div>
+        <button onclick="runPredictOnSearch()">Search &amp; Rank by Prediction</button>
+      </div>
+      <div id="sr-contract" style="margin-bottom:12px;"></div>
+      <div id="sr-result"></div>
     </div>
 
     <!-- Analysis Tab -->
@@ -1282,12 +1323,373 @@ async function loadDataRows() {
   }
 }
 
+// --- Search tab ---
+let _searchContract = null;  // cached contract for the selected dataset
+
+async function loadSearchDatasetDropdown() {
+  const sel = document.getElementById('sr-dataset');
+  if (!sel) return;
+  try {
+    const r = await api('/datasets');
+    if (Array.isArray(r) && r.length) {
+      sel.innerHTML = '<option value="">Select a dataset...</option>' +
+        r.map(d => {
+          const id = d.dataset_id || d.id || '?';
+          const name = d.name || '';
+          return `<option value="${id}">${id}${name ? ' — ' + name : ''}</option>`;
+        }).join('');
+    } else {
+      sel.innerHTML = '<option value="">No datasets registered</option>';
+    }
+  } catch (e) {
+    sel.innerHTML = '<option value="">Error loading datasets</option>';
+  }
+}
+
+async function onSearchDatasetChange() {
+  const dsId = document.getElementById('sr-dataset').value;
+  const filterDiv = document.getElementById('sr-filters');
+  const contractDiv = document.getElementById('sr-contract');
+  const resultDiv = document.getElementById('sr-result');
+  filterDiv.innerHTML = '';
+  filterDiv.style.display = 'none';
+  contractDiv.innerHTML = '';
+  resultDiv.innerHTML = '';
+  _searchContract = null;
+
+  if (!dsId) return;
+
+  try {
+    const contract = await api('/datasets/' + dsId + '/search-contract');
+    _searchContract = contract;
+    renderSearchContract(contract, contractDiv);
+    renderSearchFilters(contract, filterDiv);
+  } catch (e) {
+    // Dataset has no search config — show a helpful message.
+    contractDiv.innerHTML = banner(
+      'This dataset has no parametric search configuration. ' +
+      'Use the Data tab to browse raw rows instead.'
+    );
+    filterDiv.style.display = 'none';
+  }
+}
+
+function renderSearchContract(contract, el) {
+  const fields = contract.searchable_fields || [];
+  const semantic = contract.semantic_filters || [];
+  if (!fields.length) {
+    el.innerHTML = '<div class="muted">No searchable fields declared.</div>';
+    return;
+  }
+  let h = '<details><summary class="muted" style="cursor:pointer;">Search contract (' +
+    fields.length + ' fields, ' + semantic.length + ' semantic filters) — click to expand</summary>';
+  h += '<div style="margin-top:8px;"><table class="data-table"><thead><tr>' +
+    '<th>Field</th><th>Type</th><th>Unit</th><th>Operators</th><th>Aliases</th><th>Description</th></tr></thead><tbody>';
+  for (const f of fields) {
+    h += '<tr>' +
+      '<td>' + f.name + '</td>' +
+      '<td>' + (f.type || '—') + '</td>' +
+      '<td>' + (f.unit || '—') + '</td>' +
+      '<td>' + (f.operators || []).join(', ') + '</td>' +
+      '<td>' + (f.aliases || []).join(', ') + '</td>' +
+      '<td>' + (f.description || '') + '</td>' +
+      '</tr>';
+  }
+  h += '</tbody></table>';
+  if (semantic.length) {
+    h += '<h3 style="margin-top:12px;">Semantic filters</h3><table class="data-table"><thead><tr>' +
+      '<th>Name</th><th>Type</th><th>Description</th></tr></thead><tbody>';
+    for (const s of semantic) {
+      h += '<tr><td>' + s.name + '</td><td>' + s.type + '</td><td>' + (s.description || '') + '</td></tr>';
+    }
+    h += '</tbody></table>';
+  }
+  h += '</div></details>';
+  el.innerHTML = h;
+}
+
+function renderSearchFilters(contract, el) {
+  const fields = contract.searchable_fields || [];
+  const semantic = contract.semantic_filters || [];
+  if (!fields.length) {
+    el.style.display = 'none';
+    return;
+  }
+
+  let html = '<div class="form-row">';
+  let count = 0;
+  for (const f of fields) {
+    const ops = f.operators || [];
+    const isCategorical = f.type === 'categorical';
+    const hasNumericOp = ops.some(o => ['gte', 'lte', 'between'].includes(o));
+
+    if (isCategorical && f.categorical_values) {
+      // Render as a multi-select dropdown.
+      const opts = f.categorical_values.map(v => `<option value="${v}">${v}</option>`).join('');
+      html += `<div class="field">
+        <label>${f.name}${f.unit ? ' (' + f.unit + ')' : ''} <i class="tooltip-icon" data-tooltip="${f.description || ''}">i</i></label>
+        <select id="sr-filter-${f.name}" data-field="${f.field}" data-op="eq" multiple size="4" style="height:auto;min-height:80px;">
+          ${opts}
+        </select>
+      </div>`;
+    } else if (hasNumericOp) {
+      // Render as a min (gte) field.
+      const placeholder = f.unit ? 'min ' + f.unit : 'min';
+      html += `<div class="field field-narrow">
+        <label>Min ${f.name}${f.unit ? ' (' + f.unit + ')' : ''} <i class="tooltip-icon" data-tooltip="${f.description || ''} — filters with >= (greater than or equal).">i</i></label>
+        <input id="sr-filter-${f.name}" data-field="${f.field}" data-op="gte" type="number" placeholder="${placeholder}">
+      </div>`;
+    } else {
+      // Render as a text input for eq.
+      html += `<div class="field">
+        <label>${f.name}${f.unit ? ' (' + f.unit + ')' : ''} <i class="tooltip-icon" data-tooltip="${f.description || ''}">i</i></label>
+        <input id="sr-filter-${f.name}" data-field="${f.field}" data-op="eq" placeholder="${f.name}">
+      </div>`;
+    }
+    count++;
+    if (count % 3 === 0) html += '</div><div class="form-row">';
+  }
+  html += '</div>';
+
+  // Add semantic filter inputs (e.g. operating temperature).
+  if (semantic.length) {
+    html += '<div class="form-row">';
+    for (const s of semantic) {
+      if (s.type === 'range_contains') {
+        const placeholder = s.unit ? 'value (' + s.unit + ')' : 'value';
+        html += `<div class="field field-narrow">
+          <label>${s.name}${s.unit ? ' (' + s.unit + ')' : ''} <i class="tooltip-icon" data-tooltip="${s.description || ''} — products whose operating range contains this value (min <= value AND max >= value).">i</i></label>
+          <input id="sr-semantic-${s.name}" data-semantic="${s.name}" type="number" placeholder="${placeholder}">
+        </div>`;
+      }
+    }
+    html += '</div>';
+  }
+
+  el.innerHTML = html;
+  el.style.display = 'block';
+}
+
+async function runSearch() {
+  const el = document.getElementById('sr-result');
+  const dsId = document.getElementById('sr-dataset').value;
+  if (!dsId) { el.innerHTML = banner('Select a dataset first.'); return; }
+
+  const limit = parseInt(document.getElementById('sr-limit').value) || 50;
+  const filters = [];
+
+  // Collect standard field filters.
+  const filterEls = document.querySelectorAll('#sr-filters [data-field]');
+  for (const inp of filterEls) {
+    const field = inp.dataset.field;
+    const op = inp.dataset.op;
+    if (inp.tagName === 'SELECT') {
+      // Multi-select: use 'in' if multiple, 'eq' if one.
+      const vals = Array.from(inp.selectedOptions).map(o => o.value).filter(Boolean);
+      if (vals.length === 1) {
+        filters.push({ field, op: 'eq', value: vals[0] });
+      } else if (vals.length > 1) {
+        filters.push({ field, op: 'in', value: vals });
+      }
+    } else {
+      const val = inp.value.trim();
+      if (val) {
+        if (op === 'gte' || op === 'lte') {
+          const num = parseFloat(val);
+          if (!isNaN(num)) filters.push({ field, op, value: num });
+        } else {
+          filters.push({ field, op, value: val });
+        }
+      }
+    }
+  }
+
+  // Collect semantic filters.
+  const semanticEls = document.querySelectorAll('#sr-filters [data-semantic]');
+  for (const inp of semanticEls) {
+    const val = inp.value.trim();
+    if (val) {
+      const num = parseFloat(val);
+      if (!isNaN(num)) {
+        filters.push({ field: inp.dataset.semantic, op: 'semantic', value: num });
+      }
+    }
+  }
+
+  el.innerHTML = '<div class="muted">Searching...</div>';
+  try {
+    const r = await api('/datasets/' + dsId + '/search', 'POST', { filters, limit });
+    const rows = r.rows || [];
+    const cols = r.columns || [];
+    const matched = r.matched ?? 0;
+    const returned = r.returned ?? rows.length;
+
+    let h = `<div class="row-count-badge">${matched.toLocaleString()} matched · ${returned} shown</div>`;
+
+    // Show applied (normalized) filters for audit.
+    if (r.applied_filters && r.applied_filters.length) {
+      h += '<details><summary class="muted" style="cursor:pointer;">Applied filters (' +
+        r.applied_filters.length + ') — normalized query audit</summary><pre style="margin-top:4px;">' +
+        JSON.stringify(r.applied_filters, null, 2) + '</pre></details>';
+    }
+
+    if (!rows.length) {
+      h += '<div class="muted">No rows matched the current filters.</div>';
+    } else {
+      h += '<div class="data-table-wrap"><table class="data-table"><thead><tr>';
+      h += cols.map(c => `<th>${c}</th>`).join('');
+      h += '</tr></thead><tbody>';
+      h += rows.map(row =>
+        '<tr>' + cols.map(c => `<td>${row[c] !== null && row[c] !== undefined ? row[c] : ''}</td>`).join('') + '</tr>'
+      ).join('');
+      h += '</tbody></table></div>';
+    }
+    el.innerHTML = h;
+  } catch (e) {
+    el.innerHTML = banner('Error: ' + e.message);
+  }
+}
+
+function resetSearch() {
+  const filterEls = document.querySelectorAll('#sr-filters [data-field], #sr-filters [data-semantic]');
+  for (const inp of filterEls) {
+    if (inp.tagName === 'SELECT') {
+      Array.from(inp.options).forEach(o => o.selected = false);
+    } else {
+      inp.value = '';
+    }
+  }
+  document.getElementById('sr-result').innerHTML = '';
+}
+
+async function loadSearchPredictModelDropdown() {
+  const sel = document.getElementById('sr-predict-model');
+  if (!sel) return;
+  try {
+    const r = await api('/datasets');
+    // We need models — load them.
+    const models = await api('/models');
+    if (Array.isArray(models) && models.length) {
+      // Filter to models whose dataset_id contains 'supply' (supply risk / lead time)
+      const supplyModels = models.filter(m =>
+        m.dataset_id && m.dataset_id.includes('supply')
+      );
+      if (supplyModels.length) {
+        sel.innerHTML = '<option value="">— none (search only) —</option>' +
+          supplyModels.map(m => {
+            const label = m.model_id + ' (' + (m.target_type || m.model_type || '') + ')';
+            return `<option value="${m.model_id}">${label}</option>`;
+          }).join('');
+      } else {
+        sel.innerHTML = '<option value="">— no supply models trained —</option>';
+      }
+    } else {
+      sel.innerHTML = '<option value="">— no models trained —</option>';
+    }
+  } catch (e) {
+    sel.innerHTML = '<option value="">Error loading models</option>';
+  }
+}
+
+async function runPredictOnSearch() {
+  const el = document.getElementById('sr-result');
+  const dsId = document.getElementById('sr-dataset').value;
+  const modelId = document.getElementById('sr-predict-model').value;
+  if (!dsId) { el.innerHTML = banner('Select a dataset first.'); return; }
+  if (!modelId) { el.innerHTML = banner('Select a prediction model first.'); return; }
+
+  const limit = parseInt(document.getElementById('sr-limit').value) || 50;
+  const timestamp = document.getElementById('sr-predict-timestamp').value.trim() || null;
+  const filters = [];
+
+  // Collect standard field filters (same as runSearch).
+  const filterEls = document.querySelectorAll('#sr-filters [data-field]');
+  for (const inp of filterEls) {
+    const field = inp.dataset.field;
+    const op = inp.dataset.op;
+    if (inp.tagName === 'SELECT') {
+      const vals = Array.from(inp.selectedOptions).map(o => o.value).filter(Boolean);
+      if (vals.length === 1) {
+        filters.push({ field, op: 'eq', value: vals[0] });
+      } else if (vals.length > 1) {
+        filters.push({ field, op: 'in', value: vals });
+      }
+    } else {
+      const val = inp.value.trim();
+      if (val) {
+        if (op === 'gte' || op === 'lte') {
+          const num = parseFloat(val);
+          if (!isNaN(num)) filters.push({ field, op, value: num });
+        } else {
+          filters.push({ field, op, value: val });
+        }
+      }
+    }
+  }
+
+  // Collect semantic filters.
+  const semanticEls = document.querySelectorAll('#sr-filters [data-semantic]');
+  for (const inp of semanticEls) {
+    const val = inp.value.trim();
+    if (val) {
+      const num = parseFloat(val);
+      if (!isNaN(num)) {
+        filters.push({ field: inp.dataset.semantic, op: 'semantic', value: num });
+      }
+    }
+  }
+
+  el.innerHTML = '<div class="muted">Searching and predicting...</div>';
+  try {
+    const body = { model_id: modelId, filters, limit };
+    if (timestamp) body.timestamp = timestamp;
+    const r = await api('/datasets/' + dsId + '/predict-on-search', 'POST', body);
+    const rows = r.rows || [];
+    const matched = r.matched ?? 0;
+    const returned = r.returned ?? rows.length;
+    const modelType = r.model_type || '';
+
+    let h = `<div class="row-count-badge">${matched.toLocaleString()} matched · ${returned} ranked by ${modelType}</div>`;
+    h += `<div class="muted" style="margin:4px 0;">Model: ${r.model_id} · As-of: ${r.timestamp || 'latest'}</div>`;
+
+    if (r.applied_filters && r.applied_filters.length) {
+      h += '<details><summary class="muted" style="cursor:pointer;">Applied filters (' +
+        r.applied_filters.length + ')</summary><pre style="margin-top:4px;">' +
+        JSON.stringify(r.applied_filters, null, 2) + '</pre></details>';
+    }
+
+    if (!rows.length) {
+      h += '<div class="muted">No rows matched the current filters.</div>';
+    } else {
+      h += '<div class="data-table-wrap"><table class="data-table"><thead><tr>';
+      const cols = Object.keys(rows[0]);
+      h += cols.map(c => `<th>${c}</th>`).join('');
+      h += '</tr></thead><tbody>';
+      h += rows.map(row =>
+        '<tr>' + cols.map(c => {
+          const v = row[c];
+          if (c === 'prediction' && v !== null && v !== undefined) {
+            return `<td><strong>${typeof v === 'number' ? v.toFixed(3) : v}</strong></td>`;
+          }
+          return `<td>${v !== null && v !== undefined ? v : ''}</td>`;
+        }).join('') + '</tr>'
+      ).join('');
+      h += '</tbody></table></div>';
+    }
+    el.innerHTML = h;
+  } catch (e) {
+    el.innerHTML = banner('Error: ' + e.message);
+  }
+}
+
 // Auto-load datasets, models, and prediction dropdown on page load
 listDatasets();
 listModels();
 loadModelDropdown();
 loadEvalModelDropdown();
 loadDataDatasetDropdown();
+loadSearchDatasetDropdown();
+loadSearchPredictModelDropdown();
 loadAnalysisDatasetDropdowns();
 loadTrainDatasetDropdown();
 </script>

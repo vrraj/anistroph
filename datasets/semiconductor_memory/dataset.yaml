@@ -1,0 +1,246 @@
+# Anistroph — Semiconductor Memory catalog (parametric search + analysis).
+#
+# One row = one fictional sellable memory SKU plus a current synthetic supply
+# snapshot. This config carries the full catalog (all 35 columns) for
+# deterministic parametric search and multidimensional analysis. No model is
+# trained on this config (no `target:` section) — the two prediction targets
+# (supply_risk_next_4w, lead_time_next_4w_days) have their own configs that
+# share this same source CSV.
+#
+# Non-temporal snapshot dataset (no time_key). Random 80/20 split.
+#
+# The `search:` section declares searchable fields, units, aliases, and
+# semantic filters so AI agents can discover the search contract and
+# normalize natural-language requirements into deterministic predicates.
+#
+# Source: product-specifications/sample-data/semiconductor_memory_2000.csv
+# (2000 rows, 35 columns). Product IDs and exact rows are synthetic;
+# engineering parameter domains use real memory-industry values.
+
+dataset:
+  dataset_id: semiconductor_memory
+  name: Semiconductor Memory Catalog
+  entity_key: product_id
+  # No time_key — this is a non-temporal product/supply snapshot.
+
+  columns:
+    # --- Catalog / search fields ---
+    product_id:
+      type: categorical
+      role: identifier
+    product_family:
+      type: categorical
+      role: feature
+    technology:
+      type: categorical
+      role: feature
+    part_type:
+      type: categorical
+      role: feature
+    component_density_gb:
+      type: numeric
+      role: feature
+    module_density_gb:
+      type: numeric
+      role: feature
+    speed_mhz:
+      type: numeric
+      role: feature
+    data_rate_mt_s:
+      type: numeric
+      role: feature
+    io_voltage_v:
+      type: numeric
+      role: feature
+    operating_temp_min_c:
+      type: numeric
+      role: feature
+    operating_temp_max_c:
+      type: numeric
+      role: feature
+    bus_width_bits:
+      type: numeric
+      role: feature
+    cas_latency:
+      type: categorical
+      role: feature
+    pin_count:
+      type: numeric
+      role: feature
+    package:
+      type: categorical
+      role: feature
+    component_config:
+      type: categorical
+      role: metadata
+    ecc:
+      type: categorical
+      role: feature
+    part_status:
+      type: categorical
+      role: feature
+    package_width_mm:
+      type: numeric
+      role: metadata
+    package_length_mm:
+      type: numeric
+      role: metadata
+    package_height_mm:
+      type: numeric
+      role: metadata
+    datasheet_id:
+      type: categorical
+      role: metadata
+    # --- Synthetic supply / prediction fields ---
+    inventory_units:
+      type: numeric
+      role: feature
+    weekly_demand_units:
+      type: numeric
+      role: feature
+    inventory_coverage_weeks:
+      type: numeric
+      role: feature
+    backlog_units:
+      type: numeric
+      role: feature
+    backlog_ratio:
+      type: numeric
+      role: feature
+    open_po_units:
+      type: numeric
+      role: feature
+    open_po_coverage:
+      type: numeric
+      role: feature
+    supplier_lead_time_days:
+      type: numeric
+      role: feature
+    supplier_otd_pct:
+      type: numeric
+      role: feature
+    demand_trend_4w_pct:
+      type: numeric
+      role: feature
+    allocation_status:
+      type: categorical
+      role: feature
+    supply_risk_next_4w:
+      type: numeric
+      role: target
+    lead_time_next_4w_days:
+      type: numeric
+      role: target
+
+  split:
+    strategy: random
+    train: 0.80
+    validation: 0.0
+    test: 0.20
+
+# --- Parametric search contract ---
+# Searchable fields: the columns an agent can filter on, with supported
+# operators, units, and aliases. Semantic filters map natural engineering
+# concepts (e.g. "supports 55C", "industrial temperature") to deterministic
+# predicates.
+search:
+  searchable_fields:
+    product_family:
+      field: product_family
+      operators: [eq, in]
+      description: Memory product family (DDR5_COMPONENT, LPDDR5X_COMPONENT, DDR5_RDIMM, DDR5_UDIMM).
+    technology:
+      field: technology
+      operators: [eq, in]
+      description: Memory technology (DDR5, LPDDR5X).
+    part_type:
+      field: part_type
+      operators: [eq, in]
+      description: COMPONENT or MODULE.
+    component_density_gb:
+      field: component_density_gb
+      operators: [eq, in, gte, lte, between]
+      unit: Gb
+      aliases: [density, component_density]
+      description: Component density in gigabits (null for modules).
+    module_density_gb:
+      field: module_density_gb
+      operators: [eq, in, gte, lte, between]
+      unit: GB
+      aliases: [module_density, capacity]
+      description: Module density in gigabytes (null for components).
+    data_rate_mt_s:
+      field: data_rate_mt_s
+      operators: [eq, in, gte, lte, between]
+      unit: MT/s
+      aliases: [speed, data_rate, transfer_rate]
+      description: Data transfer rate in megatransfers per second.
+    speed_mhz:
+      field: speed_mhz
+      operators: [eq, in, gte, lte, between]
+      unit: MHz
+      aliases: [clock_speed]
+      description: Clock speed in MHz.
+    io_voltage_v:
+      field: io_voltage_v
+      operators: [eq, gte, lte, between]
+      unit: V
+      aliases: [voltage, vddq]
+      description: I/O voltage in volts.
+    bus_width_bits:
+      field: bus_width_bits
+      operators: [eq, in, gte, lte, between]
+      unit: bits
+      aliases: [bus_width, organization, width]
+      description: Bus width in bits (e.g. 4, 8, 16, 32, 64, 72, 80).
+    pin_count:
+      field: pin_count
+      operators: [eq, gte, lte, between]
+      description: Number of pins/balls.
+    package:
+      field: package
+      operators: [eq, in]
+      description: Package type (VFBGA, TFBGA, WFBGA, UFBGA, LFBGA).
+    cas_latency:
+      field: cas_latency
+      operators: [eq, in]
+      description: CAS latency label (CL40, CL42, CL46, CL52, CL58, CL64, Programmable).
+    ecc:
+      field: ecc
+      operators: [eq, in]
+      description: ECC support (TRUE, FALSE; null for components).
+    part_status:
+      field: part_status
+      operators: [eq, in]
+      description: Product lifecycle status (Production, Sampling, Introduction, Contact Sales, End of Life).
+    allocation_status:
+      field: allocation_status
+      operators: [eq, in]
+      description: Supply allocation status (None, Watch, Constrained).
+    datasheet_id:
+      field: datasheet_id
+      operators: [eq, in]
+      description: Datasheet identifier for cross-system RAG handoff.
+
+  semantic_filters:
+    operating_temperature:
+      type: range_contains
+      min_field: operating_temp_min_c
+      max_field: operating_temp_max_c
+      unit: C
+      description: >
+        Products that support operation at a given temperature. Expands to
+        operating_temp_min_c <= value AND operating_temp_max_c >= value
+        (inclusive on both ends). Use this for requirements like "supports 55C".
+    industrial_temperature:
+      type: expands_to
+      description: >
+        Industrial temperature range (-40C to +95C). Expands to
+        operating_temp_min_c <= -40 AND operating_temp_max_c >= 95.
+      expands_to:
+        - field: operating_temp_min_c
+          op: lte
+          value: -40
+        - field: operating_temp_max_c
+          op: gte
+          value: 95

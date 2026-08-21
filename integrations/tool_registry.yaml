@@ -1,0 +1,45 @@
+# Anistroph — External Tool Registry
+#
+# Configuration source for externally hosted capabilities such as Aina-Veris.
+# The MCP server, REST API, and any internal orchestrator consume this same
+# registry rather than duplicating external-tool definitions.
+#
+# <host-name> is supplied through deployment configuration (AINA_VERIS_BASE_URL
+# environment variable) and must not be hard-coded here. The registry loader
+# substitutes ${AINA_VERIS_BASE_URL} at load time.
+
+tools:
+  - name: call_veris_semiconductor_research_agent
+    provider: veris
+    capability: semiconductor_memory_research
+    visibility: always
+    description: >-
+      Query AINA Veris for grounded semiconductor-memory datasheet and
+      application-note analysis. Pass a technical research question along
+      with relevant shortlisted product_id / datasheet_id context from
+      Anistroph parametric search and prediction results. Aina-Veris
+      performs domain-specific RAG over ingested datasheets and returns
+      grounded analysis with source citations.
+    keywords:
+      - semiconductor memory
+      - DRAM
+      - SRAM
+      - NAND
+      - datasheet
+      - application note
+    llm_parameters:
+      type: object
+      properties:
+        prompt:
+          type: string
+          description: >-
+            Technical semiconductor-memory research question. May include
+            shortlisted product_id / datasheet_id context from Anistroph
+            search and prediction results.
+      required:
+        - prompt
+      additionalProperties: false
+    agent_owner: aina-veris
+    protocol: A2A_JSONRPC
+    base_url: ${AINA_VERIS_BASE_URL}
+    path: /agents/aina-veris/

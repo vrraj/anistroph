@@ -17,8 +17,10 @@ from fastapi.staticfiles import StaticFiles
 from backend.api.analysis import router as analysis_router
 from backend.api.datasets import router as datasets_router
 from backend.api.evaluations import router as evaluations_router
+from backend.api.integrations import router as integrations_router
 from backend.api.models import router as models_router
 from backend.api.predictions import router as predictions_router
+from backend.api.search import router as search_router
 from backend.integrations.mcp.http_transport import create_mcp_http_app, lifespan as mcp_lifespan
 from backend.schemas.api import HealthResponse
 from backend.services import get_services
@@ -56,14 +58,16 @@ def create_app() -> FastAPI:
     app.include_router(models_router)
     app.include_router(predictions_router)
     app.include_router(evaluations_router)
+    app.include_router(search_router)
+    app.include_router(integrations_router)
 
-    # MCP Streamable HTTP transport — exposes the same 13 MCP tools over
-    # HTTP at /mcp so remote clients can discover (tools/list) and execute
-    # (tools/call) without a stdio subprocess. Uses JSON-RPC 2.0, same as
-    # the stdio transport. Handled via a raw ASGI middleware (not FastAPI
-    # routes) because MCP manages its own request/response cycle, including
-    # SSE streaming. Both /mcp and /mcp/ are handled to avoid 307 redirects
-    # that break MCP clients.
+    # MCP Streamable HTTP transport — exposes all MCP tools (native +
+    # external) over HTTP at /mcp so remote clients can discover
+    # (tools/list) and execute (tools/call) without a stdio subprocess.
+    # Uses JSON-RPC 2.0, same as the stdio transport. Handled via a raw
+    # ASGI middleware (not FastAPI routes) because MCP manages its own
+    # request/response cycle, including SSE streaming. Both /mcp and /mcp/
+    # are handled to avoid 307 redirects that break MCP clients.
     mcp_handler = create_mcp_http_app()
 
     class MCPASGIMiddleware:

@@ -1,0 +1,222 @@
+"""Shared external-tool invoker — A2A JSON-RPC client.
+
+Both MCP and REST call this same invoker to reach external A2A agents
+such as Aina-Veris. No Aina-Veris-specific logic lives here — the invoker
+is generic and driven by the external tool registry.
+
+A2A protocol v1.0: https://github.com/google-a2a/a2a
+The invoker sends a JSON-RPC 2.0 ``SendMessage`` request to the agent's
+endpoint and returns the resulting task state / artifacts.
+
+Key protocol details:
+- Method: ``SendMessage`` (A2A v1.0)
+- Header: ``A2A-Version: 1.0`` (required; defaults to 0.3 if omitted)
+- Message parts use camelCase field names (``messageId``, not ``message_id``)
+- Parts are plain objects with a ``text`` key (no ``type`` discriminator)
+"""
+
+from __future__ import annotations
+
+import json
+import logging
+import uuid
+from typing import Any, Optional
+
+import httpx
+
+from backend.integrations.registry import ExternalToolDef, get_external_tool_registry
+
+logger = logging.getLogger(__name__)
+
+# A2A v1.0 JSON-RPC method for sending a message to an agent.
+A2A_SEND_METHOD = "SendMessage"
+
+# A2A protocol version header.
+A2A_VERSION_HEADER = "A2A-Version"
+A2A_PROTOCOL_VERSION = "1.0"
+
+# Default timeout for A2A requests (seconds).
+DEFAULT_TIMEOUT = 120
+
+
+class A2AInvocationError(Exception):
+    """Raised when an A2A invocation fails."""
+
+    def __init__(self, message: str, *, connection_error: bool = False) -> None:
+        super().__init__(message)
+        self.connection_error = connection_error
+
+
+# Message returned when the external agent is unreachable. This is a
+# soft-fail so the calling agent (Claude) can proceed without the RAG
+# response rather than treating it as a hard error.
+AGENT_UNAVAILABLE_MESSAGE = (
+    "The Aina-Veris document research agent is not available. "
+    "The external A2A service could not be reached. "
+    "Proceed without datasheet-grounded analysis, or retry later."
+)
+
+
+def _build_send_message_params(prompt: str, **extra: Any) -> dict[str, Any]:
+    """Build the A2A v1.0 SendMessage parameters for a text prompt."""
+    return {
+        "message": {
+            "messageId": str(uuid.uuid4()),
+            "role": "ROLE_USER",
+            "parts": [
+                {"text": prompt},
+            ],
+        },
+        **extra,
+    }
+
+
+def _build_jsonrpc_request(method: str, params: dict[str, Any]) -> dict[str, Any]:
+    """Build a JSON-RPC 2.0 request envelope."""
+    return {
+        "jsonrpc": "2.0",
+        "id": str(uuid.uuid4()),
+        "method": method,
+        "params": params,
+    }
+
+
+def invoke_external_tool(
+    tool_name: str,
+    arguments: dict[str, Any],
+    *,
+    timeout: int = DEFAULT_TIMEOUT,
+    client: Optional[httpx.Client] = None,
+) -> dict[str, Any]:
+    """Invoke a registered external tool via A2A JSON-RPC.
+
+    Args:
+        tool_name: the registered tool name (e.g. call_veris_semiconductor_research_agent).
+        arguments: the tool arguments, validated against the tool's llm_parameters schema.
+        timeout: HTTP timeout in seconds.
+        client: optional pre-configured httpx.Client (for testing).
+
+    Returns:
+        The A2A task response as a dict. Typically contains:
+        - ``id``: the task ID
+        - ``state``: task state (e.g. "completed", "working", "failed")
+        - ``artifacts``: list of result artifacts
+        - ``messages``: list of messages from the agent
+
+    Raises:
+        A2AInvocationError: if the tool is not found, the request fails,
+            or the response indicates an error.
+    """
+    registry = get_external_tool_registry()
+    tool = registry.get(tool_name)
+    if tool is None:
+        raise A2AInvocationError(f"external tool {tool_name!r} not found in registry")
+
+    if tool.protocol != "A2A_JSONRPC":
+        raise A2AInvocationError(
+            f"tool {tool_name!r} uses protocol {tool.protocol!r}; "
+            "only A2A_JSONRPC is supported"
+        )
+
+    # The prompt is the primary argument for A2A text-based agents.
+    prompt = arguments.get("prompt", "")
+    if not prompt:
+        raise A2AInvocationError(
+            f"tool {tool_name!r} requires a 'prompt' argument"
+        )
+
+    # Build the A2A v1.0 SendMessage JSON-RPC request.
+    msg_params = _build_send_message_params(prompt)
+    request_body = _build_jsonrpc_request(A2A_SEND_METHOD, msg_params)
+
+    url = tool.resolved_url
+    if not tool.base_url or "${" in tool.base_url:
+        raise A2AInvocationError(
+            f"tool {tool_name!r} has an unresolved base_url "
+            f"({tool.base_url!r}); set the AINA_VERIS_BASE_URL environment variable"
+        )
+
+    logger.info("A2A invoke: tool=%s url=%s", tool_name, url)
+
+    own_client = client is None
+    if own_client:
+        client = httpx.Client(timeout=timeout)
+
+    try:
+        response = client.post(
+            url,
+            json=request_body,
+            headers={
+                "Content-Type": "application/json",
+                "Accept": "application/json",
+                A2A_VERSION_HEADER: A2A_PROTOCOL_VERSION,
+            },
+        )
+        response.raise_for_status()
+        result = response.json()
+
+        # Check for JSON-RPC error.
+        if "error" in result:
+            err = result["error"]
+            raise A2AInvocationError(
+                f"A2A agent returned error: code={err.get('code')} "
+                f"message={err.get('message')}"
+            )
+
+        # Return the result field (the A2A task object).
+        return result.get("result", result)
+    except httpx.ConnectError as e:
+        raise A2AInvocationError(
+            f"A2A connection failed: {e}", connection_error=True
+        ) from e
+    except httpx.TimeoutException as e:
+        raise A2AInvocationError(
+            f"A2A request timed out: {e}", connection_error=True
+        ) from e
+    except httpx.HTTPError as e:
+        raise A2AInvocationError(f"A2A HTTP request failed: {e}") from e
+    finally:
+        if own_client:
+            client.close()
+
+
+def validate_arguments(tool: ExternalToolDef, arguments: dict[str, Any]) -> list[str]:
+    """Validate arguments against the tool's llm_parameters schema.
+
+    Returns a list of validation error messages (empty if valid).
+    """
+    errors: list[str] = []
+    schema = tool.llm_parameters
+    if not schema:
+        return errors
+
+    required = schema.get("required", [])
+    properties = schema.get("properties", {})
+    additional = schema.get("additionalProperties", True)
+
+    # Check required fields.
+    for req in required:
+        if req not in arguments:
+            errors.append(f"missing required parameter: {req}")
+
+    # Check for unknown properties.
+    if additional is False:
+        for key in arguments:
+            if key not in properties:
+                errors.append(f"unknown parameter: {key}")
+
+    # Check types (basic).
+    type_map = {"string": str, "number": (int, float), "integer": int,
+                "boolean": bool, "array": list, "object": dict}
+    for key, value in arguments.items():
+        if key in properties:
+            expected_type = properties[key].get("type")
+            if expected_type and expected_type in type_map:
+                py_type = type_map[expected_type]
+                if not isinstance(value, py_type):
+                    errors.append(
+                        f"parameter {key!r} must be {expected_type}, "
+                        f"got {type(value).__name__}"
+                    )
+
+    return errors

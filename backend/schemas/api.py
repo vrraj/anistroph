@@ -77,6 +77,41 @@ class SampleRowsRequest(BaseModel):
     descending: bool = False
 
 
+class FilterExpressionRequest(BaseModel):
+    """A single structured filter for parametric search."""
+    field: str
+    op: str  # eq, in, gte, lte, between, contains_range
+    value: Optional[Any] = None
+    min_field: Optional[str] = None  # for contains_range
+    max_field: Optional[str] = None  # for contains_range
+    low: Optional[float] = None  # for between
+    high: Optional[float] = None  # for between
+
+
+class SortExpressionRequest(BaseModel):
+    """A single sort directive for parametric search."""
+    field: str
+    descending: bool = False
+
+
+class SearchRequest(BaseModel):
+    """Request body for POST /datasets/{dataset_id}/search."""
+    filters: list[FilterExpressionRequest] = Field(default_factory=list)
+    sort: Optional[list[SortExpressionRequest]] = None
+    limit: int = 50
+    columns: Optional[list[str]] = None
+
+
+class PredictOnSearchRequest(BaseModel):
+    """Request body for POST /datasets/{dataset_id}/predict-on-search."""
+    model_id: str
+    filters: list[FilterExpressionRequest] = Field(default_factory=list)
+    sort: Optional[list[SortExpressionRequest]] = None
+    limit: int = 50
+    columns: Optional[list[str]] = None
+    timestamp: Optional[str] = None
+
+
 class EvaluateRequest(BaseModel):
     sample_size: int = 50
     filters: Optional[dict[str, Any]] = None
