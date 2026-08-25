@@ -1340,7 +1340,7 @@ a2a_result = invoke_external_tool(
 )
 ```
 
-> The Aina-Veris A2A endpoint must be configured via `AINA_VERIS_BASE_URL` in `.env`. The agent path is `/agents/aina-veris/`. The invoker uses A2A v1.0 protocol (`SendMessage` method, `A2A-Version: 1.0` header).
+> The Aina-Veris A2A endpoint must be configured via `AINA_VERIS_BASE_URL` in `.env`. The agent path is `/agents/veris-semiconductor-research-agent/`. The invoker uses A2A v1.0 protocol (`SendMessage` method, `A2A-Version: 1.0` header).
 
 ---
 

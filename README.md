@@ -1095,7 +1095,7 @@ tools:
     agent_owner: aina-veris
     protocol: A2A_JSONRPC
     base_url: ${AINA_VERIS_BASE_URL}
-    path: /agents/aina-veris/
+    path: /agents/veris-semiconductor-research-agent/
 ```
 
 `<host-name>` is supplied via the `AINA_VERIS_BASE_URL` environment variable —

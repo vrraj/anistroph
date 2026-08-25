@@ -80,7 +80,7 @@ tools:
     agent_owner: aina-veris
     protocol: A2A_JSONRPC
     base_url: http://test-aina-veris:8100
-    path: /agents/aina-veris/
+    path: /agents/veris-semiconductor-research-agent/
 """)
     temp_reg = ExternalToolRegistry(registry_path)
     monkeypatch.setattr(reg_mod, "get_external_tool_registry", lambda: temp_reg)
