@@ -423,6 +423,8 @@ monitoring/drift detection are natural extension paths.
     --- design narrative and architecture walkthrough
 -   [MCP market listing](https://mcpmarket.com/server/anistroph)
     --- MCP marketplace listing
+-   [Designing Composable AI Systems](https://medium.com/@vr.rajkumar99/designing-composable-ai-systems-517c147cb8ce)
+    --- composable AI systems design
 
 ## License
 
