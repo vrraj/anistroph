@@ -121,7 +121,8 @@ def register_all(force: bool) -> None:
 
         print(f"  - {dataset_id}: registering...")
         meta = svc.register_dataset_from_config(config_path, source_path)
-        print(f"      {meta.row_count} rows, train={meta.train_parquet_path.name}")
+        train_name = Path(meta.train_parquet_path).name if meta.train_parquet_path else "none"
+        print(f"      {meta.row_count} rows, train={train_name}")
         n_registered += 1
 
     print(f"\nDone. Registered {n_registered} dataset(s), skipped {n_skipped} already-registered.")
