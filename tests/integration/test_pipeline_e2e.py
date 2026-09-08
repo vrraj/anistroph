@@ -20,6 +20,7 @@ from backend.services import AnistrophServices
 import backend.services as svc_mod
 
 DATASHEET_PRODUCTS = ["ANM-D5C-0001", "ANM-D5C-0002", "ANM-D5C-0003"]
+PIPELINE_PRODUCT_LIMIT = 100
 DATASHEET_DIR = Path(__file__).resolve().parent.parent.parent / "product-specifications" / "sample-data"
 EXPECTED_DATASHEETS = [
     "ANM-D5C-0001_datasheet.pdf", "ANM-D5C-0002_datasheet.pdf", "ANM-D5C-0003_datasheet.pdf",
@@ -124,7 +125,7 @@ class TestSearchPredictPipeline:
                 FilterExpression(field="part_status", op="eq", value="Production"),
                 FilterExpression(field="operating_temperature", op="semantic", value=55),
             ],
-            limit=500,
+            limit=PIPELINE_PRODUCT_LIMIT,
             columns=["product_id", "datasheet_id"],
         )
         matched_ids = {r["product_id"] for r in result["rows"]}
@@ -160,7 +161,7 @@ class TestFullPipelineSearchPredictRAG:
                 FilterExpression(field="part_status", op="eq", value="Production"),
                 FilterExpression(field="operating_temperature", op="semantic", value=55),
             ],
-            limit=500,
+            limit=PIPELINE_PRODUCT_LIMIT,
             columns=["product_id", "datasheet_id"],
         )
         lowest_risk = result["rows"][-3:]
@@ -203,7 +204,7 @@ class TestFullPipelineSearchPredictRAG:
                 {"field": "component_density_gb", "op": "gte", "value": 24},
                 {"field": "part_status", "op": "eq", "value": "Production"},
             ],
-            "limit": 500, "columns": ["product_id", "datasheet_id"],
+            "limit": PIPELINE_PRODUCT_LIMIT, "columns": ["product_id", "datasheet_id"],
         })
         assert r.status_code == 200
         lowest_risk = r.json()["rows"][-3:]
@@ -239,7 +240,7 @@ class TestFullPipelineSearchPredictRAG:
                 {"field": "product_family", "op": "eq", "value": "DDR5_COMPONENT"},
                 {"field": "component_density_gb", "op": "gte", "value": 24},
             ],
-            "limit": 500, "columns": ["product_id", "datasheet_id"],
+            "limit": PIPELINE_PRODUCT_LIMIT, "columns": ["product_id", "datasheet_id"],
         })
         data = json.loads(result[0].text)
         assert data["matched"] > 0
