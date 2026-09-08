@@ -27,13 +27,13 @@ if str(_REPO_ROOT) not in sys.path:
 from backend.services import get_services
 
 # --- Source data generators ----------------------------------------------
-# (script, default output parquet relative to repo root)
+# (display name, script, default output parquet relative to repo root)
 GENERATORS = [
-    ("scripts/generate_sensor_data.py", "data/raw/predictive_maintenance.parquet"),
-    ("scripts/generate_semiconductor_yield_data.py", "data/semiconductor_yield/data.parquet"),
-    ("scripts/generate_home_prices_data.py", "data/home_prices/data.parquet"),
-    ("scripts/generate_procurement_data.py", "data/semiconductor_procurement/data.parquet"),
-    ("scripts/generate_semiconductor_memory_supply.py", "data/semiconductor_memory_supply/data.parquet"),
+    ("Predictive maintenance sensor history", "scripts/generate_sensor_data.py", "data/raw/predictive_maintenance.parquet"),
+    ("Semiconductor manufacturing wafer data", "scripts/generate_semiconductor_yield_data.py", "data/semiconductor_yield/data.parquet"),
+    ("Bay Area home prices", "scripts/generate_home_prices_data.py", "data/home_prices/data.parquet"),
+    ("Semiconductor materials procurement", "scripts/generate_procurement_data.py", "data/semiconductor_procurement/data.parquet"),
+    ("Semiconductor memory supply history", "scripts/generate_semiconductor_memory_supply.py", "data/semiconductor_memory_supply/data.parquet"),
 ]
 
 # --- Dataset configs -----------------------------------------------------
@@ -68,7 +68,7 @@ DATASETS = [
 
 def _run(cmd: list[str]) -> None:
     import subprocess
-    print(f"  $ {' '.join(cmd)}")
+    print(f"      Running: {' '.join(cmd)}", flush=True)
     result = subprocess.run(cmd, cwd=str(_REPO_ROOT))
     if result.returncode != 0:
         print(f"  ERROR: command failed with exit code {result.returncode}", file=sys.stderr)
@@ -76,29 +76,45 @@ def _run(cmd: list[str]) -> None:
 
 
 def generate_all(skip_gen: bool) -> None:
-    """Run the three synthetic data generators unless outputs already exist."""
+    """Run the five synthetic data generators unless outputs already exist."""
     if skip_gen:
         print("[1/2] Skipping data generation (--skip-gen)")
         return
-    print("[1/2] Generating synthetic source data...")
-    for script, out_rel in GENERATORS:
+
+    missing_outputs = [
+        out_rel for _, _, out_rel in GENERATORS
+        if not (_REPO_ROOT / out_rel).exists()
+    ]
+    print("[1/2] Preparing synthetic reference data")
+    if missing_outputs:
+        print("      First-time data generation may take a few minutes.")
+        print("      Progress will be shown for each dataset family.")
+    else:
+        print("      All generated source files already exist; checking each one.")
+
+    total = len(GENERATORS)
+    for index, (display_name, script, out_rel) in enumerate(GENERATORS, start=1):
         out_path = _REPO_ROOT / out_rel
         if out_path.exists():
-            print(f"  - {Path(script).name}: already present at {out_rel} (skipping)")
+            print(f"      [{index}/{total}] {display_name}: already present (skipping)")
             continue
-        print(f"  - {Path(script).name}: generating -> {out_rel}")
+        print(f"      [{index}/{total}] Generating data: {display_name}", flush=True)
+        print(f"            Output: {out_rel}", flush=True)
         _run(["python", script])
+
+    print("      Reference source data is ready.")
 
 
 def register_all(force: bool) -> None:
     """Register all dataset configs."""
-    print("[2/2] Registering datasets...")
+    print(f"[2/2] Registering {len(DATASETS)} dataset configurations")
     svc = get_services()
     existing = {d.dataset_id for d in svc.list_datasets()}
 
     n_registered = 0
     n_skipped = 0
-    for config_rel, source_rel in DATASETS:
+    total = len(DATASETS)
+    for index, (config_rel, source_rel) in enumerate(DATASETS, start=1):
         config_path = _REPO_ROOT / config_rel
         source_path = _REPO_ROOT / source_rel
         if not config_path.exists():
@@ -115,14 +131,14 @@ def register_all(force: bool) -> None:
         dataset_id = cfg.dataset_spec.dataset_id
 
         if dataset_id in existing and not force:
-            print(f"  - {dataset_id}: already registered (skipping; use --force to re-register)")
+            print(f"      [{index:02}/{total}] {dataset_id}: already registered (skipping)")
             n_skipped += 1
             continue
 
-        print(f"  - {dataset_id}: registering...")
+        print(f"      [{index:02}/{total}] Registering dataset: {dataset_id}", flush=True)
         meta = svc.register_dataset_from_config(config_path, source_path)
         train_name = Path(meta.train_parquet_path).name if meta.train_parquet_path else "none"
-        print(f"      {meta.row_count} rows, train={train_name}")
+        print(f"            Ready: {meta.row_count} rows, train={train_name}")
         n_registered += 1
 
     print(f"\nDone. Registered {n_registered} dataset(s), skipped {n_skipped} already-registered.")
