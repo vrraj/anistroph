@@ -70,6 +70,7 @@ rebuild:
 # Run FastAPI server in foreground with live reload (local .venv)
 start-native:
 	@echo "Starting Anistroph in native mode (local .venv)..."
+	@. .venv/bin/activate && python scripts/setup_datasets.py
 	@. .venv/bin/activate && uvicorn backend.main:app --reload --host 0.0.0.0 --port 9500
 
 # Stop native uvicorn (finds and kills the process on port 9500)
@@ -81,6 +82,7 @@ stop-native:
 # Run in debug mode with verbose logging
 start-debug:
 	@echo "Starting Anistroph in debug mode..."
+	@. .venv/bin/activate && python scripts/setup_datasets.py
 	@. .venv/bin/activate && uvicorn backend.main:app --reload --host 0.0.0.0 --port 9500 --log-level debug
 
 # =============================================================================
@@ -110,7 +112,7 @@ install:
 # One-shot setup: generate all synthetic data + register all reference datasets
 # =============================================================================
 
-# Generate all three synthetic datasets and register all eleven dataset configs.
+# Generate all reference data sources and register all sixteen dataset configs.
 # Idempotent — skips generation/registration for datasets already present.
 # Usage: make setup
 # Force re-registration: make setup SETUP_ARGS=--force

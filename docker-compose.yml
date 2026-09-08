@@ -15,7 +15,11 @@ services:
       - "9500:9500"
     # Development: use --reload for hot code reload.
     # Production: use `python -m uvicorn backend.main:app --host 0.0.0.0 --port 9500`
-    command: python -m uvicorn backend.main:app --host 0.0.0.0 --port 9500 --reload
+    # Bootstrap any missing reference data/registry entries before serving.
+    # The setup script is idempotent, so subsequent starts only perform checks.
+    command: >
+      sh -c "python scripts/setup_datasets.py &&
+             exec python -m uvicorn backend.main:app --host 0.0.0.0 --port 9500 --reload"
     volumes:
       # Bind mount — map host project root to the working directory in the container
       - .:/app

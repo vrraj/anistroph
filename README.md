@@ -147,6 +147,35 @@ critical-dimension, and film-thickness models, each with its own
 feature/target configuration, partitions, metrics, and persisted model
 artifacts.
 
+### Shipped Dataset Configurations
+
+Anistroph ships **16 reference dataset configurations**. After setup, all
+16 should appear under **Web UI → Datasets → Registered Datasets**.
+
+| Domain | Dataset ID | Purpose |
+|---|---|---|
+| Predictive maintenance | `predictive_maintenance` | Failure-within-horizon classification |
+| Predictive maintenance | `predictive_maintenance_rul` | Remaining-useful-life regression |
+| Predictive maintenance | `predictive_maintenance_maint` | Maintenance-required classification |
+| Semiconductor manufacturing | `semiconductor_yield` | Wafer-yield regression |
+| Semiconductor manufacturing | `semiconductor_cd` | Critical-dimension regression |
+| Semiconductor manufacturing | `semiconductor_film_thickness` | Film-thickness regression |
+| Semiconductor manufacturing | `semiconductor_yield_stage_a` | Stage A wafer-yield prediction |
+| Semiconductor manufacturing | `semiconductor_yield_stage_b` | Stage B wafer-yield prediction |
+| Semiconductor manufacturing | `semiconductor_yield_stage_c` | Stage C wafer-yield prediction |
+| Semiconductor manufacturing | `semiconductor_yield_stage_d` | Stage D wafer-yield prediction |
+| Real estate | `home_prices` | Home-price regression |
+| Semiconductor procurement | `semiconductor_procurement_demand` | Four-week demand regression |
+| Semiconductor procurement | `semiconductor_procurement_shortage` | Four-week shortage-risk classification |
+| Semiconductor memory | `semiconductor_memory` | Parametric catalog search and analysis |
+| Semiconductor memory supply | `semiconductor_memory_supply_risk` | Four-week supply-risk classification |
+| Semiconductor memory supply | `semiconductor_memory_supply_lead_time` | Four-week lead-time regression |
+
+The YAML configurations are version-controlled under `datasets/`. Generated
+source data, partitions, and `artifacts/dataset_registry.json` are local
+runtime artifacts created by setup; the registry is intentionally excluded
+from Git because it can contain machine-specific paths.
+
 ### Trained Reference Models
 
 Held-out evaluation metrics for the shipped reference models:
@@ -260,6 +289,36 @@ Access points:
 
 For the full installation, MCP setup, examples, and troubleshooting
 guide, see [Setup & Usage](docs/setup-usage.md).
+
+### Troubleshooting: Datasets Are Missing from the UI
+
+The Datasets UI lists entries from the local
+`artifacts/dataset_registry.json`. If the list is empty or shows fewer than
+16 datasets, rebuild the local registry.
+
+For a fresh clone, or when source data may also be missing, run:
+
+``` bash
+make setup
+```
+
+If the source CSV/Parquet files already exist and only the registry is
+missing or incomplete, use the faster registration-only path:
+
+``` bash
+.venv/bin/python scripts/setup_datasets.py --skip-gen
+```
+
+The command should finish with:
+
+``` text
+Total registered: 16 dataset(s).
+```
+
+Then open the Datasets tab and click **Refresh**. The standard Docker and
+native start commands also run this idempotent setup automatically, so
+subsequent starts check the registry and skip datasets that are already
+registered.
 
 ------------------------------------------------------------------------
 
