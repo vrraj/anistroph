@@ -46,9 +46,12 @@ def mem_client(tmp_artifacts):
     svc_mod._services = None
 
 
-@pytest.fixture
-def supply_client(tmp_artifacts):
-    """Client with semiconductor_memory catalog + supply models registered."""
+@pytest.fixture(scope="module")
+def supply_client(tmp_path_factory):
+    """Client with supply models trained once for this test module."""
+    tmp_artifacts = tmp_path_factory.mktemp("supply_client_artifacts")
+    (tmp_artifacts / "artifacts" / "models").mkdir(parents=True)
+    (tmp_artifacts / "data" / "processed").mkdir(parents=True)
     services = AnistrophServices(
         dataset_registry_path=tmp_artifacts / "artifacts" / "dataset_registry.json",
         model_registry_dir=tmp_artifacts / "artifacts" / "models",

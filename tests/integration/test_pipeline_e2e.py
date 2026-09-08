@@ -27,8 +27,12 @@ EXPECTED_DATASHEETS = [
 ]
 
 
-@pytest.fixture
-def pipeline_services(tmp_artifacts):
+@pytest.fixture(scope="module")
+def pipeline_services(tmp_path_factory):
+    """Train the shared pipeline models once for this test module."""
+    tmp_artifacts = tmp_path_factory.mktemp("pipeline_artifacts")
+    (tmp_artifacts / "artifacts" / "models").mkdir(parents=True)
+    (tmp_artifacts / "data" / "processed").mkdir(parents=True)
     svc = AnistrophServices(
         dataset_registry_path=tmp_artifacts / "artifacts" / "dataset_registry.json",
         model_registry_dir=tmp_artifacts / "artifacts" / "models",
