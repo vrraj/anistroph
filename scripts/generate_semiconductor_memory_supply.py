@@ -22,6 +22,9 @@ Design:
 Usage:
     python scripts/generate_semiconductor_memory_supply.py
     # -> data/semiconductor_memory_supply/data.parquet (50,000 rows)
+
+    python scripts/generate_semiconductor_memory_supply.py --products 100
+    # -> smaller deterministic fixture for CI and development
 """
 
 from __future__ import annotations
@@ -228,6 +231,20 @@ def generate_supply_history(catalog: pl.DataFrame, rng: np.random.Generator) -> 
 
 
 def main() -> None:
+    import argparse
+
+    parser = argparse.ArgumentParser(
+        description="Generate semiconductor-memory supply history."
+    )
+    parser.add_argument(
+        "--products",
+        type=int,
+        help="Use only the first N catalog products (default: all 2,000).",
+    )
+    args = parser.parse_args()
+    if args.products is not None and args.products < 1:
+        parser.error("--products must be at least 1")
+
     if not CATALOG_PATH.exists():
         print(f"ERROR: catalog not found at {CATALOG_PATH}", file=sys.stderr)
         print("Run setup_datasets.py first to copy the catalog CSV.", file=sys.stderr)
@@ -241,6 +258,13 @@ def main() -> None:
     rng = np.random.default_rng(SEED)
     df = generate_supply_history(catalog, rng)
     print(f"  Generated {df.height} rows, {df.width} columns")
+
+    # Generate the full deterministic series first, then select products.
+    # This preserves the reference products' values regardless of fixture size.
+    if args.products is not None:
+        product_ids = catalog.head(args.products)["product_id"]
+        df = df.filter(pl.col("product_id").is_in(product_ids.implode()))
+        print(f"  Retained {product_ids.len()} products ({df.height} rows)")
 
     # Persist as Parquet.
     OUTPUT_PATH.parent.mkdir(parents=True, exist_ok=True)
